@@ -16,7 +16,7 @@ import { deviceManagement } from './pages/device-management';
 import { recoveryCodes } from './pages/recovery-codes';
 import { navContributions } from './nav';
 import { configSchema, configDefaults } from './config';
-import type { FeaturePackModule, FeaturePackMetadata } from '@hit/feature-pack-types';
+import type { FeaturePackModule, FeaturePackMetadata, RouteDefinition } from '@hit/feature-pack-types';
 
 // Page generators - ui-render calls these
 export const pages = {
@@ -30,6 +30,20 @@ export const pages = {
   deviceManagement,
   recoveryCodes,
 };
+
+// Route definitions - maps paths to page generators
+// Used by ui-render to serve /api/ui/routes for dynamic routing
+export const routes: RouteDefinition[] = [
+  { path: '/login', page: 'login', priority: 100 },
+  { path: '/signup', page: 'signup', priority: 100 },
+  { path: '/forgot-password', page: 'forgot', priority: 100 },
+  { path: '/verify-email', page: 'verify', priority: 100 },
+  { path: '/reset-password', page: 'reset', priority: 100 },
+  { path: '/magic-link', page: 'magicLink', priority: 100 },
+  { path: '/settings/2fa/setup', page: 'totpSetup', priority: 100 },
+  { path: '/settings/devices', page: 'deviceManagement', priority: 100 },
+  { path: '/settings/recovery-codes', page: 'recoveryCodes', priority: 100 },
+];
 
 // Navigation contributions
 export { navContributions };
@@ -51,6 +65,7 @@ const authCoreModule: FeaturePackModule = {
   configSchema,
   configDefaults,
   metadata,
+  routes,
 };
 
 export default authCoreModule;
