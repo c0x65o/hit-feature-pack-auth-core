@@ -76,9 +76,9 @@ export function VerifyEmail({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <Loader2 className="w-16 h-16 text-indigo-500 mx-auto mb-4 animate-spin" />
-            <h1 className="text-2xl font-bold text-white mb-2">Verifying Email</h1>
-            <p className="text-gray-400">Please wait while we verify your email...</p>
+            <Loader2 className="w-16 h-16 text-[var(--hit-primary)] mx-auto mb-4 animate-spin" />
+            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Verifying Email</h1>
+            <p className="text-[var(--hit-muted-foreground)]">Please wait while we verify your email...</p>
           </div>
         </AuthCard>
       </AuthLayout>
@@ -91,15 +91,15 @@ export function VerifyEmail({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-white mb-2">Email Verified!</h1>
-            <p className="text-gray-400 mb-6">
+            <CheckCircle className="w-16 h-16 text-[var(--hit-success)] mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Email Verified!</h1>
+            <p className="text-[var(--hit-muted-foreground)] mb-6">
               Your email has been successfully verified. You can now sign in to your account.
             </p>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="w-full h-12 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors"
+              className="w-full h-12 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] text-white font-semibold rounded-lg transition-colors"
             >
               Sign In
             </button>
@@ -115,9 +115,9 @@ export function VerifyEmail({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-white mb-2">Verification Failed</h1>
-            <p className="text-gray-400 mb-6">
+            <XCircle className="w-16 h-16 text-[var(--hit-error)] mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Verification Failed</h1>
+            <p className="text-[var(--hit-muted-foreground)] mb-6">
               {error || 'This verification link is invalid or has expired.'}
             </p>
             {email && (
@@ -125,7 +125,7 @@ export function VerifyEmail({
                 type="button"
                 onClick={handleResend}
                 disabled={loading}
-                className="w-full h-12 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-semibold rounded-lg transition-colors mb-4"
+                className="w-full h-12 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors mb-4"
               >
                 {loading ? 'Sending...' : 'Resend Verification Email'}
               </button>
@@ -133,7 +133,7 @@ export function VerifyEmail({
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-indigo-400 hover:text-indigo-300 font-medium"
+              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
             >
               Back to Login
             </button>
@@ -153,15 +153,15 @@ export function VerifyEmail({
         </div>
 
         <div className="text-center">
-          <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Mail className="w-8 h-8 text-indigo-400" />
+          <div className="w-16 h-16 bg-[var(--hit-primary-light)] rounded-full flex items-center justify-center mx-auto mb-4">
+            <Mail className="w-8 h-8 text-[var(--hit-primary)]" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Check Your Email</h1>
-          <p className="text-gray-400 mb-6">
+          <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Check Your Email</h1>
+          <p className="text-[var(--hit-muted-foreground)] mb-6">
             {email ? (
               <>
                 We&apos;ve sent a verification link to{' '}
-                <strong className="text-white">{email}</strong>.
+                <strong className="text-[var(--hit-foreground)]">{email}</strong>.
                 Click the link in the email to verify your account.
               </>
             ) : (
@@ -174,17 +174,17 @@ export function VerifyEmail({
               type="button"
               onClick={handleResend}
               disabled={loading}
-              className="text-indigo-400 hover:text-indigo-300 font-medium disabled:opacity-50"
+              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium disabled:opacity-50"
             >
               {loading ? 'Sending...' : "Didn't receive the email? Resend"}
             </button>
           )}
 
-          <div className="mt-8 pt-6 border-t border-gray-800">
+          <div className="mt-8 pt-6 border-t border-[var(--hit-border)]">
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-gray-400 hover:text-gray-300"
+              className="text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)]"
             >
               Back to Login
             </button>

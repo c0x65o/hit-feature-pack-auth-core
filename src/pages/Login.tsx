@@ -86,15 +86,15 @@ export function Login({
         </div>
 
         {/* Title */}
-        <h1 className="text-2xl font-bold text-center text-white mb-2">
+        <h1 className="text-2xl font-bold text-center text-[var(--hit-foreground)] mb-2">
           Welcome Back
         </h1>
-        <p className="text-center text-gray-400 mb-8">{tagline}</p>
+        <p className="text-center text-[var(--hit-muted-foreground)] mb-8">{tagline}</p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="mb-4 p-3 bg-[var(--hit-error-light)] border border-[var(--hit-error)] rounded-lg">
+            <p className="text-sm text-[var(--hit-error)]">{error}</p>
           </div>
         )}
 
@@ -128,15 +128,15 @@ export function Login({
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-gray-900"
+                  className="w-4 h-4 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
                 />
-                <span className="text-sm text-gray-300">Remember me</span>
+                <span className="text-sm text-[var(--hit-foreground)]">Remember me</span>
               </label>
             )}
             <button
               type="button"
               onClick={() => navigate('/forgot-password')}
-              className="text-sm font-medium text-indigo-400 hover:text-indigo-300"
+              className="text-sm font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
             >
               Forgot password?
             </button>
@@ -146,7 +146,7 @@ export function Login({
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-12 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-semibold rounded-lg transition-colors"
+            className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
           >
             {loading && <Loader2 className="w-5 h-5 animate-spin" />}
             {loading ? 'Signing in...' : 'Sign In'}
@@ -160,12 +160,12 @@ export function Login({
 
         {/* Sign up link */}
         {authConfig?.allow_signup && (
-          <p className="mt-8 text-center text-sm text-gray-400">
+          <p className="mt-8 text-center text-sm text-[var(--hit-muted-foreground)]">
             Don&apos;t have an account?{' '}
             <button
               type="button"
               onClick={() => navigate('/signup')}
-              className="font-medium text-indigo-400 hover:text-indigo-300"
+              className="font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
             >
               Sign up
             </button>

@@ -10,6 +10,7 @@ interface OAuthProvider {
   bgColor: string;
 }
 
+// OAuth providers keep their brand colors for recognition
 const PROVIDERS: Record<string, OAuthProvider> = {
   google: {
     id: 'google',
@@ -91,9 +92,9 @@ export function OAuthButtons({ providers }: OAuthButtonsProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 my-6">
-        <div className="flex-1 border-t border-gray-700" />
-        <span className="text-sm text-gray-500">or continue with</span>
-        <div className="flex-1 border-t border-gray-700" />
+        <div className="flex-1 border-t border-[var(--hit-border)]" />
+        <span className="text-sm text-[var(--hit-muted-foreground)]">or continue with</span>
+        <div className="flex-1 border-t border-[var(--hit-border)]" />
       </div>
 
       <div className={`grid gap-3 ${availableProviders.length > 2 ? 'grid-cols-1' : 'grid-cols-' + availableProviders.length}`}>

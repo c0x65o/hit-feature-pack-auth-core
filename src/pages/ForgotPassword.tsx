@@ -61,16 +61,16 @@ export function ForgotPassword({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-white mb-2">Check Your Email</h1>
-            <p className="text-gray-400 mb-6">
-              If an account exists with <strong className="text-white">{email}</strong>,
+            <CheckCircle className="w-16 h-16 text-[var(--hit-success)] mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Check Your Email</h1>
+            <p className="text-[var(--hit-muted-foreground)] mb-6">
+              If an account exists with <strong className="text-[var(--hit-foreground)]">{email}</strong>,
               you will receive a password reset link shortly.
             </p>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-indigo-400 hover:text-indigo-300 font-medium"
+              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
             >
               Back to Login
             </button>
@@ -87,7 +87,7 @@ export function ForgotPassword({
         <button
           type="button"
           onClick={() => navigate('/login')}
-          className="flex items-center gap-2 text-gray-400 hover:text-gray-300 mb-6"
+          className="flex items-center gap-2 text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Login
@@ -99,17 +99,17 @@ export function ForgotPassword({
         </div>
 
         {/* Title */}
-        <h1 className="text-2xl font-bold text-center text-white mb-2">
+        <h1 className="text-2xl font-bold text-center text-[var(--hit-foreground)] mb-2">
           Forgot Password?
         </h1>
-        <p className="text-center text-gray-400 mb-8">
+        <p className="text-center text-[var(--hit-muted-foreground)] mb-8">
           No worries, we&apos;ll send you reset instructions.
         </p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="mb-4 p-3 bg-[var(--hit-error-light)] border border-[var(--hit-error)] rounded-lg">
+            <p className="text-sm text-[var(--hit-error)]">{error}</p>
           </div>
         )}
 
@@ -129,7 +129,7 @@ export function ForgotPassword({
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-12 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-semibold rounded-lg transition-colors mt-2"
+            className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors mt-2"
           >
             {loading && <Loader2 className="w-5 h-5 animate-spin" />}
             {loading ? 'Sending...' : 'Send Reset Link'}
