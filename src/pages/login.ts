@@ -1,13 +1,12 @@
 /**
  * Login Page Generator
  * 
- * Generates a modern, responsive login page with:
- * - Logo/branding support
- * - Dark mode by default
- * - Configurable card size
- * - Dynamic signup link (based on auth config)
- * - Social login support
+ * Generates a modern, dark-themed login page with:
+ * - Logo from /icon.png
+ * - Dynamic OAuth providers (from auth module config)
+ * - Dynamic signup link (based on allow_signup)
  * - Remember me option
+ * - Forgot password link
  */
 
 import type { UISpec, RequestContext } from '@hit/feature-pack-types';
@@ -17,145 +16,118 @@ interface AuthCoreOptions {
   social_providers?: string[];
   show_remember_me?: boolean;
   login_redirect?: string;
-  // Username settings
   username_is_email?: boolean;
-  // Branding - passed from hit-config.json
-  branding?: {
-    logo_url?: string | null;
-    company_name?: string | null;
-    app_name?: string | null;
-    tagline?: string | null;
-    default_theme?: 'light' | 'dark' | 'system';
-    login_card_width?: 'sm' | 'md' | 'lg' | 'xl';
-  };
+  // Branding options
+  logo_url?: string;
+  app_name?: string;
+  tagline?: string;
 }
 
-// Card width classes based on config
-const CARD_WIDTHS = {
-  sm: 'max-w-sm',   // 384px
-  md: 'max-w-md',   // 448px
-  lg: 'max-w-lg',   // 512px
-  xl: 'max-w-xl',   // 576px
+interface AuthModuleConfig {
+  allow_signup?: boolean;
+  oauth_providers?: string[];
+  password_login?: boolean;
+  magic_link_login?: boolean;
+}
+
+// OAuth provider display info
+const OAUTH_PROVIDERS: Record<string, { label: string; icon: string; bgColor: string }> = {
+  google: {
+    label: 'Google',
+    icon: 'google',
+    bgColor: 'bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600',
+  },
+  github: {
+    label: 'GitHub',
+    icon: 'github',
+    bgColor: 'bg-gray-800 hover:bg-gray-700 text-white dark:bg-gray-700 dark:hover:bg-gray-600',
+  },
+  microsoft: {
+    label: 'Microsoft',
+    icon: 'microsoft',
+    bgColor: 'bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white',
+  },
+  apple: {
+    label: 'Apple',
+    icon: 'apple',
+    bgColor: 'bg-black hover:bg-gray-900 text-white',
+  },
 };
 
 export async function login(ctx: RequestContext): Promise<UISpec> {
   const options = ctx.options as AuthCoreOptions;
-  // moduleUrls.auth is a proxy path (e.g., '/api/proxy/auth')
-  // The shell app proxies these requests to the internal auth module
   const authUrl = ctx.moduleUrls.auth;
 
-  // Fetch auth module config to check if signup is allowed
-  // SECURITY: Default to false (fail closed) if fetch fails
-  let authConfig: { allow_signup?: boolean } = { allow_signup: false };
+  // Fetch auth module config to get dynamic settings
+  let authConfig: AuthModuleConfig = {
+    allow_signup: false,
+    oauth_providers: [],
+    password_login: true,
+  };
+  
   try {
-    authConfig = (await ctx.fetchModuleConfig('auth')) as { allow_signup?: boolean };
+    const config = await ctx.fetchModuleConfig('auth');
+    authConfig = {
+      allow_signup: (config as any).allow_signup ?? false,
+      oauth_providers: (config as any).oauth_providers ?? [],
+      password_login: (config as any).password_login ?? true,
+      magic_link_login: (config as any).magic_link_login ?? false,
+    };
   } catch (error) {
-    console.error('SECURITY: Failed to fetch auth config, defaulting to allow_signup=false:', error);
-    // Fail closed - don't show signup link if we can't verify it's allowed
+    console.error('Failed to fetch auth config:', error);
+    // Continue with defaults - fail closed for security
   }
 
-  // Determine card width from branding config
-  const cardWidth = CARD_WIDTHS[options.branding?.login_card_width || 'lg'] || CARD_WIDTHS.lg;
+  // Determine which OAuth providers to show
+  const oauthProviders = authConfig.oauth_providers || [];
+  const showOAuth = oauthProviders.length > 0;
 
   const children: UISpec[] = [];
 
-  // Logo/branding section - centered with proper spacing
-  const logoUrl = options.branding?.logo_url;
-  const appName = options.branding?.app_name || options.branding?.company_name;
-  const tagline = options.branding?.tagline;
-
-  if (logoUrl || appName) {
-    const brandingChildren: UISpec[] = [];
-
-    if (logoUrl) {
-      brandingChildren.push({
+  // ─────────────────────────────────────────────────────────────────────────
+  // LOGO
+  // ─────────────────────────────────────────────────────────────────────────
+  children.push({
+    type: 'Row',
+    justify: 'center',
+    className: 'mb-6',
+    children: [
+      {
         type: 'CustomWidget',
         widget: 'Image',
         props: {
-          src: logoUrl,
-          alt: appName || 'Logo',
-          className: 'h-16 w-auto mx-auto',
+          src: options.logo_url || '/icon.png',
+          alt: options.app_name || 'Logo',
+          className: 'h-16 w-auto',
         },
-        fallback: appName ? {
-          type: 'Text',
-          content: appName,
-          variant: 'h1',
-          className: 'text-3xl font-bold text-center text-gray-900 dark:text-white',
-        } : undefined,
-      });
-    } else if (appName) {
-      brandingChildren.push({
-        type: 'Text',
-        content: appName,
-        variant: 'h1',
-        className: 'text-3xl font-bold text-center text-gray-900 dark:text-white',
-      });
-    }
-
-    if (tagline) {
-      brandingChildren.push({
-        type: 'Text',
-        content: tagline,
-        variant: 'muted',
-        className: 'text-center text-sm mt-1',
-      });
-    }
-
-    children.push({
-      type: 'Column',
-      align: 'center',
-      className: 'mb-8',
-      children: brandingChildren,
-    });
-  }
-
-  // Title
-  children.push({
-    type: 'Text',
-    content: 'Sign in to your account',
-    variant: 'h2',
-    className: 'text-2xl font-semibold text-center mb-8 text-gray-900 dark:text-white',
+      },
+    ],
   });
 
-  // Social login buttons
-  if (options.show_social_login && options.social_providers?.length) {
-    const socialButtons: UISpec[] = options.social_providers.map((provider) => ({
-      type: 'Button',
-      label: `Continue with ${capitalize(provider)}`,
-      variant: 'outline',
-      icon: provider,
-      className: 'w-full h-11',
-      onClick: {
-        type: 'navigate',
-        to: `${authUrl}/oauth/${provider}/authorize`,
-      },
-    }));
+  // ─────────────────────────────────────────────────────────────────────────
+  // TITLE & SUBTITLE
+  // ─────────────────────────────────────────────────────────────────────────
+  children.push({
+    type: 'Text',
+    content: 'Welcome Back',
+    variant: 'h1',
+    className: 'text-2xl font-bold text-center text-white mb-2',
+  });
 
-    children.push({
-      type: 'Column',
-      gap: 12,
-      className: 'mb-6',
-      children: socialButtons,
-    });
+  children.push({
+    type: 'Text',
+    content: options.tagline || 'Sign in to continue your journey',
+    variant: 'muted',
+    className: 'text-center text-gray-400 mb-8',
+  });
 
-    // Divider
-    children.push({
-      type: 'Row',
-      align: 'center',
-      className: 'mb-6',
-      children: [
-        { type: 'CustomWidget', widget: 'Divider', props: { className: 'flex-1' } },
-        { type: 'Text', content: 'or continue with email', variant: 'muted', className: 'px-4 text-sm' },
-        { type: 'CustomWidget', widget: 'Divider', props: { className: 'flex-1' } },
-      ],
-    });
-  }
-
-  // Login form fields - support both email and username login
+  // ─────────────────────────────────────────────────────────────────────────
+  // LOGIN FORM
+  // ─────────────────────────────────────────────────────────────────────────
   const formFields: UISpec[] = [];
 
+  // Email/Username field
   if (options.username_is_email === false) {
-    // Username login
     formFields.push({
       type: 'TextField',
       name: 'username',
@@ -164,13 +136,13 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
       required: true,
       placeholder: 'johndoe',
       className: 'mb-4',
-      inputClassName: 'h-11 text-base',
+      inputClassName: 'h-12 bg-gray-800/50 border-gray-700 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-indigo-500',
+      labelClassName: 'text-gray-300 text-sm font-medium',
       validation: [
         { type: 'required', message: 'Username is required' },
       ],
     });
   } else {
-    // Email login (default)
     formFields.push({
       type: 'TextField',
       name: 'email',
@@ -179,7 +151,8 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
       required: true,
       placeholder: 'you@example.com',
       className: 'mb-4',
-      inputClassName: 'h-11 text-base',
+      inputClassName: 'h-12 bg-gray-800/50 border-gray-700 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-indigo-500',
+      labelClassName: 'text-gray-300 text-sm font-medium',
       validation: [
         { type: 'required', message: 'Email is required' },
         { type: 'email', message: 'Please enter a valid email' },
@@ -187,6 +160,7 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
     });
   }
 
+  // Password field
   formFields.push({
     type: 'TextField',
     name: 'password',
@@ -195,11 +169,13 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
     required: true,
     placeholder: '••••••••',
     className: 'mb-4',
-    inputClassName: 'h-11 text-base',
+    inputClassName: 'h-12 bg-gray-800/50 border-gray-700 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-indigo-500',
+    labelClassName: 'text-gray-300 text-sm font-medium',
+    showPasswordToggle: true,
     validation: [{ type: 'required', message: 'Password is required' }],
   });
 
-  // Remember me checkbox and forgot password link
+  // Remember me + Forgot password row
   if (options.show_remember_me !== false) {
     formFields.push({
       type: 'Row',
@@ -211,13 +187,14 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
           type: 'Checkbox',
           name: 'remember_me',
           checkboxLabel: 'Remember me',
-          className: 'text-sm',
+          className: 'text-sm text-gray-300',
+          checkboxClassName: 'border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500',
         },
         {
           type: 'Link',
           label: 'Forgot password?',
           href: '/forgot-password',
-          className: 'text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500',
+          className: 'text-sm font-medium text-indigo-400 hover:text-indigo-300',
         },
       ],
     });
@@ -230,56 +207,108 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
     endpoint: `${authUrl}/login`,
     method: 'POST',
     fields: formFields as any,
-    submitText: 'Sign in',
-    submitClassName: 'w-full h-11 text-base font-medium bg-blue-600 hover:bg-blue-700 text-white',
+    submitText: 'Sign In',
+    submitClassName: 'w-full h-12 text-base font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors',
     onSuccess: {
       type: 'navigate',
       to: options.login_redirect || '/',
     },
   });
 
-  // Sign up link (only if signup is allowed)
-  if (authConfig.allow_signup !== false) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // OAUTH PROVIDERS
+  // ─────────────────────────────────────────────────────────────────────────
+  if (showOAuth) {
+    // Divider
+    children.push({
+      type: 'Row',
+      align: 'center',
+      className: 'my-6',
+      children: [
+        {
+          type: 'CustomWidget',
+          widget: 'Divider',
+          props: { className: 'flex-1 border-gray-700' },
+        },
+        {
+          type: 'Text',
+          content: 'or continue with',
+          variant: 'muted',
+          className: 'px-4 text-sm text-gray-500',
+        },
+        {
+          type: 'CustomWidget',
+          widget: 'Divider',
+          props: { className: 'flex-1 border-gray-700' },
+        },
+      ],
+    });
+
+    // OAuth buttons - show in a row if 2 or fewer, otherwise stack
+    const oauthButtons: UISpec[] = oauthProviders
+      .filter(provider => OAUTH_PROVIDERS[provider])
+      .map((provider) => {
+        const providerInfo = OAUTH_PROVIDERS[provider];
+        return {
+          type: 'Button',
+          label: providerInfo.label,
+          variant: 'outline',
+          icon: providerInfo.icon,
+          className: `flex-1 h-11 ${providerInfo.bgColor} rounded-lg font-medium transition-colors`,
+          onClick: {
+            type: 'navigate',
+            to: `${authUrl}/oauth/${provider}/authorize`,
+          },
+        };
+      });
+
+    if (oauthButtons.length > 0) {
+      children.push({
+        type: oauthButtons.length <= 2 ? 'Row' : 'Column',
+        gap: 12,
+        className: 'mb-6',
+        children: oauthButtons,
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SIGNUP LINK (only if allowed)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (authConfig.allow_signup) {
     children.push({
       type: 'Row',
       justify: 'center',
-      className: 'mt-8 pt-6 border-t border-gray-200 dark:border-gray-700',
+      className: 'mt-8',
       children: [
         {
           type: 'Text',
           content: "Don't have an account?",
           variant: 'muted',
-          className: 'text-sm',
+          className: 'text-sm text-gray-400',
         },
         {
           type: 'Link',
           label: 'Sign up',
           href: '/signup',
-          className: 'ml-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500',
+          className: 'ml-1 text-sm font-medium text-indigo-400 hover:text-indigo-300',
         },
       ],
     });
   }
 
-  // Page wrapper - dark mode by default if configured
-  const defaultTheme = options.branding?.default_theme || 'dark';
-  const pageClass = defaultTheme === 'dark' 
-    ? 'min-h-screen flex items-center justify-center bg-gray-900 dark'
-    : 'min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900';
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE WRAPPER - Dark themed
+  // ─────────────────────────────────────────────────────────────────────────
   return {
     type: 'Page',
-    className: pageClass,
+    className: 'min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800',
     children: [
       {
         type: 'Card',
-        className: `w-full ${cardWidth} p-8 sm:p-10 bg-white dark:bg-gray-800 shadow-xl dark:shadow-2xl border-0 dark:border dark:border-gray-700`,
+        className: 'w-full max-w-md p-8 bg-gray-900/80 backdrop-blur-sm border border-gray-800 rounded-2xl shadow-2xl',
         children,
       },
     ],
   };
-}
-
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
 }
