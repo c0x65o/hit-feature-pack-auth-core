@@ -7,12 +7,6 @@ import type { UISpec, RequestContext } from '@hit/feature-pack-types';
 interface AuthCoreOptions {
   show_social_login?: boolean;
   social_providers?: string[];
-  // Password requirements
-  password_min_length?: number;
-  password_require_uppercase?: boolean;
-  password_require_lowercase?: boolean;
-  password_require_number?: boolean;
-  password_require_special?: boolean;
   // Username settings
   username_is_email?: boolean;
   // Terms
@@ -21,24 +15,32 @@ interface AuthCoreOptions {
   privacy_url?: string;
   // Redirects
   signup_redirect?: string;
-  require_email_verification?: boolean;
   branding?: {
     logo_url?: string | null;
     company_name?: string | null;
   };
 }
 
+// Password requirements come from auth module, not feature pack options
+interface PasswordConfig {
+  password_min_length?: number;
+  password_require_uppercase?: boolean;
+  password_require_lowercase?: boolean;
+  password_require_number?: boolean;
+  password_require_special?: boolean;
+}
+
 /**
- * Build password help text based on requirements
+ * Build password help text based on requirements from auth module
  */
-function buildPasswordHelpText(options: AuthCoreOptions): string {
-  const minLength = options.password_min_length || 8;
+function buildPasswordHelpText(config: PasswordConfig): string {
+  const minLength = config.password_min_length || 8;
   const requirements: string[] = [`at least ${minLength} characters`];
 
-  if (options.password_require_uppercase) requirements.push('one uppercase letter');
-  if (options.password_require_lowercase) requirements.push('one lowercase letter');
-  if (options.password_require_number) requirements.push('one number');
-  if (options.password_require_special) requirements.push('one special character');
+  if (config.password_require_uppercase) requirements.push('one uppercase letter');
+  if (config.password_require_lowercase) requirements.push('one lowercase letter');
+  if (config.password_require_number) requirements.push('one number');
+  if (config.password_require_special) requirements.push('one special character');
 
   if (requirements.length === 1) {
     return `Must be ${requirements[0]}`;
@@ -47,37 +49,37 @@ function buildPasswordHelpText(options: AuthCoreOptions): string {
 }
 
 /**
- * Build password validation rules based on requirements
+ * Build password validation rules based on requirements from auth module
  */
-function buildPasswordValidation(options: AuthCoreOptions): any[] {
-  const minLength = options.password_min_length || 8;
+function buildPasswordValidation(config: PasswordConfig): any[] {
+  const minLength = config.password_min_length || 8;
   const validations: any[] = [
     { type: 'required', message: 'Password is required' },
     { type: 'min', value: minLength, message: `Password must be at least ${minLength} characters` },
   ];
 
-  if (options.password_require_uppercase) {
+  if (config.password_require_uppercase) {
     validations.push({
       type: 'pattern',
       value: '[A-Z]',
       message: 'Password must contain at least one uppercase letter',
     });
   }
-  if (options.password_require_lowercase) {
+  if (config.password_require_lowercase) {
     validations.push({
       type: 'pattern',
       value: '[a-z]',
       message: 'Password must contain at least one lowercase letter',
     });
   }
-  if (options.password_require_number) {
+  if (config.password_require_number) {
     validations.push({
       type: 'pattern',
       value: '[0-9]',
       message: 'Password must contain at least one number',
     });
   }
-  if (options.password_require_special) {
+  if (config.password_require_special) {
     validations.push({
       type: 'pattern',
       value: '[!@#$%^&*(),.?":{}|<>]',
@@ -94,13 +96,23 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
   // The shell app proxies these requests to the internal auth module
   const authUrl = ctx.moduleUrls.auth;
 
-  // Fetch auth module config to check if signup is allowed
-  let authConfig: { allow_signup?: boolean } = {};
+  // Fetch auth module config to check if signup is allowed and get password requirements
+  // SECURITY: Default to false (fail closed) if fetch fails
+  interface AuthModuleConfig {
+    allow_signup?: boolean;
+    email_verification?: boolean;
+    password_min_length?: number;
+    password_require_uppercase?: boolean;
+    password_require_lowercase?: boolean;
+    password_require_number?: boolean;
+    password_require_special?: boolean;
+  }
+  let authConfig: AuthModuleConfig = { allow_signup: false };
   try {
-    authConfig = (await ctx.fetchModuleConfig('auth')) as { allow_signup?: boolean };
+    authConfig = (await ctx.fetchModuleConfig('auth')) as AuthModuleConfig;
   } catch (error) {
-    console.warn('Failed to fetch auth config, defaulting to allow_signup=true:', error);
-    authConfig = { allow_signup: true };
+    console.error('SECURITY: Failed to fetch auth config, defaulting to allow_signup=false:', error);
+    // Fail closed - block signup if we can't verify it's allowed
   }
 
   // If signup is disabled, return an error page
@@ -240,7 +252,7 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
     ],
   });
 
-  // Password field with dynamic validation
+  // Password field with dynamic validation from auth module config
   formFields.push({
     type: 'TextField',
     name: 'password',
@@ -248,8 +260,8 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
     inputType: 'password',
     required: true,
     placeholder: '••••••••',
-    helpText: buildPasswordHelpText(options),
-    validation: buildPasswordValidation(options),
+    helpText: buildPasswordHelpText(authConfig),
+    validation: buildPasswordValidation(authConfig),
   });
 
   // Confirm password field
@@ -280,7 +292,7 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
     });
   }
 
-  // Signup form
+  // Signup form - email_verification comes from auth module config
   children.push({
     type: 'Form',
     id: 'signup-form',
@@ -288,7 +300,7 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
     method: 'POST',
     fields: formFields,
     submitText: 'Create account',
-    onSuccess: options.require_email_verification
+    onSuccess: authConfig.email_verification
       ? {
           type: 'navigate',
           to: '/verify-email?signup=true',

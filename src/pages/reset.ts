@@ -4,17 +4,86 @@
 
 import type { UISpec, RequestContext } from '@hit/feature-pack-types';
 
-interface AuthCoreOptions {
+// Password requirements come from auth module, not feature pack options
+interface PasswordConfig {
   password_min_length?: number;
-  login_redirect?: string;
+  password_require_uppercase?: boolean;
+  password_require_lowercase?: boolean;
+  password_require_number?: boolean;
+  password_require_special?: boolean;
+}
+
+/**
+ * Build password help text based on requirements from auth module
+ */
+function buildPasswordHelpText(config: PasswordConfig): string {
+  const minLength = config.password_min_length || 8;
+  const requirements: string[] = [`at least ${minLength} characters`];
+
+  if (config.password_require_uppercase) requirements.push('one uppercase letter');
+  if (config.password_require_lowercase) requirements.push('one lowercase letter');
+  if (config.password_require_number) requirements.push('one number');
+  if (config.password_require_special) requirements.push('one special character');
+
+  if (requirements.length === 1) {
+    return `Must be ${requirements[0]}`;
+  }
+  return `Must contain ${requirements.join(', ')}`;
+}
+
+/**
+ * Build password validation rules based on requirements from auth module
+ */
+function buildPasswordValidation(config: PasswordConfig): any[] {
+  const minLength = config.password_min_length || 8;
+  const validations: any[] = [
+    { type: 'required', message: 'Password is required' },
+    { type: 'min', value: minLength, message: `Password must be at least ${minLength} characters` },
+  ];
+
+  if (config.password_require_uppercase) {
+    validations.push({
+      type: 'pattern',
+      value: '[A-Z]',
+      message: 'Password must contain at least one uppercase letter',
+    });
+  }
+  if (config.password_require_lowercase) {
+    validations.push({
+      type: 'pattern',
+      value: '[a-z]',
+      message: 'Password must contain at least one lowercase letter',
+    });
+  }
+  if (config.password_require_number) {
+    validations.push({
+      type: 'pattern',
+      value: '[0-9]',
+      message: 'Password must contain at least one number',
+    });
+  }
+  if (config.password_require_special) {
+    validations.push({
+      type: 'pattern',
+      value: '[!@#$%^&*(),.?":{}|<>]',
+      message: 'Password must contain at least one special character',
+    });
+  }
+
+  return validations;
 }
 
 export async function reset(ctx: RequestContext): Promise<UISpec> {
-  const options = ctx.options as AuthCoreOptions;
-  // moduleUrls.auth is a proxy path (e.g., '/api/proxy/auth')
-  // The shell app proxies these requests to the internal auth module
+  // Fetch password requirements from auth module
+  let authConfig: PasswordConfig = {};
+  try {
+    authConfig = (await ctx.fetchModuleConfig('auth')) as PasswordConfig;
+  } catch (error) {
+    console.warn('Failed to fetch auth config for password requirements:', error);
+    // Use defaults if fetch fails
+  }
+
   const authUrl = ctx.moduleUrls.auth;
-  const minLength = options.password_min_length || 8;
 
   return {
     type: 'Page',
@@ -54,11 +123,8 @@ export async function reset(ctx: RequestContext): Promise<UISpec> {
                 inputType: 'password',
                 required: true,
                 placeholder: '••••••••',
-                helpText: `Must be at least ${minLength} characters`,
-                validation: [
-                  { type: 'required', message: 'Password is required' },
-                  { type: 'min', value: minLength, message: `Password must be at least ${minLength} characters` },
-                ],
+                helpText: buildPasswordHelpText(authConfig),
+                validation: buildPasswordValidation(authConfig),
               },
               {
                 type: 'TextField',

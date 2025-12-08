@@ -24,12 +24,13 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
   const authUrl = ctx.moduleUrls.auth;
 
   // Fetch auth module config to check if signup is allowed
-  let authConfig: { allow_signup?: boolean } = {};
+  // SECURITY: Default to false (fail closed) if fetch fails
+  let authConfig: { allow_signup?: boolean } = { allow_signup: false };
   try {
     authConfig = (await ctx.fetchModuleConfig('auth')) as { allow_signup?: boolean };
   } catch (error) {
-    console.warn('Failed to fetch auth config, defaulting to allow_signup=true:', error);
-    authConfig = { allow_signup: true };
+    console.error('SECURITY: Failed to fetch auth config, defaulting to allow_signup=false:', error);
+    // Fail closed - don't show signup link if we can't verify it's allowed
   }
 
   const children: UISpec[] = [];
