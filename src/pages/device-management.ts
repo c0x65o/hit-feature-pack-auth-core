@@ -15,120 +15,36 @@ export async function deviceManagement(ctx: RequestContext): Promise<UISpec> {
 
   if (!options.show_device_management) {
     return {
-      type: 'Container',
+      type: 'Page',
       children: [
         {
-          type: 'Text',
-          content: 'Device management is not available',
-          variant: 'h2',
+          type: 'Alert',
+          variant: 'error',
+          title: 'Device management is not available',
+          message: 'Device management is not enabled',
         },
       ],
     };
   }
 
-  const children: UISpec[] = [];
-
-  // Title
-  children.push({
-    type: 'Text',
-    content: 'Manage Devices',
-    variant: 'h2',
-    className: 'mb-6',
-  });
-
-  // Description
-  children.push({
-    type: 'Text',
-    content: 'View and manage devices that have access to your account',
-    variant: 'body',
-    className: 'mb-8 text-muted-foreground',
-  });
-
-  // Device list (fetched from API)
-  children.push({
-    type: 'DataTable',
-    dataSource: {
-      type: 'api',
-      method: 'GET',
-      url: `${authUrl}/devices`,
-    },
-    columns: [
+  return {
+    type: 'Page',
+    title: 'Manage Devices',
+    description: 'View and manage devices that have access to your account',
+    children: [
       {
-        key: 'name',
-        label: 'Device Name',
-        render: (device: any) => device.name || 'Unknown Device',
-      },
-      {
-        key: 'user_agent',
-        label: 'Browser/Device',
-        render: (device: any) => {
-          const ua = device.user_agent || '';
-          // Simple user agent parsing
-          if (ua.includes('Chrome')) return 'Chrome';
-          if (ua.includes('Firefox')) return 'Firefox';
-          if (ua.includes('Safari')) return 'Safari';
-          return ua.substring(0, 50) || 'Unknown';
-        },
-      },
-      {
-        key: 'ip_address',
-        label: 'IP Address',
-      },
-      {
-        key: 'trusted',
-        label: 'Trusted',
-        render: (device: any) => (device.trusted ? 'Yes' : 'No'),
-      },
-      {
-        key: 'last_used_at',
-        label: 'Last Used',
-        render: (device: any) => {
-          if (!device.last_used_at) return 'Never';
-          const date = new Date(device.last_used_at);
-          return date.toLocaleDateString();
-        },
-      },
-      {
-        key: 'actions',
-        label: 'Actions',
-        render: (device: any) => [
-          {
-            type: 'Button',
-            label: device.trusted ? 'Untrust' : 'Trust',
-            variant: 'outline',
-            size: 'sm',
-            onClick: {
-              type: 'api',
-              method: 'POST',
-              url: `${authUrl}/devices/${device.id}/trust`,
-              onSuccess: {
-                type: 'refresh',
-              },
-            },
-          },
-          {
-            type: 'Button',
-            label: 'Revoke',
-            variant: 'destructive',
-            size: 'sm',
-            onClick: {
-              type: 'api',
-              method: 'DELETE',
-              url: `${authUrl}/devices/${device.id}`,
-              onSuccess: {
-                type: 'refresh',
-              },
-            },
-          },
+        type: 'DataTable',
+        endpoint: `${authUrl}/devices`,
+        columns: [
+          { key: 'name', label: 'Device Name', type: 'text' },
+          { key: 'user_agent', label: 'Browser/Device', type: 'text' },
+          { key: 'ip_address', label: 'IP Address', type: 'text' },
+          { key: 'trusted', label: 'Trusted', type: 'badge' },
+          { key: 'last_used_at', label: 'Last Used', type: 'datetime' },
         ],
+        pageSize: 25,
+        emptyMessage: 'No devices found',
       },
     ],
-  });
-
-  return {
-    type: 'Container',
-    maxWidth: 'lg',
-    className: 'mx-auto p-6',
-    children,
   };
 }

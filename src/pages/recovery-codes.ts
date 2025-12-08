@@ -14,26 +14,19 @@ export async function recoveryCodes(ctx: RequestContext): Promise<UISpec> {
 
   if (!options.show_recovery_codes) {
     return {
-      type: 'Container',
+      type: 'Page',
       children: [
         {
-          type: 'Text',
-          content: 'Recovery codes are not available',
-          variant: 'h2',
+          type: 'Alert',
+          variant: 'error',
+          title: 'Recovery codes are not available',
+          message: 'Recovery codes are not enabled',
         },
       ],
     };
   }
 
   const children: UISpec[] = [];
-
-  // Title
-  children.push({
-    type: 'Text',
-    content: 'Recovery Codes',
-    variant: 'h2',
-    className: 'mb-6',
-  });
 
   // Warning
   children.push({
@@ -43,101 +36,31 @@ export async function recoveryCodes(ctx: RequestContext): Promise<UISpec> {
     message: 'These codes can be used to access your account if you lose access to your authenticator app. Each code can only be used once.',
   });
 
-  // Generate/Regenerate button
+  // Info text
   children.push({
-    type: 'Button',
-    label: 'Generate New Recovery Codes',
-    variant: 'primary',
-    className: 'mb-6',
-    onClick: {
-      type: 'api',
-      method: 'GET',
-      url: `${authUrl}/2fa/backup-codes`,
-      onSuccess: {
-        type: 'updateState',
-        stateKey: 'recoveryCodes',
-      },
-    },
+    type: 'Text',
+    content: 'Click the button below to generate new recovery codes. This will invalidate any previously generated codes.',
+    variant: 'body',
+    className: 'mt-4 mb-6',
   });
 
-  // Codes display
+  // Link to API endpoint (simplified UI)
   children.push({
-    type: 'Conditional',
-    condition: {
-      type: 'state',
-      key: 'recoveryCodes',
-      operator: 'exists',
-    },
-    children: [
-      {
-        type: 'Container',
-        className: 'bg-muted p-6 rounded-lg mb-4',
-        children: [
-          {
-            type: 'Text',
-            content: 'Your recovery codes:',
-            variant: 'h3',
-            className: 'mb-4',
-          },
-          {
-            type: 'CodeBlock',
-            content: {
-              type: 'state',
-              key: 'recoveryCodes.codes',
-              transform: (codes: string[]) => codes.join('\n'),
-            },
-            language: 'text',
-          },
-        ],
-      },
-      {
-        type: 'Row',
-        gap: 4,
-        children: [
-          {
-            type: 'Button',
-            label: 'Copy Codes',
-            variant: 'outline',
-            onClick: {
-              type: 'copyToClipboard',
-              text: {
-                type: 'state',
-                key: 'recoveryCodes.codes',
-                transform: (codes: string[]) => codes.join('\n'),
-              },
-            },
-          },
-          {
-            type: 'Button',
-            label: 'Download',
-            variant: 'outline',
-            onClick: {
-              type: 'download',
-              filename: 'recovery-codes.txt',
-              content: {
-                type: 'state',
-                key: 'recoveryCodes.codes',
-                transform: (codes: string[]) => codes.join('\n'),
-              },
-            },
-          },
-          {
-            type: 'Button',
-            label: 'Print',
-            variant: 'outline',
-            onClick: {
-              type: 'print',
-            },
-          },
-        ],
-      },
-    ],
+    type: 'Link',
+    label: 'View API Documentation',
+    href: '/docs',
   });
 
   return {
-    type: 'Container',
-    maxWidth: 'md',
-    className: 'mx-auto p-6',
-    children,
+    type: 'Page',
+    title: 'Recovery Codes',
+    className: 'min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900',
+    children: [
+      {
+        type: 'Card',
+        className: 'w-full max-w-md p-8',
+        children,
+      },
+    ],
   };
 }

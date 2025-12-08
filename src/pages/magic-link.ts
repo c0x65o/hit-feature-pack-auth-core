@@ -62,31 +62,28 @@ export async function magicLink(ctx: RequestContext): Promise<UISpec> {
   // Email input form
   children.push({
     type: 'Form',
-    action: `${authUrl}/magic-link/request`,
+    id: 'magic-link-form',
+    endpoint: `${authUrl}/magic-link/request`,
     method: 'POST',
-    children: [
+    fields: [
       {
-        type: 'FormField',
+        type: 'TextField',
         name: 'email',
         label: 'Email address',
         inputType: 'email',
         required: true,
         placeholder: 'you@example.com',
-      },
-      {
-        type: 'Button',
-        label: 'Send magic link',
-        variant: 'primary',
-        type: 'submit',
-        className: 'w-full mt-4',
+        validation: [
+          { type: 'required', message: 'Email is required' },
+          { type: 'email', message: 'Please enter a valid email' },
+        ],
       },
     ],
-    onSubmit: {
-      type: 'api',
-      method: 'POST',
-      url: `${authUrl}/magic-link/request`,
-      onSuccess: {
-        type: 'showMessage',
+    submitText: 'Send magic link',
+    onSuccess: {
+      type: 'custom',
+      name: 'showMessage',
+      payload: {
         message: 'Check your email for the magic link',
         variant: 'success',
       },
@@ -94,9 +91,14 @@ export async function magicLink(ctx: RequestContext): Promise<UISpec> {
   });
 
   return {
-    type: 'Container',
-    maxWidth: 'md',
-    className: 'mx-auto p-6',
-    children,
+    type: 'Page',
+    className: 'min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900',
+    children: [
+      {
+        type: 'Card',
+        className: 'w-full max-w-md p-8',
+        children,
+      },
+    ],
   };
 }
