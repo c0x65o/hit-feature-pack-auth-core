@@ -1,0 +1,41 @@
+{
+  "name": "@hit/feature-pack-auth-core",
+  "version": "1.0.0",
+  "description": "Core authentication UI feature pack (login, signup, forgot password, verify)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./pages": {
+      "types": "./dist/pages/index.d.ts",
+      "import": "./dist/pages/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@hit/feature-pack-types": "^1.0.0"
+  },
+  "devDependencies": {
+    "@hit/feature-pack-types": "file:../hit-feature-pack-types",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "hit",
+    "feature-pack",
+    "auth",
+    "authentication"
+  ],
+  "license": "MIT"
+}
