@@ -23,6 +23,18 @@ surfaces:
     - id: auth.reset
       path: /reset-password
       generator: reset
+    - id: auth.magic-link
+      path: /magic-link
+      generator: magicLink
+    - id: auth.totp-setup
+      path: /settings/2fa/setup
+      generator: totpSetup
+    - id: auth.device-management
+      path: /settings/devices
+      generator: deviceManagement
+    - id: auth.recovery-codes
+      path: /settings/recovery-codes
+      generator: recoveryCodes
 
   nav:
     contributions:

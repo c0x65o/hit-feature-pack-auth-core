@@ -10,6 +10,10 @@ import { signup } from './pages/signup';
 import { forgot } from './pages/forgot';
 import { verify } from './pages/verify';
 import { reset } from './pages/reset';
+import { magicLink } from './pages/magic-link';
+import { totpSetup } from './pages/totp-setup';
+import { deviceManagement } from './pages/device-management';
+import { recoveryCodes } from './pages/recovery-codes';
 import { navContributions } from './nav';
 import { configSchema, configDefaults } from './config';
 import type { FeaturePackModule, FeaturePackMetadata } from '@hit/feature-pack-types';
@@ -21,6 +25,10 @@ export const pages = {
   forgot,
   verify,
   reset,
+  magicLink,
+  totpSetup,
+  deviceManagement,
+  recoveryCodes,
 };
 
 // Navigation contributions
