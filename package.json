@@ -1,41 +1,47 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.10",
-  "description": "Core authentication UI feature pack (login, signup, forgot password, verify)",
+  "version": "2.0.1",
+  "description": "Core authentication UI - login, signup, forgot password, email verification",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.js"
     },
-    "./pages": {
-      "types": "./dist/pages/index.d.ts",
-      "import": "./dist/pages/index.js"
+    "./pages/*": {
+      "types": "./dist/pages/*.d.ts",
+      "import": "./dist/pages/*.js"
     }
   },
   "files": [
     "dist",
-    "src"
+    "feature-pack.yaml"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build"
   },
+  "dependencies": {
+    "lucide-react": "^0.400.0"
+  },
   "peerDependencies": {
-    "@hit/feature-pack-types": "^1.0.0"
+    "react": "^18.0.0",
+    "next": "^14.0.0 || ^15.0.0",
+    "@hit/sdk": "*"
   },
   "devDependencies": {
-    "@hit/feature-pack-types": "file:../hit-feature-pack-types",
+    "@types/react": "^18.2.0",
     "typescript": "^5.0.0"
   },
   "keywords": [
     "hit",
     "feature-pack",
     "auth",
-    "authentication"
+    "login",
+    "signup"
   ],
   "license": "MIT"
 }

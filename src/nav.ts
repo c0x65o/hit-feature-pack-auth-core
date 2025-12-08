@@ -1,26 +1,28 @@
 /**
- * Navigation contributions for auth-core feature pack
+ * Navigation configuration for auth-core feature pack
  */
 
-import type { NavContribution } from '@hit/feature-pack-types';
+export interface NavItem {
+  id: string;
+  label: string;
+  path: string;
+  icon: string;
+  showWhen?: 'authenticated' | 'unauthenticated' | 'always';
+}
 
-export const navContributions: NavContribution[] = [
+export const nav: NavItem[] = [
   {
-    id: 'auth.login',
+    id: 'login',
     label: 'Login',
     path: '/login',
-    slots: ['topbar.right'],
-    permissions: ['!authenticated'], // Show only when not logged in
-    order: 100,
     icon: 'log-in',
+    showWhen: 'unauthenticated',
   },
   {
-    id: 'auth.signup',
+    id: 'signup',
     label: 'Sign Up',
     path: '/signup',
-    slots: ['topbar.right'],
-    permissions: ['!authenticated'],
-    order: 110,
     icon: 'user-plus',
+    showWhen: 'unauthenticated',
   },
 ];

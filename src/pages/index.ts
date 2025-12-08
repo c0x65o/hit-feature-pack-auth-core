@@ -1,13 +1,9 @@
 /**
- * Page exports for auth-core feature pack
+ * Auth Core Pages
  */
 
-export { login } from './login';
-export { signup } from './signup';
-export { forgot } from './forgot';
-export { verify } from './verify';
-export { reset } from './reset';
-export { magicLink } from './magic-link';
-export { totpSetup } from './totp-setup';
-export { deviceManagement } from './device-management';
-export { recoveryCodes } from './recovery-codes';
+export { Login, default as LoginPage } from './Login';
+export { Signup, default as SignupPage } from './Signup';
+export { ForgotPassword, default as ForgotPasswordPage } from './ForgotPassword';
+export { ResetPassword, default as ResetPasswordPage } from './ResetPassword';
+export { VerifyEmail, default as VerifyEmailPage } from './VerifyEmail';

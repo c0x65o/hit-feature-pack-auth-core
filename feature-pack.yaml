@@ -2,104 +2,67 @@
 # Core authentication UI (login, signup, forgot password, email verification)
 
 name: auth-core
-version: 1.0.0
-description: "Core authentication UI - login, signup, forgot password, email verification"
+version: 2.0.0
+description: Core authentication UI - login, signup, forgot password, email verification
 
-# What this pack provides
-surfaces:
-  pages:
-    - id: auth.login
-      path: /login
-      generator: login
-    - id: auth.signup
-      path: /signup
-      generator: signup
-    - id: auth.forgot
-      path: /forgot-password
-      generator: forgot
-    - id: auth.verify
-      path: /verify-email
-      generator: verify
-    - id: auth.reset
-      path: /reset-password
-      generator: reset
-    - id: auth.magic-link
-      path: /magic-link
-      generator: magicLink
-    - id: auth.totp-setup
-      path: /settings/2fa/setup
-      generator: totpSetup
-    - id: auth.device-management
-      path: /settings/devices
-      generator: deviceManagement
-    - id: auth.recovery-codes
-      path: /settings/recovery-codes
-      generator: recoveryCodes
+# Route definitions
+routes:
+  - path: /login
+    page: Login
+  - path: /signup
+    page: Signup
+  - path: /forgot-password
+    page: ForgotPassword
+  - path: /reset-password
+    page: ResetPassword
+  - path: /verify-email
+    page: VerifyEmail
 
-  nav:
-    contributions:
-      - id: auth.login
-        label: Login
-        path: /login
-        slots: [topbar.right]
-        permissions: ['!authenticated']
-        order: 100
-      - id: auth.signup
-        label: Sign Up
-        path: /signup
-        slots: [topbar.right]
-        permissions: ['!authenticated']
-        order: 110
+# Navigation contributions (for non-authenticated users)
+nav:
+  - id: login
+    label: Login
+    path: /login
+    icon: log-in
+    showWhen: unauthenticated
+  - id: signup
+    label: Sign Up
+    path: /signup
+    icon: user-plus
+    showWhen: unauthenticated
 
-# What this pack requires
-dependencies:
-  modules:
-    - name: auth
-      features:
-        - password_login
-        - email_verification
-        - password_reset
+# Dependencies
+requires:
+  modules: [auth]
 
 # Configurable options
 config:
-  defaults:
-    show_social_login: true
-    social_providers: []
-    require_email_verification: true
-    password_min_length: 8
-    show_remember_me: true
-    login_redirect: /
-    signup_redirect: /
-    branding:
-      logo_url: null
-      company_name: null
-
   schema:
-    type: object
-    properties:
-      show_social_login:
-        type: boolean
-        description: "Show social login buttons (Google, GitHub, etc.)"
-      social_providers:
-        type: array
-        items:
-          type: string
-          enum: [google, github, microsoft, apple]
-        description: "Which social providers to show"
-      require_email_verification:
-        type: boolean
-        description: "Require email verification before login"
-      password_min_length:
-        type: integer
-        minimum: 6
-        maximum: 32
-        description: "Minimum password length"
-      show_remember_me:
-        type: boolean
-        description: "Show 'Remember me' checkbox on login"
-      login_redirect:
-        type: string
-        description: "Where to redirect after successful login"
-      signup_redirect:
-        type: string
-        description: "Where to redirect after successful signup"
+    show_social_login:
+      type: boolean
+      default: true
+      description: Show social login buttons
+    social_providers:
+      type: array
+      default: []
+      description: OAuth providers to show (google, github, microsoft, apple)
+    show_remember_me:
+      type: boolean
+      default: true
+      description: Show remember me checkbox on login
+    login_redirect:
+      type: string
+      default: "/"
+      description: Where to redirect after login
+    signup_redirect:
+      type: string
+      default: "/"
+      description: Where to redirect after signup
+    password_min_length:
+      type: number
+      default: 8
+      description: Minimum password length
+    branding:
+      type: object
+      default: {}
+      description: Branding options (logo_url, app_name, tagline)
