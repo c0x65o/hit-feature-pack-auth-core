@@ -94,6 +94,49 @@ export async function signup(ctx: RequestContext): Promise<UISpec> {
   // The shell app proxies these requests to the internal auth module
   const authUrl = ctx.moduleUrls.auth;
 
+  // Fetch auth module config to check if signup is allowed
+  let authConfig: { allow_signup?: boolean } = {};
+  try {
+    authConfig = (await ctx.fetchModuleConfig('auth')) as { allow_signup?: boolean };
+  } catch (error) {
+    console.warn('Failed to fetch auth config, defaulting to allow_signup=true:', error);
+    authConfig = { allow_signup: true };
+  }
+
+  // If signup is disabled, return an error page
+  if (authConfig.allow_signup === false) {
+    return {
+      type: 'Page',
+      className: 'min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900',
+      children: [
+        {
+          type: 'Card',
+          className: 'w-full max-w-md p-8',
+          children: [
+            {
+              type: 'Text',
+              content: 'Registration Disabled',
+              variant: 'h2',
+              className: 'text-center mb-4',
+            },
+            {
+              type: 'Text',
+              content: 'New user registration is currently disabled. Please contact an administrator if you need access.',
+              variant: 'muted',
+              className: 'text-center mb-6',
+            },
+            {
+              type: 'Link',
+              label: 'Back to Sign In',
+              href: '/login',
+              className: 'w-full text-center',
+            },
+          ],
+        },
+      ],
+    };
+  }
+
   const children: UISpec[] = [];
 
   // Logo/branding

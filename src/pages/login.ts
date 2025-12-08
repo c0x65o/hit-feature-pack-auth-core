@@ -23,6 +23,15 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
   // The shell app proxies these requests to the internal auth module
   const authUrl = ctx.moduleUrls.auth;
 
+  // Fetch auth module config to check if signup is allowed
+  let authConfig: { allow_signup?: boolean } = {};
+  try {
+    authConfig = (await ctx.fetchModuleConfig('auth')) as { allow_signup?: boolean };
+  } catch (error) {
+    console.warn('Failed to fetch auth config, defaulting to allow_signup=true:', error);
+    authConfig = { allow_signup: true };
+  }
+
   const children: UISpec[] = [];
 
   // Logo/branding
@@ -169,25 +178,27 @@ export async function login(ctx: RequestContext): Promise<UISpec> {
     },
   });
 
-  // Sign up link
-  children.push({
-    type: 'Row',
-    justify: 'center',
-    className: 'mt-6',
-    children: [
-      {
-        type: 'Text',
-        content: "Don't have an account?",
-        variant: 'muted',
-      },
-      {
-        type: 'Link',
-        label: 'Sign up',
-        href: '/signup',
-        className: 'ml-1',
-      },
-    ],
-  });
+  // Sign up link (only if signup is allowed)
+  if (authConfig.allow_signup !== false) {
+    children.push({
+      type: 'Row',
+      justify: 'center',
+      className: 'mt-6',
+      children: [
+        {
+          type: 'Text',
+          content: "Don't have an account?",
+          variant: 'muted',
+        },
+        {
+          type: 'Link',
+          label: 'Sign up',
+          href: '/signup',
+          className: 'ml-1',
+        },
+      ],
+    });
+  }
 
   return {
     type: 'Page',
