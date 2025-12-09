@@ -5,6 +5,6 @@ interface VerifyEmailProps {
     logoUrl?: string;
     appName?: string;
 }
-export declare function VerifyEmail({ token: propToken, email: propEmail, onNavigate, logoUrl, appName, }: VerifyEmailProps): import("react/jsx-runtime").JSX.Element;
+export declare function VerifyEmail(props: VerifyEmailProps): import("react/jsx-runtime").JSX.Element;
 export default VerifyEmail;
 //# sourceMappingURL=VerifyEmail.d.ts.map

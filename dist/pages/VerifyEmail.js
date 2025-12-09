@@ -2,13 +2,14 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
-import { AuthLayout, AuthCard } from '../components/AuthCard';
+import { ThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
-export function VerifyEmail({ token: propToken, email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
+function VerifyEmailContent({ token: propToken, email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
     const [token, setToken] = useState(propToken || '');
     const [email, setEmail] = useState(propEmail || '');
     const [autoVerified, setAutoVerified] = useState(false);
     const { verifyEmail, resendVerification, loading, error, success, clearError } = useVerifyEmail();
+    const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
         if (onNavigate) {
             onNavigate(path);
@@ -17,7 +18,6 @@ export function VerifyEmail({ token: propToken, email: propEmail, onNavigate, lo
             window.location.href = path;
         }
     };
-    // Extract token and email from URL if not provided as props
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
@@ -33,7 +33,6 @@ export function VerifyEmail({ token: propToken, email: propEmail, onNavigate, lo
             }
         }
     }, [propToken, propEmail]);
-    // Auto-verify if token is present
     useEffect(() => {
         if (token && !autoVerified && !success && !error) {
             setAutoVerified(true);
@@ -52,20 +51,23 @@ export function VerifyEmail({ token: propToken, email: propEmail, onNavigate, lo
             // Error handled by hook
         }
     };
-    // Loading state during auto-verification
+    // Loading state
     if (token && loading && !success && !error) {
-        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { className: "text-center", children: [_jsx(Loader2, { className: "w-12 h-12 text-[var(--hit-primary)] mx-auto mb-3 animate-spin" }), _jsx("h1", { className: "text-lg font-bold text-[var(--hit-foreground)] mb-1", children: "Verifying Email" }), _jsx("p", { className: "text-xs text-[var(--hit-muted-foreground)]", children: "Please wait..." })] }) }) }));
+        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { style: styles({ textAlign: 'center' }), children: [_jsx(Loader2, { size: 48, style: { color: colors.primary.default, margin: '0 auto', marginBottom: spacing.md, animation: 'spin 1s linear infinite' } }), _jsx("h1", { style: styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs }), children: "Verifying Email" }), _jsx("p", { style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary }), children: "Please wait..." })] }) }) }));
     }
     // Success state
     if (success) {
-        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { className: "text-center", children: [_jsx(CheckCircle, { className: "w-12 h-12 text-[var(--hit-success)] mx-auto mb-3" }), _jsx("h1", { className: "text-lg font-bold text-[var(--hit-foreground)] mb-1", children: "Email Verified!" }), _jsx("p", { className: "text-xs text-[var(--hit-muted-foreground)] mb-4", children: "You can now sign in to your account." }), _jsx("button", { type: "button", onClick: () => navigate('/login'), className: "w-full h-9 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] text-white text-sm font-semibold rounded-md transition-colors", children: "Sign In" })] }) }) }));
+        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { style: styles({ textAlign: 'center' }), children: [_jsx(CheckCircle, { size: 48, style: { color: colors.success.default, margin: '0 auto', marginBottom: spacing.md } }), _jsx("h1", { style: styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs }), children: "Email Verified!" }), _jsx("p", { style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg }), children: "You can now sign in to your account." }), _jsx("button", { type: "button", onClick: () => navigate('/login'), style: styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: 'pointer' }), children: "Sign In" })] }) }) }));
     }
-    // Error state (invalid/expired token)
+    // Error state
     if (error && token) {
-        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { className: "text-center", children: [_jsx(XCircle, { className: "w-12 h-12 text-[var(--hit-error)] mx-auto mb-3" }), _jsx("h1", { className: "text-lg font-bold text-[var(--hit-foreground)] mb-1", children: "Verification Failed" }), _jsx("p", { className: "text-xs text-[var(--hit-muted-foreground)] mb-4", children: error || 'This link is invalid or has expired.' }), email && (_jsx("button", { type: "button", onClick: handleResend, disabled: loading, className: "w-full h-9 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors mb-3", children: loading ? 'Sending...' : 'Resend Verification Email' })), _jsx("button", { type: "button", onClick: () => navigate('/login'), className: "text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium", children: "Back to Login" })] }) }) }));
+        return (_jsx(AuthLayout, { children: _jsx(AuthCard, { children: _jsxs("div", { style: styles({ textAlign: 'center' }), children: [_jsx(XCircle, { size: 48, style: { color: colors.error.default, margin: '0 auto', marginBottom: spacing.md } }), _jsx("h1", { style: styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs }), children: "Verification Failed" }), _jsx("p", { style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg }), children: error }), email && (_jsx("button", { type: "button", onClick: handleResend, disabled: loading, style: styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, marginBottom: spacing.md }), children: loading ? 'Sending...' : 'Resend Verification Email' })), _jsx("button", { type: "button", onClick: () => navigate('/login'), style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: 'pointer' }), children: "Back to Login" })] }) }) }));
     }
-    // Waiting for verification (no token, just informational)
-    return (_jsx(AuthLayout, { children: _jsxs(AuthCard, { children: [_jsx("div", { className: "flex justify-center mb-3", children: _jsx("img", { src: logoUrl, alt: appName, className: "h-8 w-auto" }) }), _jsxs("div", { className: "text-center", children: [_jsx("div", { className: "w-12 h-12 bg-[var(--hit-primary-light)] rounded-full flex items-center justify-center mx-auto mb-3", children: _jsx(Mail, { className: "w-6 h-6 text-[var(--hit-primary)]" }) }), _jsx("h1", { className: "text-lg font-bold text-[var(--hit-foreground)] mb-1", children: "Check Your Email" }), _jsx("p", { className: "text-xs text-[var(--hit-muted-foreground)] mb-4", children: email ? (_jsxs(_Fragment, { children: ["We've sent a verification link to", ' ', _jsx("strong", { className: "text-[var(--hit-foreground)]", children: email }), "."] })) : ('Please check your email for a verification link.') }), email && (_jsx("button", { type: "button", onClick: handleResend, disabled: loading, className: "text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium disabled:opacity-50", children: loading ? 'Sending...' : "Didn't receive it? Resend" })), _jsx("div", { className: "mt-4 pt-4 border-t border-[var(--hit-border)]", children: _jsx("button", { type: "button", onClick: () => navigate('/login'), className: "text-xs text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)]", children: "Back to Login" }) })] })] }) }));
+    // Waiting state (no token)
+    return (_jsx(AuthLayout, { children: _jsxs(AuthCard, { children: [_jsx("div", { style: styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md }), children: _jsx("img", { src: logoUrl, alt: appName, style: { height: '2rem', width: 'auto' } }) }), _jsxs("div", { style: styles({ textAlign: 'center' }), children: [_jsx("div", { style: styles({ width: '3rem', height: '3rem', backgroundColor: colors.primary.light, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', marginBottom: spacing.md }), children: _jsx(Mail, { size: 24, style: { color: colors.primary.default } }) }), _jsx("h1", { style: styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs }), children: "Check Your Email" }), _jsx("p", { style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg }), children: email ? (_jsxs(_Fragment, { children: ["We've sent a verification link to ", _jsx("strong", { style: { color: colors.text.primary }, children: email }), "."] })) : ('Please check your email for a verification link.') }), email && (_jsx("button", { type: "button", onClick: handleResend, disabled: loading, style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }), children: loading ? 'Sending...' : "Didn't receive it? Resend" })), _jsx("div", { style: styles({ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border.subtle}` }), children: _jsx("button", { type: "button", onClick: () => navigate('/login'), style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, background: 'none', border: 'none', cursor: 'pointer' }), children: "Back to Login" }) })] })] }) }));
+}
+export function VerifyEmail(props) {
+    return (_jsx(ThemeProvider, { defaultTheme: "dark", children: _jsx(VerifyEmailContent, { ...props }) }));
 }
 export default VerifyEmail;
 //# sourceMappingURL=VerifyEmail.js.map

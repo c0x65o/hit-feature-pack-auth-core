@@ -1,12 +1,7 @@
-import React from 'react';
-interface AuthCardProps {
-    children: React.ReactNode;
-    className?: string;
-}
-export declare function AuthCard({ children, className }: AuthCardProps): import("react/jsx-runtime").JSX.Element;
-interface AuthLayoutProps {
-    children: React.ReactNode;
-}
-export declare function AuthLayout({ children }: AuthLayoutProps): import("react/jsx-runtime").JSX.Element;
-export {};
+/**
+ * Re-export AuthLayout and AuthCard from @hit/ui-kit
+ *
+ * This provides backward compatibility for existing imports.
+ */
+export { AuthLayout, AuthCard } from '@hit/ui-kit';
 //# sourceMappingURL=AuthCard.d.ts.map

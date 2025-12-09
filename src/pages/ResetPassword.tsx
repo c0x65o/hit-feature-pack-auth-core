@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { AuthLayout, AuthCard } from '../components/AuthCard';
-import { FormInput } from '../components/FormInput';
+import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { useResetPassword } from '../hooks/useAuth';
 
 interface ResetPasswordProps {
@@ -14,7 +13,7 @@ interface ResetPasswordProps {
   passwordMinLength?: number;
 }
 
-export function ResetPassword({
+function ResetPasswordContent({
   token: propToken,
   onNavigate,
   logoUrl = '/icon.png',
@@ -27,6 +26,7 @@ export function ResetPassword({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const { resetPassword, loading, error, success, clearError } = useResetPassword();
+  const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -36,7 +36,6 @@ export function ResetPassword({
     }
   };
 
-  // Extract token from URL if not provided as prop
   useEffect(() => {
     if (!propToken && typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -47,17 +46,14 @@ export function ResetPassword({
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
-
     if (!password) {
       errors.password = 'Password is required';
     } else if (password.length < passwordMinLength) {
       errors.password = `Password must be at least ${passwordMinLength} characters`;
     }
-
     if (password !== confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
     }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -65,7 +61,6 @@ export function ResetPassword({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
-
     if (!validateForm()) return;
 
     try {
@@ -79,16 +74,34 @@ export function ResetPassword({
     return (
       <AuthLayout>
         <AuthCard>
-          <div className="text-center">
-            <XCircle className="w-12 h-12 text-[var(--hit-error)] mx-auto mb-3" />
-            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Invalid Link</h1>
-            <p className="text-xs text-[var(--hit-muted-foreground)] mb-4">
+          <div style={styles({ textAlign: 'center' })}>
+            <XCircle size={48} style={{ color: colors.error.default, margin: '0 auto', marginBottom: spacing.md }} />
+            <h1 style={styles({
+              fontSize: ts.heading2.fontSize,
+              fontWeight: ts.heading2.fontWeight,
+              color: colors.text.primary,
+              margin: 0,
+              marginBottom: spacing.xs,
+            })}>
+              Invalid Link
+            </h1>
+            <p style={styles({
+              fontSize: ts.bodySmall.fontSize,
+              color: colors.text.secondary,
+              marginBottom: spacing.lg,
+            })}>
               This password reset link is invalid or has expired.
             </p>
             <button
               type="button"
               onClick={() => navigate('/forgot-password')}
-              className="text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
+              style={styles({
+                fontSize: ts.bodySmall.fontSize,
+                color: colors.primary.default,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+              })}
             >
               Request New Link
             </button>
@@ -102,16 +115,38 @@ export function ResetPassword({
     return (
       <AuthLayout>
         <AuthCard>
-          <div className="text-center">
-            <CheckCircle className="w-12 h-12 text-[var(--hit-success)] mx-auto mb-3" />
-            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Password Reset!</h1>
-            <p className="text-xs text-[var(--hit-muted-foreground)] mb-4">
+          <div style={styles({ textAlign: 'center' })}>
+            <CheckCircle size={48} style={{ color: colors.success.default, margin: '0 auto', marginBottom: spacing.md }} />
+            <h1 style={styles({
+              fontSize: ts.heading2.fontSize,
+              fontWeight: ts.heading2.fontWeight,
+              color: colors.text.primary,
+              margin: 0,
+              marginBottom: spacing.xs,
+            })}>
+              Password Reset!
+            </h1>
+            <p style={styles({
+              fontSize: ts.bodySmall.fontSize,
+              color: colors.text.secondary,
+              marginBottom: spacing.lg,
+            })}>
               Your password has been successfully reset. You can now sign in with your new password.
             </p>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="w-full h-9 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] text-white text-sm font-semibold rounded-md transition-colors"
+              style={styles({
+                width: '100%',
+                height: '2.25rem',
+                backgroundColor: colors.primary.default,
+                color: colors.text.inverse,
+                fontSize: ts.body.fontSize,
+                fontWeight: ts.label.fontWeight,
+                borderRadius: radius.md,
+                border: 'none',
+                cursor: 'pointer',
+              })}
             >
               Sign In
             </button>
@@ -125,22 +160,46 @@ export function ResetPassword({
     <AuthLayout>
       <AuthCard>
         {/* Logo */}
-        <div className="flex justify-center mb-3">
-          <img src={logoUrl} alt={appName} className="h-8 w-auto" />
+        <div style={styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md })}>
+          <img src={logoUrl} alt={appName} style={{ height: '2rem', width: 'auto' }} />
         </div>
 
         {/* Title */}
-        <h1 className="text-lg font-bold text-center text-[var(--hit-foreground)] mb-0.5">
+        <h1 style={styles({
+          fontSize: ts.heading2.fontSize,
+          fontWeight: ts.heading2.fontWeight,
+          textAlign: 'center',
+          color: colors.text.primary,
+          margin: 0,
+          marginBottom: spacing.xs,
+        })}>
           Reset Password
         </h1>
-        <p className="text-center text-xs text-[var(--hit-muted-foreground)] mb-4">
+        <p style={styles({
+          textAlign: 'center',
+          fontSize: ts.bodySmall.fontSize,
+          color: colors.text.secondary,
+          margin: 0,
+          marginBottom: spacing.lg,
+        })}>
           Enter your new password below.
         </p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] rounded-md">
-            <p className="text-xs font-medium text-red-400 m-0">{error}</p>
+          <div style={styles({
+            marginBottom: spacing.md,
+            padding: `${spacing.sm} ${spacing.md}`,
+            backgroundColor: `${colors.error.default}15`,
+            border: `1px solid ${colors.error.default}30`,
+            borderRadius: radius.md,
+          })}>
+            <p style={styles({
+              fontSize: ts.bodySmall.fontSize,
+              fontWeight: ts.label.fontWeight,
+              color: colors.error.default,
+              margin: 0,
+            })}>{error}</p>
           </div>
         )}
 
@@ -170,14 +229,38 @@ export function ResetPassword({
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-9 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors mt-1"
+            style={styles({
+              width: '100%',
+              height: '2.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              backgroundColor: colors.primary.default,
+              color: colors.text.inverse,
+              fontSize: ts.body.fontSize,
+              fontWeight: ts.label.fontWeight,
+              borderRadius: radius.md,
+              border: 'none',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.5 : 1,
+              marginTop: spacing.xs,
+            })}
           >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
             {loading ? 'Resetting...' : 'Reset Password'}
           </button>
         </form>
       </AuthCard>
     </AuthLayout>
+  );
+}
+
+export function ResetPassword(props: ResetPasswordProps) {
+  return (
+    <ThemeProvider defaultTheme="dark">
+      <ResetPasswordContent {...props} />
+    </ThemeProvider>
   );
 }
 

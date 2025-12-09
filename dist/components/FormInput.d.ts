@@ -1,8 +1,7 @@
-import React from 'react';
-interface FormInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-    label: string;
-    error?: string;
-}
-export declare function FormInput({ label, error, type, className, ...props }: FormInputProps): import("react/jsx-runtime").JSX.Element;
-export {};
+/**
+ * Re-export FormInput from @hit/ui-kit
+ *
+ * This provides backward compatibility for existing imports.
+ */
+export { FormInput } from '@hit/ui-kit';
 //# sourceMappingURL=FormInput.d.ts.map

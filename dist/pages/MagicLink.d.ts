@@ -4,6 +4,6 @@ interface MagicLinkProps {
     logoUrl?: string;
     appName?: string;
 }
-export declare function MagicLink({ token: propToken, onNavigate, logoUrl, appName, }: MagicLinkProps): import("react/jsx-runtime").JSX.Element;
+export declare function MagicLink(props: MagicLinkProps): import("react/jsx-runtime").JSX.Element;
 export default MagicLink;
 //# sourceMappingURL=MagicLink.d.ts.map

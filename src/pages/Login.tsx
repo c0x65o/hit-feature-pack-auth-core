@@ -2,8 +2,7 @@
 
 import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { AuthLayout, AuthCard } from '../components/AuthCard';
-import { FormInput } from '../components/FormInput';
+import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useLogin, useAuthConfig } from '../hooks/useAuth';
 
@@ -17,7 +16,7 @@ interface LoginProps {
   loginRedirect?: string;
 }
 
-export function Login({
+function LoginContent({
   onSuccess,
   onNavigate,
   logoUrl = '/icon.png',
@@ -33,6 +32,7 @@ export function Login({
 
   const { login, loading, error, clearError } = useLogin();
   const { config: authConfig } = useAuthConfig();
+  const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -44,17 +44,14 @@ export function Login({
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
-
     if (!email) {
       errors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errors.email = 'Please enter a valid email';
     }
-
     if (!password) {
       errors.password = 'Password is required';
     }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -62,7 +59,6 @@ export function Login({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
-
     if (!validateForm()) return;
 
     try {
@@ -81,20 +77,46 @@ export function Login({
     <AuthLayout>
       <AuthCard>
         {/* Logo */}
-        <div className="flex justify-center mb-3">
-          <img src={logoUrl} alt={appName} className="h-8 w-auto" />
+        <div style={styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md })}>
+          <img src={logoUrl} alt={appName} style={{ height: '2rem', width: 'auto' }} />
         </div>
 
         {/* Title */}
-        <h1 className="text-lg font-bold text-center text-[var(--hit-foreground)] mb-0.5">
+        <h1 style={styles({
+          fontSize: ts.heading2.fontSize,
+          fontWeight: ts.heading2.fontWeight,
+          textAlign: 'center',
+          color: colors.text.primary,
+          margin: 0,
+          marginBottom: spacing.xs,
+        })}>
           Welcome Back
         </h1>
-        <p className="text-center text-xs text-[var(--hit-muted-foreground)] mb-4">{tagline}</p>
+        <p style={styles({
+          textAlign: 'center',
+          fontSize: ts.bodySmall.fontSize,
+          color: colors.text.secondary,
+          margin: 0,
+          marginBottom: spacing.lg,
+        })}>
+          {tagline}
+        </p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] rounded-md">
-            <p className="text-xs font-medium text-red-400 m-0">{error}</p>
+          <div style={styles({
+            marginBottom: spacing.md,
+            padding: `${spacing.sm} ${spacing.md}`,
+            backgroundColor: `${colors.error.default}15`,
+            border: `1px solid ${colors.error.default}30`,
+            borderRadius: radius.md,
+          })}>
+            <p style={styles({
+              fontSize: ts.bodySmall.fontSize,
+              fontWeight: ts.label.fontWeight,
+              color: colors.error.default,
+              margin: 0,
+            })}>{error}</p>
           </div>
         )}
 
@@ -122,23 +144,45 @@ export function Login({
             />
 
             {/* Remember me + Forgot password */}
-            <div className="flex items-center justify-between mb-3">
+            <div style={styles({
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: spacing.md,
+            })}>
               {showRememberMe && (
-                <label className="flex items-center gap-1.5 cursor-pointer">
+                <label style={styles({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: spacing.xs,
+                  cursor: 'pointer',
+                })}>
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-3 h-3 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
+                    style={{ width: '0.75rem', height: '0.75rem' }}
                   />
-                  <span className="text-xs text-[var(--hit-foreground)]">Remember me</span>
+                  <span style={styles({
+                    fontSize: ts.bodySmall.fontSize,
+                    color: colors.text.primary,
+                  })}>
+                    Remember me
+                  </span>
                 </label>
               )}
               {authConfig?.password_reset !== false && (
                 <button
                   type="button"
                   onClick={() => navigate('/forgot-password')}
-                  className="text-xs font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
+                  style={styles({
+                    fontSize: ts.bodySmall.fontSize,
+                    fontWeight: ts.label.fontWeight,
+                    color: colors.primary.default,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                  })}
                 >
                   Forgot password?
                 </button>
@@ -149,15 +193,41 @@ export function Login({
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-9 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors"
+              style={styles({
+                width: '100%',
+                height: '2.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: spacing.sm,
+                backgroundColor: colors.primary.default,
+                color: colors.text.inverse,
+                fontSize: ts.body.fontSize,
+                fontWeight: ts.label.fontWeight,
+                borderRadius: radius.md,
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.5 : 1,
+              })}
             >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         ) : (
-          <div className="mb-4 p-3 bg-[var(--hit-muted)] border border-[var(--hit-border)] rounded-md">
-            <p className="text-xs text-[var(--hit-muted-foreground)] text-center">
+          <div style={styles({
+            marginBottom: spacing.lg,
+            padding: spacing.md,
+            backgroundColor: colors.bg.muted,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: radius.md,
+          })}>
+            <p style={styles({
+              fontSize: ts.bodySmall.fontSize,
+              color: colors.text.secondary,
+              textAlign: 'center',
+              margin: 0,
+            })}>
               Password login is disabled. Please use one of the authentication methods below.
             </p>
           </div>
@@ -170,12 +240,23 @@ export function Login({
 
         {/* Sign up link */}
         {authConfig?.allow_signup && (
-          <p className="mt-4 text-center text-xs text-[var(--hit-muted-foreground)]">
+          <p style={styles({
+            marginTop: spacing.lg,
+            textAlign: 'center',
+            fontSize: ts.bodySmall.fontSize,
+            color: colors.text.secondary,
+          })}>
             Don&apos;t have an account?{' '}
             <button
               type="button"
               onClick={() => navigate('/signup')}
-              className="font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
+              style={styles({
+                fontWeight: ts.label.fontWeight,
+                color: colors.primary.default,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+              })}
             >
               Sign up
             </button>
@@ -183,6 +264,14 @@ export function Login({
         )}
       </AuthCard>
     </AuthLayout>
+  );
+}
+
+export function Login(props: LoginProps) {
+  return (
+    <ThemeProvider defaultTheme="dark">
+      <LoginContent {...props} />
+    </ThemeProvider>
   );
 }
 

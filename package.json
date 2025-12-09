@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "description": "Core authentication UI - login, signup, forgot password, email verification",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,9 +27,11 @@
     "react": "^18.0.0",
     "next": "^14.0.0 || ^15.0.0",
     "@hit/sdk": "*",
+    "@hit/ui-kit": "*",
     "lucide-react": "^0.400.0"
   },
   "devDependencies": {
+    "@hit/ui-kit": "file:../hit-ui-kit",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "lucide-react": "^0.400.0",

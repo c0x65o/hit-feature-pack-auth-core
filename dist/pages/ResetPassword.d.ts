@@ -5,6 +5,6 @@ interface ResetPasswordProps {
     appName?: string;
     passwordMinLength?: number;
 }
-export declare function ResetPassword({ token: propToken, onNavigate, logoUrl, appName, passwordMinLength, }: ResetPasswordProps): import("react/jsx-runtime").JSX.Element;
+export declare function ResetPassword(props: ResetPasswordProps): import("react/jsx-runtime").JSX.Element;
 export default ResetPassword;
 //# sourceMappingURL=ResetPassword.d.ts.map

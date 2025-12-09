@@ -7,6 +7,6 @@ interface SignupProps {
     signupRedirect?: string;
     passwordMinLength?: number;
 }
-export declare function Signup({ onSuccess, onNavigate, logoUrl, appName, tagline, signupRedirect, passwordMinLength, }: SignupProps): import("react/jsx-runtime").JSX.Element;
+export declare function Signup(props: SignupProps): import("react/jsx-runtime").JSX.Element;
 export default Signup;
 //# sourceMappingURL=Signup.d.ts.map
