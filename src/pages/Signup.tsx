@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { AuthLayout, AuthCard } from '../components/AuthCard';
 import { FormInput } from '../components/FormInput';
@@ -34,7 +34,7 @@ export function Signup({
   const [success, setSuccess] = useState(false);
 
   const { signup, loading, error, clearError } = useSignup();
-  const { config: authConfig } = useAuthConfig();
+  const { config: authConfig, loading: configLoading } = useAuthConfig();
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -43,6 +43,13 @@ export function Signup({
       window.location.href = path;
     }
   };
+
+  // Redirect if signup is disabled
+  useEffect(() => {
+    if (!configLoading && authConfig && !authConfig.allow_signup) {
+      navigate('/login');
+    }
+  }, [authConfig, configLoading]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -83,6 +90,24 @@ export function Signup({
       // Error is handled by the hook
     }
   };
+
+  // Show loading while checking config
+  if (configLoading) {
+    return (
+      <AuthLayout>
+        <AuthCard>
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-[var(--hit-primary)]" />
+          </div>
+        </AuthCard>
+      </AuthLayout>
+    );
+  }
+
+  // Don't render if signup is disabled (will redirect)
+  if (!authConfig?.allow_signup) {
+    return null;
+  }
 
   if (success) {
     return (

@@ -99,59 +99,69 @@ export function Login({
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <FormInput
-            label="Email address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            error={fieldErrors.email}
-            autoComplete="email"
-          />
+        {authConfig?.password_login ? (
+          <form onSubmit={handleSubmit}>
+            <FormInput
+              label="Email address"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              error={fieldErrors.email}
+              autoComplete="email"
+            />
 
-          <FormInput
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            error={fieldErrors.password}
-            autoComplete="current-password"
-          />
+            <FormInput
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              error={fieldErrors.password}
+              autoComplete="current-password"
+            />
 
-          {/* Remember me + Forgot password */}
-          <div className="flex items-center justify-between mb-6">
-            {showRememberMe && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
-                />
-                <span className="text-sm text-[var(--hit-foreground)]">Remember me</span>
-              </label>
-            )}
+            {/* Remember me + Forgot password */}
+            <div className="flex items-center justify-between mb-6">
+              {showRememberMe && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
+                  />
+                  <span className="text-sm text-[var(--hit-foreground)]">Remember me</span>
+                </label>
+              )}
+              {authConfig?.password_reset !== false && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="text-sm font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+
+            {/* Submit Button */}
             <button
-              type="button"
-              onClick={() => navigate('/forgot-password')}
-              className="text-sm font-medium text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)]"
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
             >
-              Forgot password?
+              {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
+          </form>
+        ) : (
+          <div className="mb-6 p-4 bg-[var(--hit-muted)] border border-[var(--hit-border)] rounded-lg">
+            <p className="text-sm text-[var(--hit-muted-foreground)] text-center">
+              Password login is disabled. Please use one of the authentication methods below.
+            </p>
           </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
-          >
-            {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+        )}
 
         {/* OAuth */}
         {authConfig?.oauth_providers && authConfig.oauth_providers.length > 0 && (

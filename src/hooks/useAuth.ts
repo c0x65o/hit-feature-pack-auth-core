@@ -8,6 +8,7 @@ interface AuthConfig {
   allow_signup: boolean;
   oauth_providers: string[];
   password_login: boolean;
+  password_reset?: boolean;
   magic_link_login: boolean;
   email_verification?: boolean;
   two_factor_auth?: boolean;
@@ -82,6 +83,7 @@ export function useAuthConfig() {
       return {
         allow_signup: hitCfg.auth.allowSignup,
         password_login: hitCfg.auth.passwordLogin,
+        password_reset: hitCfg.auth.passwordReset,
         magic_link_login: hitCfg.auth.magicLinkLogin,
         email_verification: hitCfg.auth.emailVerification,
         two_factor_auth: hitCfg.auth.twoFactorAuth,
