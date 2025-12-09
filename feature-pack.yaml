@@ -18,18 +18,21 @@ routes:
   - path: /verify-email
     page: VerifyEmail
 
-# Navigation contributions (for non-authenticated users)
+# Navigation contributions
+# Login/signup are hidden from nav - users access via auth redirects
 nav:
   - id: login
     label: Login
     path: /login
     icon: log-in
     showWhen: unauthenticated
+    hideFromNav: true  # Don't show in sidebar - accessed via redirects
   - id: signup
     label: Sign Up
     path: /signup
     icon: user-plus
     showWhen: unauthenticated
+    hideFromNav: true  # Don't show in sidebar - accessed via redirects
 
 # Dependencies
 requires:
