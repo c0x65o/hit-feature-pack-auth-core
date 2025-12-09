@@ -9,7 +9,7 @@ interface AuthCardProps {
 
 export function AuthCard({ children, className = '' }: AuthCardProps) {
   return (
-    <div className={`w-full max-w-sm p-6 bg-[var(--hit-surface)] backdrop-blur-sm border border-[var(--hit-border)] rounded-2xl shadow-2xl ${className}`}>
+    <div className={`w-full max-w-[380px] p-6 bg-[var(--hit-surface)] border border-[var(--hit-border)] rounded-xl shadow-lg ${className}`}>
       {children}
     </div>
   );

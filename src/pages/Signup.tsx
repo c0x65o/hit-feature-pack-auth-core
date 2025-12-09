@@ -17,13 +17,6 @@ interface SignupProps {
   passwordMinLength?: number;
 }
 
-/**
- * Signup page.
- * 
- * Always renders the form - backend enforces whether signup is enabled.
- * If disabled, the API will return an error which is shown to the user.
- * This approach prevents UI flicker and is more secure (backend is source of truth).
- */
 export function Signup({
   onSuccess,
   onNavigate,
@@ -96,16 +89,16 @@ export function Signup({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-[var(--hit-success)] mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Check Your Email</h1>
-            <p className="text-[var(--hit-muted-foreground)] mb-6">
+            <CheckCircle className="w-12 h-12 text-[var(--hit-success)] mx-auto mb-3" />
+            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Check Your Email</h1>
+            <p className="text-xs text-[var(--hit-muted-foreground)] mb-4">
               We&apos;ve sent a verification email to <strong className="text-[var(--hit-foreground)]">{email}</strong>.
-              Please click the link in the email to verify your account.
+              Please click the link to verify your account.
             </p>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
+              className="text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
             >
               Back to Login
             </button>
@@ -119,20 +112,20 @@ export function Signup({
     <AuthLayout>
       <AuthCard>
         {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <img src={logoUrl} alt={appName} className="h-16 w-auto" />
+        <div className="flex justify-center mb-3">
+          <img src={logoUrl} alt={appName} className="h-8 w-auto" />
         </div>
 
         {/* Title */}
-        <h1 className="text-2xl font-bold text-center text-[var(--hit-foreground)] mb-2">
+        <h1 className="text-lg font-bold text-center text-[var(--hit-foreground)] mb-0.5">
           Create Account
         </h1>
-        <p className="text-center text-[var(--hit-muted-foreground)] mb-8">{tagline}</p>
+        <p className="text-center text-xs text-[var(--hit-muted-foreground)] mb-4">{tagline}</p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-3 bg-[var(--hit-error-light)] border border-[var(--hit-error)] rounded-lg">
-            <p className="text-sm text-[var(--hit-error)]">{error}</p>
+          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] rounded-md">
+            <p className="text-xs font-medium text-red-400 m-0">{error}</p>
           </div>
         )}
 
@@ -181,9 +174,9 @@ export function Signup({
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors mt-2"
+            className="w-full h-9 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors mt-1"
           >
-            {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
@@ -194,7 +187,7 @@ export function Signup({
         )}
 
         {/* Login link */}
-        <p className="mt-8 text-center text-sm text-[var(--hit-muted-foreground)]">
+        <p className="mt-4 text-center text-xs text-[var(--hit-muted-foreground)]">
           Already have an account?{' '}
           <button
             type="button"

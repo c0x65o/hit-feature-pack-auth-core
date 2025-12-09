@@ -43,13 +43,6 @@ async function fetchAuth<T>(endpoint: string, options?: RequestInit): Promise<T>
   return data;
 }
 
-/**
- * Magic Link page.
- * 
- * Always renders - backend enforces whether magic link login is enabled.
- * If disabled, the API will return an error which is shown to the user.
- * This approach prevents UI flicker and is more secure (backend is source of truth).
- */
 export function MagicLink({
   token: propToken,
   onNavigate,
@@ -80,7 +73,6 @@ export function MagicLink({
       const urlToken = params.get('token');
       if (urlToken) {
         setToken(urlToken);
-        // Auto-verify if token is present
         handleVerifyToken(urlToken);
       }
     }
@@ -96,14 +88,11 @@ export function MagicLink({
         body: JSON.stringify({ token: tokenToVerify }),
       });
 
-      // Store tokens if provided
       if (response.token && typeof window !== 'undefined') {
         localStorage.setItem('hit_token', response.token);
       }
 
       setVerified(true);
-      
-      // Redirect to home after successful verification
       setTimeout(() => {
         navigate('/');
       }, 2000);
@@ -156,9 +145,9 @@ export function MagicLink({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <Loader2 className="w-16 h-16 text-[var(--hit-primary)] mx-auto mb-4 animate-spin" />
-            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Verifying Magic Link</h1>
-            <p className="text-[var(--hit-muted-foreground)]">Please wait while we verify your magic link...</p>
+            <Loader2 className="w-12 h-12 text-[var(--hit-primary)] mx-auto mb-3 animate-spin" />
+            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Verifying Magic Link</h1>
+            <p className="text-xs text-[var(--hit-muted-foreground)]">Please wait...</p>
           </div>
         </AuthCard>
       </AuthLayout>
@@ -171,11 +160,9 @@ export function MagicLink({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-[var(--hit-success)] mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Login Successful!</h1>
-            <p className="text-[var(--hit-muted-foreground)] mb-6">
-              You have been successfully logged in. Redirecting...
-            </p>
+            <CheckCircle className="w-12 h-12 text-[var(--hit-success)] mx-auto mb-3" />
+            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Login Successful!</h1>
+            <p className="text-xs text-[var(--hit-muted-foreground)]">Redirecting...</p>
           </div>
         </AuthCard>
       </AuthLayout>
@@ -188,16 +175,15 @@ export function MagicLink({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-[var(--hit-success)] mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Check Your Email</h1>
-            <p className="text-[var(--hit-muted-foreground)] mb-6">
+            <CheckCircle className="w-12 h-12 text-[var(--hit-success)] mx-auto mb-3" />
+            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Check Your Email</h1>
+            <p className="text-xs text-[var(--hit-muted-foreground)] mb-4">
               We&apos;ve sent a magic link to <strong className="text-[var(--hit-foreground)]">{email}</strong>.
-              Click the link in the email to sign in.
             </p>
             <button
               type="button"
               onClick={() => navigate('/login')}
-              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
+              className="text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
             >
               Back to Login
             </button>
@@ -213,9 +199,9 @@ export function MagicLink({
       <AuthLayout>
         <AuthCard>
           <div className="text-center">
-            <Mail className="w-16 h-16 text-[var(--hit-error)] mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-[var(--hit-foreground)] mb-2">Invalid Magic Link</h1>
-            <p className="text-[var(--hit-muted-foreground)] mb-6">
+            <Mail className="w-12 h-12 text-[var(--hit-error)] mx-auto mb-3" />
+            <h1 className="text-lg font-bold text-[var(--hit-foreground)] mb-1">Invalid Magic Link</h1>
+            <p className="text-xs text-[var(--hit-muted-foreground)] mb-4">
               {error || 'This magic link is invalid or has expired.'}
             </p>
             <button
@@ -225,7 +211,7 @@ export function MagicLink({
                 setError(null);
                 navigate('/magic-link');
               }}
-              className="text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
+              className="text-xs text-[var(--hit-primary)] hover:text-[var(--hit-primary-hover)] font-medium"
             >
               Request New Link
             </button>
@@ -243,29 +229,29 @@ export function MagicLink({
         <button
           type="button"
           onClick={() => navigate('/login')}
-          className="flex items-center gap-2 text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] mb-6"
+          className="flex items-center gap-1.5 text-xs text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] mb-4"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3.5 h-3.5" />
           Back to Login
         </button>
 
         {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <img src={logoUrl} alt={appName} className="h-16 w-auto" />
+        <div className="flex justify-center mb-3">
+          <img src={logoUrl} alt={appName} className="h-8 w-auto" />
         </div>
 
         {/* Title */}
-        <h1 className="text-2xl font-bold text-center text-[var(--hit-foreground)] mb-2">
+        <h1 className="text-lg font-bold text-center text-[var(--hit-foreground)] mb-0.5">
           Sign in with Magic Link
         </h1>
-        <p className="text-center text-[var(--hit-muted-foreground)] mb-8">
-          Enter your email and we&apos;ll send you a magic link to sign in.
+        <p className="text-center text-xs text-[var(--hit-muted-foreground)] mb-4">
+          Enter your email and we&apos;ll send you a magic link.
         </p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-3 bg-[var(--hit-error-light)] border border-[var(--hit-error)] rounded-lg">
-            <p className="text-sm text-[var(--hit-error)]">{error}</p>
+          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] rounded-md">
+            <p className="text-xs font-medium text-red-400 m-0">{error}</p>
           </div>
         )}
 
@@ -285,9 +271,9 @@ export function MagicLink({
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-12 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white font-semibold rounded-lg transition-colors mt-2"
+            className="w-full h-9 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors mt-1"
           >
-            {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Sending...' : 'Send Magic Link'}
           </button>
         </form>

@@ -16,7 +16,7 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     id: 'google',
     label: 'Google',
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" viewBox="0 0 24 24">
         <path
           fill="currentColor"
           d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -41,7 +41,7 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     id: 'github',
     label: 'GitHub',
     icon: (
-      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
         <path
           fillRule="evenodd"
           d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
@@ -55,7 +55,7 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     id: 'microsoft',
     label: 'Microsoft',
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" viewBox="0 0 24 24">
         <path fill="#F25022" d="M1 1h10v10H1z" />
         <path fill="#00A4EF" d="M1 13h10v10H1z" />
         <path fill="#7FBA00" d="M13 1h10v10H13z" />
@@ -68,7 +68,7 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     id: 'apple',
     label: 'Apple',
     icon: (
-      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z" />
       </svg>
     ),
@@ -90,23 +90,20 @@ export function OAuthButtons({ providers }: OAuthButtonsProps) {
   if (availableProviders.length === 0) return null;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3 my-6">
+    <div className="space-y-2">
+      <div className="flex items-center gap-3 my-4">
         <div className="flex-1 border-t border-[var(--hit-border)]" />
-        <span className="text-sm text-[var(--hit-muted-foreground)]">or continue with</span>
+        <span className="text-xs text-[var(--hit-muted-foreground)]">or continue with</span>
         <div className="flex-1 border-t border-[var(--hit-border)]" />
       </div>
 
-      <div className={`grid gap-3 ${availableProviders.length > 2 ? 'grid-cols-1' : 'grid-cols-' + availableProviders.length}`}>
+      <div className={`grid gap-2 ${availableProviders.length > 2 ? 'grid-cols-1' : 'grid-cols-' + availableProviders.length}`}>
         {availableProviders.map((provider) => (
           <button
             key={provider.id}
             type="button"
             onClick={() => initiateOAuth(provider.id)}
-            className={`
-              flex items-center justify-center gap-2 h-11 px-4 rounded-lg font-medium transition-colors
-              ${provider.bgColor}
-            `}
+            className={`flex items-center justify-center gap-2 h-9 px-3 rounded-md text-sm font-medium transition-colors ${provider.bgColor}`}
           >
             {provider.icon}
             <span>{provider.label}</span>

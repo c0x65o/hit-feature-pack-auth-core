@@ -81,31 +81,20 @@ export function Login({
     <AuthLayout>
       <AuthCard>
         {/* Logo */}
-        <div className="flex justify-center mb-4">
+        <div className="flex justify-center mb-3">
           <img src={logoUrl} alt={appName} className="h-8 w-auto" />
         </div>
 
         {/* Title */}
-        <h1 className="text-xl font-bold text-center text-[var(--hit-foreground)] mb-1">
+        <h1 className="text-lg font-bold text-center text-[var(--hit-foreground)] mb-0.5">
           Welcome Back
         </h1>
-        <p className="text-center text-sm text-[var(--hit-muted-foreground)] mb-6">{tagline}</p>
+        <p className="text-center text-xs text-[var(--hit-muted-foreground)] mb-4">{tagline}</p>
 
         {/* Error Message */}
         {error && (
-          <div style={{
-            marginBottom: '1rem',
-            padding: '0.5rem 0.75rem',
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: '0.375rem',
-          }}>
-            <p style={{ 
-              fontSize: '0.75rem', 
-              fontWeight: 500, 
-              color: '#f87171',
-              margin: 0,
-            }}>{error}</p>
+          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] rounded-md">
+            <p className="text-xs font-medium text-red-400 m-0">{error}</p>
           </div>
         )}
 
@@ -133,14 +122,14 @@ export function Login({
             />
 
             {/* Remember me + Forgot password */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               {showRememberMe && (
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
+                    className="w-3 h-3 rounded border-[var(--hit-border)] bg-[var(--hit-input-bg)] text-[var(--hit-primary)] focus:ring-[var(--hit-primary)] focus:ring-offset-[var(--hit-background)]"
                   />
                   <span className="text-xs text-[var(--hit-foreground)]">Remember me</span>
                 </label>
@@ -160,15 +149,15 @@ export function Login({
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-10 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors"
+              className="w-full h-9 flex items-center justify-center gap-2 bg-[var(--hit-primary)] hover:bg-[var(--hit-primary-hover)] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         ) : (
-          <div className="mb-6 p-4 bg-[var(--hit-muted)] border border-[var(--hit-border)] rounded-lg">
-            <p className="text-sm text-[var(--hit-muted-foreground)] text-center">
+          <div className="mb-4 p-3 bg-[var(--hit-muted)] border border-[var(--hit-border)] rounded-md">
+            <p className="text-xs text-[var(--hit-muted-foreground)] text-center">
               Password login is disabled. Please use one of the authentication methods below.
             </p>
           </div>
@@ -181,7 +170,7 @@ export function Login({
 
         {/* Sign up link */}
         {authConfig?.allow_signup && (
-          <p className="mt-5 text-center text-xs text-[var(--hit-muted-foreground)]">
+          <p className="mt-4 text-center text-xs text-[var(--hit-muted-foreground)]">
             Don&apos;t have an account?{' '}
             <button
               type="button"
