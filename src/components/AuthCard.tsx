@@ -21,7 +21,7 @@ interface AuthLayoutProps {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--hit-background)] p-4">
+    <div className="fixed inset-0 flex items-center justify-center bg-[var(--hit-background)] p-4 overflow-auto">
       {children}
     </div>
   );
