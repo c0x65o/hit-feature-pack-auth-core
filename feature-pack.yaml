@@ -17,6 +17,8 @@ routes:
     page: ResetPassword
   - path: /verify-email
     page: VerifyEmail
+  - path: /magic-link
+    page: MagicLink
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects

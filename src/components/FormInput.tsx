@@ -19,22 +19,34 @@ export function FormInput({
   const isPassword = type === 'password';
 
   return (
-    <div className="mb-4">
-      <label className="block text-[var(--hit-foreground)] text-sm font-medium mb-1.5">
+    <div style={{ marginBottom: '1rem' }}>
+      <label 
+        style={{ 
+          display: 'block', 
+          fontSize: '0.8125rem', 
+          fontWeight: 500, 
+          marginBottom: '0.375rem',
+          color: 'var(--hit-foreground)'
+        }}
+      >
         {label}
       </label>
-      <div className="relative inline-flex w-full">
+      <div style={{ position: 'relative', width: '100%' }}>
         <input
           type={isPassword && showPassword ? 'text' : type}
-          className={`
-            w-full h-12 px-4 ${isPassword ? 'pr-12' : ''}
-            bg-[var(--hit-input-bg)] border border-[var(--hit-border)] rounded-lg
-            text-[var(--hit-foreground)] placeholder-[var(--hit-input-placeholder)]
-            focus:border-[var(--hit-primary)] focus:ring-1 focus:ring-[var(--hit-primary)] focus:outline-none
-            transition-colors
-            ${error ? 'border-[var(--hit-error)]' : ''}
-            ${className}
-          `}
+          style={{
+            width: '100%',
+            height: '2.5rem',
+            paddingLeft: '0.75rem',
+            paddingRight: isPassword ? '2.5rem' : '0.75rem',
+            backgroundColor: 'var(--hit-input-bg)',
+            border: `1px solid ${error ? 'var(--hit-error)' : 'var(--hit-border)'}`,
+            borderRadius: '0.5rem',
+            color: 'var(--hit-foreground)',
+            fontSize: '0.875rem',
+            outline: 'none',
+          }}
+          className={className}
           {...props}
         />
         {isPassword && (
@@ -42,13 +54,38 @@ export function FormInput({
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
-            className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] hover:bg-[var(--hit-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hit-primary)] focus-visible:ring-offset-0 transition-colors"
+            style={{
+              position: 'absolute',
+              right: '0.5rem',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '1.75rem',
+              height: '1.75rem',
+              padding: 0,
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '0.375rem',
+              color: 'var(--hit-muted-foreground)',
+              cursor: 'pointer',
+            }}
           >
-            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            {showPassword ? <EyeOff style={{ width: '1rem', height: '1rem' }} /> : <Eye style={{ width: '1rem', height: '1rem' }} />}
           </button>
         )}
       </div>
-      {error && <p className="mt-1 text-sm text-[var(--hit-error)]">{error}</p>}
+      {error && (
+        <p style={{ 
+          marginTop: '0.25rem', 
+          fontSize: '0.75rem', 
+          fontWeight: 500, 
+          color: 'var(--hit-error)' 
+        }}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

@@ -12,6 +12,13 @@ interface ForgotPasswordProps {
   appName?: string;
 }
 
+/**
+ * Forgot Password page.
+ * 
+ * Always renders the form - backend enforces whether password reset is enabled.
+ * If disabled, the API will return an error which is shown to the user.
+ * This approach prevents UI flicker and is more secure (backend is source of truth).
+ */
 export function ForgotPassword({
   onNavigate,
   logoUrl = '/icon.png',
@@ -52,7 +59,7 @@ export function ForgotPassword({
     try {
       await sendResetEmail(email);
     } catch {
-      // Error is handled by the hook
+      // Error is handled by the hook (including "password reset disabled" from backend)
     }
   };
 

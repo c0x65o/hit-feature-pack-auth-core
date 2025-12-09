@@ -47,6 +47,23 @@ function getAuthUrl(): string {
   return '/api/proxy/auth';
 }
 
+// Check if debug mode is enabled
+function isDebugMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  
+  // Check window config first
+  const win = window as unknown as { __HIT_CONFIG?: { debug?: boolean } };
+  if (win.__HIT_CONFIG?.debug) return true;
+  
+  // Check for NEXT_PUBLIC_DEBUG env var (set at build time)
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_DEBUG === 'true') return true;
+  
+  // Check URL param for development
+  if (window.location.search.includes('debug=true')) return true;
+  
+  return false;
+}
+
 async function fetchAuth<T>(
   endpoint: string,
   options?: RequestInit
@@ -66,56 +83,161 @@ async function fetchAuth<T>(
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.message || data.error || `Request failed: ${res.status}`);
+    // In debug mode, show detailed error from backend
+    if (isDebugMode() && data.debug) {
+      const debugInfo = data.debug;
+      const detailedError = [
+        data.detail || 'Request failed',
+        debugInfo.exception_type ? `[${debugInfo.exception_type}]` : '',
+        debugInfo.exception_message ? debugInfo.exception_message : '',
+      ].filter(Boolean).join(' - ');
+      
+      // Log full debug info to console
+      console.error('Auth Error Debug:', {
+        endpoint,
+        status: res.status,
+        ...data.debug,
+      });
+      
+      throw new Error(detailedError);
+    }
+    
+    throw new Error(data.detail || data.message || data.error || `Request failed: ${res.status}`);
   }
 
   return data;
 }
 
+/**
+ * Default auth config - PERMISSIVE defaults.
+ * 
+ * This ensures UI never incorrectly hides features.
+ * Backend is the source of truth and will reject disabled features.
+ */
+const DEFAULT_AUTH_CONFIG: AuthConfig = {
+  allow_signup: true,      // Show signup until we know it's disabled
+  password_login: true,    // Show password form until we know it's disabled
+  password_reset: true,    // Show forgot password until we know it's disabled
+  magic_link_login: false, // Don't show magic link unless explicitly enabled
+  email_verification: true,
+  two_factor_auth: false,
+  oauth_providers: [],
+};
+
+/**
+ * Get config from window global (set by HitAppProvider).
+ * Returns null if not available yet.
+ */
+function getWindowConfig(): AuthConfig | null {
+  if (typeof window === 'undefined') return null;
+  
+  const win = window as unknown as { __HIT_CONFIG?: any };
+  if (!win.__HIT_CONFIG?.auth) return null;
+  
+  const auth = win.__HIT_CONFIG.auth;
+  return {
+    allow_signup: auth.allowSignup ?? DEFAULT_AUTH_CONFIG.allow_signup,
+    password_login: auth.passwordLogin ?? DEFAULT_AUTH_CONFIG.password_login,
+    password_reset: auth.passwordReset ?? DEFAULT_AUTH_CONFIG.password_reset,
+    magic_link_login: auth.magicLinkLogin ?? DEFAULT_AUTH_CONFIG.magic_link_login,
+    email_verification: auth.emailVerification ?? DEFAULT_AUTH_CONFIG.email_verification,
+    two_factor_auth: auth.twoFactorAuth ?? DEFAULT_AUTH_CONFIG.two_factor_auth,
+    oauth_providers: auth.socialProviders || [],
+  };
+}
+
+/**
+ * Hook to get auth config.
+ * 
+ * IMPORTANT: This hook uses PERMISSIVE defaults to prevent UI flicker.
+ * The backend enforces actual restrictions - if a feature is disabled,
+ * the API will return 403. This is the correct pattern because:
+ * 
+ * 1. No loading states needed - UI renders immediately
+ * 2. No flip-flopping between "disabled" and "enabled"
+ * 3. Backend is the source of truth for security
+ * 4. Config only affects UI hints (hiding links/buttons)
+ */
 export function useAuthConfig() {
-  const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  // Always start with permissive defaults - never block UI
+  const [config, setConfig] = useState<AuthConfig>(DEFAULT_AUTH_CONFIG);
 
   useEffect(() => {
-    const mapHitConfig = (hitCfg: any): Partial<AuthConfig> => {
-      if (!hitCfg?.auth) return {};
-      return {
-        allow_signup: hitCfg.auth.allowSignup,
-        password_login: hitCfg.auth.passwordLogin,
-        password_reset: hitCfg.auth.passwordReset,
-        magic_link_login: hitCfg.auth.magicLinkLogin,
-        email_verification: hitCfg.auth.emailVerification,
-        two_factor_auth: hitCfg.auth.twoFactorAuth,
-        oauth_providers: hitCfg.auth.socialProviders || [],
-      };
-    };
+    // Check window config first (synchronous, set by HitAppProvider)
+    const windowConfig = getWindowConfig();
+    if (windowConfig) {
+      setConfig(windowConfig);
+      return; // Don't need API call if we have static config
+    }
 
-    Promise.all([
-      fetchAuth<{ data: AuthConfig }>('/config').catch((e) => {
-        setError(e);
-        return null;
-      }),
-      fetch('/hit-config.json').then((res) => res.json()).catch(() => null),
-    ])
-      .then(([apiRes, hitCfg]) => {
-        const apiConfig = (apiRes?.data || apiRes) as AuthConfig | null;
-        const merged: AuthConfig = {
-          allow_signup: apiConfig?.allow_signup ?? mapHitConfig(hitCfg).allow_signup ?? false,
-          password_login: apiConfig?.password_login ?? mapHitConfig(hitCfg).password_login ?? true,
-          magic_link_login: apiConfig?.magic_link_login ?? mapHitConfig(hitCfg).magic_link_login ?? false,
-          email_verification: apiConfig?.email_verification ?? mapHitConfig(hitCfg).email_verification,
-          two_factor_auth: apiConfig?.two_factor_auth ?? mapHitConfig(hitCfg).two_factor_auth,
-          oauth_providers: apiConfig?.oauth_providers ?? mapHitConfig(hitCfg).oauth_providers ?? [],
-        };
-        setConfig(merged);
-        setError(null);
+    // Fallback: fetch from API (for apps without static config)
+    fetchAuth<{ data: AuthConfig; features?: AuthConfig }>('/config')
+      .then((apiRes) => {
+        const apiConfig = (apiRes?.features || apiRes?.data || apiRes) as AuthConfig | null;
+        if (apiConfig) {
+          setConfig({
+            allow_signup: apiConfig.allow_signup ?? DEFAULT_AUTH_CONFIG.allow_signup,
+            password_login: apiConfig.password_login ?? DEFAULT_AUTH_CONFIG.password_login,
+            password_reset: apiConfig.password_reset ?? DEFAULT_AUTH_CONFIG.password_reset,
+            magic_link_login: apiConfig.magic_link_login ?? DEFAULT_AUTH_CONFIG.magic_link_login,
+            email_verification: apiConfig.email_verification ?? DEFAULT_AUTH_CONFIG.email_verification,
+            two_factor_auth: apiConfig.two_factor_auth ?? DEFAULT_AUTH_CONFIG.two_factor_auth,
+            oauth_providers: apiConfig.oauth_providers ?? [],
+          });
+        }
       })
-      .catch((e) => setError(e))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        // API failed - keep permissive defaults, backend will enforce
+      });
   }, []);
 
-  return { config, loading, error };
+  // Never loading, config always has permissive defaults
+  return { config, loading: false, error: null };
+}
+
+/**
+ * Helper to set token in both localStorage and cookie
+ * Cookie is needed for middleware to check auth state
+ */
+function setAuthToken(token: string, rememberMe: boolean = false): void {
+  if (typeof window === 'undefined') return;
+
+  // Store in localStorage
+  localStorage.setItem('hit_token', token);
+
+  // Set cookie for middleware (with appropriate expiry)
+  // Parse token to get expiry
+  let maxAge = 3600; // Default 1 hour
+  try {
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.exp) {
+        // Calculate seconds until expiry
+        maxAge = Math.max(0, payload.exp - Math.floor(Date.now() / 1000));
+      }
+    }
+  } catch {
+    // Use default
+  }
+
+  // If remember me is checked, extend the cookie life (7 days)
+  if (rememberMe) {
+    maxAge = Math.max(maxAge, 7 * 24 * 60 * 60);
+  }
+
+  // Set cookie (SameSite=Lax for CSRF protection while allowing redirects)
+  document.cookie = `hit_token=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
+/**
+ * Helper to clear auth tokens
+ */
+function clearAuthToken(): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.removeItem('hit_token');
+  document.cookie = 'hit_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 }
 
 export function useLogin() {
@@ -132,10 +254,9 @@ export function useLogin() {
         body: JSON.stringify(payload),
       });
 
-      // Token is usually set as HttpOnly cookie by the server
-      // but if returned, we can store it
+      // Store token in localStorage and cookie for middleware
       if (res.token && typeof window !== 'undefined') {
-        localStorage.setItem('hit_token', res.token);
+        setAuthToken(res.token, payload.remember_me);
       }
 
       return res;
@@ -164,6 +285,11 @@ export function useSignup() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+
+      // Store token if returned (auto-login after signup)
+      if (res.token && typeof window !== 'undefined') {
+        setAuthToken(res.token, false);
+      }
 
       return res;
     } catch (e) {
@@ -290,4 +416,5 @@ export function useOAuth() {
   return { initiateOAuth };
 }
 
+export { clearAuthToken };
 export type { AuthConfig, LoginPayload, SignupPayload, AuthResponse };

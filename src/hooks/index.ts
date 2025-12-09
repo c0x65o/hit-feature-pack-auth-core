@@ -10,6 +10,7 @@ export {
   useResetPassword,
   useVerifyEmail,
   useOAuth,
+  clearAuthToken,
   type AuthConfig,
   type LoginPayload,
   type SignupPayload,

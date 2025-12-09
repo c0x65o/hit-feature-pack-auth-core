@@ -13,6 +13,13 @@ interface VerifyEmailProps {
   appName?: string;
 }
 
+/**
+ * Verify Email page.
+ * 
+ * Always renders - backend enforces whether email verification is enabled.
+ * If disabled, the API will return an error which is shown to the user.
+ * This approach prevents UI flicker and is more secure (backend is source of truth).
+ */
 export function VerifyEmail({
   token: propToken,
   email: propEmail,
@@ -54,7 +61,7 @@ export function VerifyEmail({
     if (token && !autoVerified && !success && !error) {
       setAutoVerified(true);
       verifyEmail(token).catch(() => {
-        // Error handled by hook
+        // Error handled by hook (including "email verification disabled" from backend)
       });
     }
   }, [token, autoVerified, success, error, verifyEmail]);
