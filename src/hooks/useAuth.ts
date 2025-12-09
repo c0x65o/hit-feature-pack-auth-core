@@ -9,6 +9,8 @@ interface AuthConfig {
   oauth_providers: string[];
   password_login: boolean;
   magic_link_login: boolean;
+  email_verification?: boolean;
+  two_factor_auth?: boolean;
 }
 
 interface LoginPayload {
@@ -75,9 +77,36 @@ export function useAuthConfig() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    fetchAuth<{ data: AuthConfig }>('/config')
-      .then((res) => {
-        setConfig(res.data || res as unknown as AuthConfig);
+    const mapHitConfig = (hitCfg: any): Partial<AuthConfig> => {
+      if (!hitCfg?.auth) return {};
+      return {
+        allow_signup: hitCfg.auth.allowSignup,
+        password_login: hitCfg.auth.passwordLogin,
+        magic_link_login: hitCfg.auth.magicLinkLogin,
+        email_verification: hitCfg.auth.emailVerification,
+        two_factor_auth: hitCfg.auth.twoFactorAuth,
+        oauth_providers: hitCfg.auth.socialProviders || [],
+      };
+    };
+
+    Promise.all([
+      fetchAuth<{ data: AuthConfig }>('/config').catch((e) => {
+        setError(e);
+        return null;
+      }),
+      fetch('/hit-config.json').then((res) => res.json()).catch(() => null),
+    ])
+      .then(([apiRes, hitCfg]) => {
+        const apiConfig = (apiRes?.data || apiRes) as AuthConfig | null;
+        const merged: AuthConfig = {
+          allow_signup: apiConfig?.allow_signup ?? mapHitConfig(hitCfg).allow_signup ?? false,
+          password_login: apiConfig?.password_login ?? mapHitConfig(hitCfg).password_login ?? true,
+          magic_link_login: apiConfig?.magic_link_login ?? mapHitConfig(hitCfg).magic_link_login ?? false,
+          email_verification: apiConfig?.email_verification ?? mapHitConfig(hitCfg).email_verification,
+          two_factor_auth: apiConfig?.two_factor_auth ?? mapHitConfig(hitCfg).two_factor_auth,
+          oauth_providers: apiConfig?.oauth_providers ?? mapHitConfig(hitCfg).oauth_providers ?? [],
+        };
+        setConfig(merged);
         setError(null);
       })
       .catch((e) => setError(e))
