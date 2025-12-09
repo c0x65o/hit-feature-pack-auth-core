@@ -23,7 +23,7 @@ export function FormInput({
       <label className="block text-[var(--hit-foreground)] text-sm font-medium mb-1.5">
         {label}
       </label>
-      <div className="relative">
+      <div className="relative inline-flex w-full">
         <input
           type={isPassword && showPassword ? 'text' : type}
           className={`
@@ -42,7 +42,7 @@ export function FormInput({
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
-            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hit-primary)] focus-visible:ring-offset-0 transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--hit-muted-foreground)] hover:text-[var(--hit-foreground)] hover:bg-[var(--hit-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hit-primary)] focus-visible:ring-offset-0 transition-colors"
           >
             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
           </button>
