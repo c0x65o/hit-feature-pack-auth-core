@@ -1,0 +1,20 @@
+# Source files - only dist/ should be installed
+src/
+
+# Development files
+*.ts
+!*.d.ts
+tsconfig.json
+.eslintrc*
+.prettierrc*
+
+# Test files
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Development tooling
+.vscode/
+.idea/
