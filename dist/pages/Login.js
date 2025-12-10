@@ -1,6 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
@@ -51,26 +51,18 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
         }
         catch (err) {
             // Check if error is email verification required
-            const errorMessage = err instanceof Error ? err.message : error || '';
-            if (errorMessage.toLowerCase().includes('email verification required') ||
-                errorMessage.toLowerCase().includes('verification required')) {
-                // Redirect to email not verified page with email parameter
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            const isVerificationError = errorMessage.toLowerCase().includes('email verification required') ||
+                errorMessage.toLowerCase().includes('verification required');
+            if (isVerificationError) {
+                // Redirect immediately without showing error message
+                // The hook won't set error state for verification errors, so no need to clear
                 navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
                 return;
             }
             // Other errors are handled by the hook and displayed
         }
     };
-    // Also check error state after it's set (in case error is set asynchronously)
-    useEffect(() => {
-        if (error && email) {
-            const errorMessage = error.toLowerCase();
-            if (errorMessage.includes('email verification required') ||
-                errorMessage.includes('verification required')) {
-                navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
-            }
-        }
-    }, [error, email, navigate]);
     return (_jsx(AuthLayout, { children: _jsxs(AuthCard, { children: [_jsx("div", { style: styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md }), children: _jsx("img", { src: logoUrl, alt: appName, style: { height: '2rem', width: 'auto' } }) }), _jsx("h1", { style: styles({
                         fontSize: ts.heading2.fontSize,
                         fontWeight: ts.heading2.fontWeight,

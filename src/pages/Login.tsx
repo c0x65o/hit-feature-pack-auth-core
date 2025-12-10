@@ -70,27 +70,20 @@ function LoginContent({
       }
     } catch (err) {
       // Check if error is email verification required
-      const errorMessage = err instanceof Error ? err.message : error || '';
-      if (errorMessage.toLowerCase().includes('email verification required') || 
-          errorMessage.toLowerCase().includes('verification required')) {
-        // Redirect to email not verified page with email parameter
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const isVerificationError = 
+        errorMessage.toLowerCase().includes('email verification required') || 
+        errorMessage.toLowerCase().includes('verification required');
+      
+      if (isVerificationError) {
+        // Redirect immediately without showing error message
+        // The hook won't set error state for verification errors, so no need to clear
         navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
         return;
       }
       // Other errors are handled by the hook and displayed
     }
   };
-
-  // Also check error state after it's set (in case error is set asynchronously)
-  useEffect(() => {
-    if (error && email) {
-      const errorMessage = error.toLowerCase();
-      if (errorMessage.includes('email verification required') || 
-          errorMessage.includes('verification required')) {
-        navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
-      }
-    }
-  }, [error, email, navigate]);
 
   return (
     <AuthLayout>

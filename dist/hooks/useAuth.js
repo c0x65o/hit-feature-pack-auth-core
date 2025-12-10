@@ -202,7 +202,12 @@ export function useLogin() {
         }
         catch (e) {
             const message = e instanceof Error ? e.message : 'Login failed';
-            setError(message);
+            // Don't set error state for email verification errors - let the component handle redirect
+            const isVerificationError = message.toLowerCase().includes('email verification required') ||
+                message.toLowerCase().includes('verification required');
+            if (!isVerificationError) {
+                setError(message);
+            }
             throw e;
         }
         finally {
