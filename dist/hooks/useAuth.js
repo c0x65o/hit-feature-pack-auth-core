@@ -295,14 +295,19 @@ export function useVerifyEmail() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(false);
-    const verifyEmail = useCallback(async (token) => {
+    const verifyEmail = useCallback(async (tokenOrCode, email) => {
         setLoading(true);
         setError(null);
         setSuccess(false);
         try {
+            // If email is provided, assume it's a code-based verification
+            // Otherwise, assume it's a token-based verification
+            const payload = email
+                ? { email, code: tokenOrCode }
+                : { token: tokenOrCode };
             await fetchAuth('/verify-email', {
                 method: 'POST',
-                body: JSON.stringify({ token }),
+                body: JSON.stringify(payload),
             });
             setSuccess(true);
         }

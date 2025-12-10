@@ -50,11 +50,12 @@ function VerifyEmailContent({
   }, [propToken, propEmail]);
 
   useEffect(() => {
-    if (token && !autoVerified && !success && !error) {
+    // Auto-verify if token is present (token-based verification)
+    if (token && !email && !autoVerified && !success && !error) {
       setAutoVerified(true);
       verifyEmail(token).catch(() => {});
     }
-  }, [token, autoVerified, success, error, verifyEmail]);
+  }, [token, email, autoVerified, success, error, verifyEmail]);
 
   const handleResend = async () => {
     if (!email) return;

@@ -77,7 +77,7 @@ export declare function useResetPassword(): {
     clearError: () => void;
 };
 export declare function useVerifyEmail(): {
-    verifyEmail: (token: string) => Promise<void>;
+    verifyEmail: (tokenOrCode: string, email?: string) => Promise<void>;
     resendVerification: (email: string) => Promise<void>;
     loading: boolean;
     error: string | null;
