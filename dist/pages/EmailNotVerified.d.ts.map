@@ -1,0 +1,1 @@
+{"version":3,"file":"EmailNotVerified.d.ts","sourceRoot":"","sources":["../../src/pages/EmailNotVerified.tsx"],"names":[],"mappings":"AAOA,UAAU,qBAAqB;IAC7B,KAAK,CAAC,EAAE,MAAM,CAAC;IACf,UAAU,CAAC,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,CAAC;IACpC,OAAO,CAAC,EAAE,MAAM,CAAC;IACjB,OAAO,CAAC,EAAE,MAAM,CAAC;CAClB;AAoSD,wBAAgB,gBAAgB,CAAC,KAAK,EAAE,qBAAqB,2CAM5D;AAED,eAAe,gBAAgB,CAAC"}

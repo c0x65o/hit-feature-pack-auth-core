@@ -17,6 +17,8 @@ routes:
     page: ResetPassword
   - path: /verify-email
     page: VerifyEmail
+  - path: /email-not-verified
+    page: EmailNotVerified
   - path: /magic-link
     page: MagicLink
 
