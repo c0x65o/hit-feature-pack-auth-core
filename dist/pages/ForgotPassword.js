@@ -111,8 +111,24 @@ function ForgotPasswordContent({ onNavigate, logoUrl = '/icon.png', appName = 'H
                                 marginTop: spacing.xs,
                             }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Sending...' : 'Send Reset Link'] })] })] }) }));
 }
+// Get default theme from config (set by HitAppProvider)
+function getDefaultTheme() {
+    if (typeof window === 'undefined')
+        return 'light';
+    const win = window;
+    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
+    if (theme === 'dark')
+        return 'dark';
+    if (theme === 'light')
+        return 'light';
+    // 'system' - check OS preference
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
 export function ForgotPassword(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: "dark", children: _jsx(ForgotPasswordContent, { ...props }) }));
+    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(ForgotPasswordContent, { ...props }) }));
 }
 export default ForgotPassword;
 //# sourceMappingURL=ForgotPassword.js.map

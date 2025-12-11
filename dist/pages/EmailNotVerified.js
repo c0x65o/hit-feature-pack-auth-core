@@ -194,8 +194,24 @@ function EmailNotVerifiedContent({ email: propEmail, onNavigate, logoUrl = '/ico
                                     cursor: 'pointer',
                                 }), children: "Back to Login" }) })] })] }) }));
 }
+// Get default theme from config (set by HitAppProvider)
+function getDefaultTheme() {
+    if (typeof window === 'undefined')
+        return 'light';
+    const win = window;
+    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
+    if (theme === 'dark')
+        return 'dark';
+    if (theme === 'light')
+        return 'light';
+    // 'system' - check OS preference
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
 export function EmailNotVerified(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: "dark", children: _jsx(EmailNotVerifiedContent, { ...props }) }));
+    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(EmailNotVerifiedContent, { ...props }) }));
 }
 export default EmailNotVerified;
 //# sourceMappingURL=EmailNotVerified.js.map

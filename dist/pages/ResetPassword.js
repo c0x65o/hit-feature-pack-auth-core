@@ -137,8 +137,24 @@ function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.p
                                 marginTop: spacing.xs,
                             }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Resetting...' : 'Reset Password'] })] })] }) }));
 }
+// Get default theme from config (set by HitAppProvider)
+function getDefaultTheme() {
+    if (typeof window === 'undefined')
+        return 'light';
+    const win = window;
+    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
+    if (theme === 'dark')
+        return 'dark';
+    if (theme === 'light')
+        return 'light';
+    // 'system' - check OS preference
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
 export function ResetPassword(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: "dark", children: _jsx(ResetPasswordContent, { ...props }) }));
+    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(ResetPasswordContent, { ...props }) }));
 }
 export default ResetPassword;
 //# sourceMappingURL=ResetPassword.js.map

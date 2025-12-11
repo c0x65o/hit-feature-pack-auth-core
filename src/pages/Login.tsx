@@ -279,9 +279,23 @@ function LoginContent({
   );
 }
 
+// Get default theme from config (set by HitAppProvider)
+function getDefaultTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'light';
+  const win = window as unknown as { __HIT_CONFIG?: { branding?: { defaultTheme?: string } } };
+  const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
+  if (theme === 'dark') return 'dark';
+  if (theme === 'light') return 'light';
+  // 'system' - check OS preference
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+}
+
 export function Login(props: LoginProps) {
   return (
-    <ThemeProvider defaultTheme="dark">
+    <ThemeProvider defaultTheme={getDefaultTheme()}>
       <LoginContent {...props} />
     </ThemeProvider>
   );

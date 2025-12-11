@@ -146,8 +146,24 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
                                 cursor: 'pointer',
                             }), children: "Sign up" })] }))] }) }));
 }
+// Get default theme from config (set by HitAppProvider)
+function getDefaultTheme() {
+    if (typeof window === 'undefined')
+        return 'light';
+    const win = window;
+    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
+    if (theme === 'dark')
+        return 'dark';
+    if (theme === 'light')
+        return 'light';
+    // 'system' - check OS preference
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
 export function Login(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: "dark", children: _jsx(LoginContent, { ...props }) }));
+    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(LoginContent, { ...props }) }));
 }
 export default Login;
 //# sourceMappingURL=Login.js.map
