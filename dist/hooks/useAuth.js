@@ -1,3 +1,4 @@
+'use client';
 /**
  * Auth hooks for authentication operations
  */

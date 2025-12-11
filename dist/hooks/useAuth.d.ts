@@ -1,6 +1,3 @@
-/**
- * Auth hooks for authentication operations
- */
 interface AuthConfig {
     allow_signup: boolean;
     oauth_providers: string[];
