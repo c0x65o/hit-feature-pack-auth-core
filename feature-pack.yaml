@@ -45,18 +45,6 @@ requires:
 # Configurable options
 config:
   schema:
-    show_social_login:
-      type: boolean
-      default: true
-      description: Show social login buttons
-    social_providers:
-      type: array
-      default: []
-      description: OAuth providers to show (google, github, microsoft, apple)
-    show_remember_me:
-      type: boolean
-      default: true
-      description: Show remember me checkbox on login
     login_redirect:
       type: string
       default: "/"
@@ -65,6 +53,10 @@ config:
       type: string
       default: "/"
       description: Where to redirect after signup
+    show_privacy_checkbox:
+      type: boolean
+      default: false
+      description: Show privacy policy checkbox on signup
     password_min_length:
       type: number
       default: 8
