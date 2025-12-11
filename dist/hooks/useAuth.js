@@ -1,7 +1,7 @@
 /**
  * Auth hooks for authentication operations
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 // Get the auth module URL
 function getAuthUrl() {
     if (typeof window !== 'undefined') {
@@ -113,11 +113,18 @@ function getWindowConfig() {
  *
  * This hook reads config synchronously from the window global,
  * avoiding any loading states or UI flicker.
+ *
+ * Uses useEffect to update config when it becomes available (handles SSR/hydration timing).
  */
 export function useAuthConfig() {
-    // Read config synchronously - no useEffect, no fetch
-    // useState initializer runs once and reads from window.__HIT_CONFIG
-    const [config] = useState(() => getWindowConfig());
+    // Read config synchronously on first render
+    const [config, setConfig] = useState(() => getWindowConfig());
+    // Update config after mount in case it wasn't available during SSR/initial render
+    // This handles the case where window.__HIT_CONFIG is injected after component mounts
+    useEffect(() => {
+        const currentConfig = getWindowConfig();
+        setConfig(currentConfig);
+    }, []); // Empty deps - only run once after mount
     // No loading state needed - config is static and available immediately
     return { config, loading: false, error: null };
 }

@@ -37,6 +37,8 @@ interface AuthResponse {
  *
  * This hook reads config synchronously from the window global,
  * avoiding any loading states or UI flicker.
+ *
+ * Uses useEffect to update config when it becomes available (handles SSR/hydration timing).
  */
 export declare function useAuthConfig(): {
     config: AuthConfig;
