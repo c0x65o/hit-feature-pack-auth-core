@@ -402,7 +402,9 @@ export function useOAuth() {
   const initiateOAuth = useCallback((provider: string) => {
     const authUrl = getAuthUrl();
     const returnUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    window.location.href = `${authUrl}/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(returnUrl)}/api/auth/callback/${provider}`;
+    // Redirect URI should match Google's configured callback URL
+    // Frontend has a route handler at /api/oauth/[provider]/callback that proxies to auth module
+    window.location.href = `${authUrl}/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(returnUrl)}/api/oauth/${provider}/callback`;
   }, []);
 
   return { initiateOAuth };
