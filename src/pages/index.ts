@@ -1,5 +1,8 @@
 /**
  * Auth Core Pages
+ * 
+ * Using direct exports for optimal tree-shaking and code splitting.
+ * Each component is only bundled when actually imported/used.
  */
 
 export { Login, default as LoginPage } from './Login';

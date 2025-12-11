@@ -3,6 +3,9 @@
  * 
  * Core authentication UI - login, signup, forgot password, email verification.
  * 
+ * Components are exported individually for optimal tree-shaking.
+ * When used with the route loader system, only the requested component is bundled.
+ * 
  * @example
  * ```tsx
  * import { Login, Signup, ForgotPassword, ResetPassword, VerifyEmail } from '@hit/feature-pack-auth-core';
@@ -13,13 +16,28 @@
  * ```
  */
 
-// Pages
-export * from './pages/index';
+// Pages - exported individually for tree-shaking
+export {
+  Login,
+  LoginPage,
+  Signup,
+  SignupPage,
+  ForgotPassword,
+  ForgotPasswordPage,
+  ResetPassword,
+  ResetPasswordPage,
+  VerifyEmail,
+  VerifyEmailPage,
+  EmailNotVerified,
+  EmailNotVerifiedPage,
+  MagicLink,
+  MagicLinkPage,
+} from './pages/index';
 
-// Components
+// Components - exported individually for tree-shaking
 export * from './components/index';
 
-// Hooks
+// Hooks - exported individually for tree-shaking
 export * from './hooks/index';
 
 // Navigation config
