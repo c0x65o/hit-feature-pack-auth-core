@@ -128,7 +128,9 @@ function LoginContent({
               fontWeight: ts.label.fontWeight,
               color: colors.error.default,
               margin: 0,
-            })}>{error}</p>
+            })}>
+              {error}
+            </p>
           </div>
         )}
 

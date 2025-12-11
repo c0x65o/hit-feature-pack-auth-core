@@ -40,7 +40,26 @@ async function fetchAuth(endpoint, options) {
             ...options?.headers,
         },
     });
-    const data = await res.json();
+    let data;
+    try {
+        const text = await res.text();
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            }
+            catch {
+                // Response is not JSON, use the text as the error message
+                data = { detail: text || `Request failed: ${res.status}` };
+            }
+        }
+        else {
+            data = {};
+        }
+    }
+    catch (parseError) {
+        // Failed to read response body
+        data = { detail: `Request failed: ${res.status}` };
+    }
     if (!res.ok) {
         // In debug mode, show detailed error from backend
         if (isDebugMode() && data.debug) {
@@ -58,7 +77,13 @@ async function fetchAuth(endpoint, options) {
             });
             throw new Error(detailedError);
         }
-        throw new Error(data.detail || data.message || data.error || `Request failed: ${res.status}`);
+        // Extract error message from various possible formats
+        const errorMessage = (typeof data.detail === 'string' ? data.detail : null) ||
+            (typeof data.message === 'string' ? data.message : null) ||
+            (typeof data.error === 'string' ? data.error : null) ||
+            (typeof data === 'string' ? data : null) ||
+            `Request failed: ${res.status} ${res.statusText || ''}`.trim();
+        throw new Error(errorMessage);
     }
     return data;
 }
