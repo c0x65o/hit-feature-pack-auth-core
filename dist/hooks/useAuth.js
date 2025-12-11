@@ -367,5 +367,36 @@ export function useOAuth() {
     }, []);
     return { initiateOAuth };
 }
+export function useAcceptInvite() {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(false);
+    const acceptInvite = useCallback(async (token, password) => {
+        setLoading(true);
+        setError(null);
+        setSuccess(false);
+        try {
+            const res = await fetchAuth('/invites/accept', {
+                method: 'POST',
+                body: JSON.stringify({ token, password }),
+            });
+            // Store token in localStorage and cookie for middleware
+            if (res.token && typeof window !== 'undefined') {
+                setAuthToken(res.token, false);
+            }
+            setSuccess(true);
+            return res;
+        }
+        catch (e) {
+            const message = e instanceof Error ? e.message : 'Failed to accept invite';
+            setError(message);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    return { acceptInvite, loading, error, success, clearError: () => setError(null) };
+}
 export { clearAuthToken };
 //# sourceMappingURL=useAuth.js.map

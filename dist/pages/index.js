@@ -11,4 +11,5 @@ export { ResetPassword, default as ResetPasswordPage } from './ResetPassword';
 export { VerifyEmail, default as VerifyEmailPage } from './VerifyEmail';
 export { EmailNotVerified, default as EmailNotVerifiedPage } from './EmailNotVerified';
 export { MagicLink, default as MagicLinkPage } from './MagicLink';
+export { InviteAccept, default as InviteAcceptPage } from './InviteAccept';
 //# sourceMappingURL=index.js.map

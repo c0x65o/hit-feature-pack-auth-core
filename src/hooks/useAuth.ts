@@ -444,5 +444,40 @@ export function useOAuth() {
   return { initiateOAuth };
 }
 
+export function useAcceptInvite() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const acceptInvite = useCallback(async (token: string, password?: string) => {
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const res = await fetchAuth<AuthResponse>('/invites/accept', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+      });
+
+      // Store token in localStorage and cookie for middleware
+      if (res.token && typeof window !== 'undefined') {
+        setAuthToken(res.token, false);
+      }
+
+      setSuccess(true);
+      return res;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to accept invite';
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { acceptInvite, loading, error, success, clearError: () => setError(null) };
+}
+
 export { clearAuthToken };
 export type { AuthConfig, LoginPayload, SignupPayload, AuthResponse };

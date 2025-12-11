@@ -83,6 +83,13 @@ export declare function useVerifyEmail(): {
 export declare function useOAuth(): {
     initiateOAuth: (provider: string) => void;
 };
+export declare function useAcceptInvite(): {
+    acceptInvite: (token: string, password?: string) => Promise<AuthResponse>;
+    loading: boolean;
+    error: string | null;
+    success: boolean;
+    clearError: () => void;
+};
 export { clearAuthToken };
 export type { AuthConfig, LoginPayload, SignupPayload, AuthResponse };
 //# sourceMappingURL=useAuth.d.ts.map

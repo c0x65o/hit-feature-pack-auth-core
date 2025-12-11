@@ -21,6 +21,9 @@ routes:
     page: EmailNotVerified
   - path: /magic-link
     page: MagicLink
+  - path: /invites/accept
+    page: InviteAccept
+    featureFlag: auth.allow_invited
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects
