@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { useResetPassword } from '../hooks/useAuth';
 
 interface ResetPasswordProps {
@@ -256,25 +256,11 @@ function ResetPasswordContent({
   );
 }
 
-// Get default theme from config (set by HitAppProvider)
-function getDefaultTheme(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light';
-  const win = window as unknown as { __HIT_CONFIG?: { branding?: { defaultTheme?: string } } };
-  const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
-  if (theme === 'dark') return 'dark';
-  if (theme === 'light') return 'light';
-  // 'system' - check OS preference
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
-}
-
 export function ResetPassword(props: ResetPasswordProps) {
   return (
-    <ThemeProvider defaultTheme={getDefaultTheme()}>
+    <ConditionalThemeProvider>
       <ResetPasswordContent {...props} />
-    </ThemeProvider>
+    </ConditionalThemeProvider>
   );
 }
 

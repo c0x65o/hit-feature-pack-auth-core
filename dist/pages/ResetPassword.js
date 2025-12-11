@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { useResetPassword } from '../hooks/useAuth';
 function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.png', appName = 'HIT', passwordMinLength = 8, }) {
     const [token, setToken] = useState(propToken || '');
@@ -137,24 +137,8 @@ function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.p
                                 marginTop: spacing.xs,
                             }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Resetting...' : 'Reset Password'] })] })] }) }));
 }
-// Get default theme from config (set by HitAppProvider)
-function getDefaultTheme() {
-    if (typeof window === 'undefined')
-        return 'light';
-    const win = window;
-    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
-    if (theme === 'dark')
-        return 'dark';
-    if (theme === 'light')
-        return 'light';
-    // 'system' - check OS preference
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-    }
-    return 'light';
-}
 export function ResetPassword(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(ResetPasswordContent, { ...props }) }));
+    return (_jsx(ConditionalThemeProvider, { children: _jsx(ResetPasswordContent, { ...props }) }));
 }
 export default ResetPassword;
 //# sourceMappingURL=ResetPassword.js.map

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
-import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { useForgotPassword } from '../hooks/useAuth';
 
 interface ForgotPasswordProps {
@@ -205,25 +205,11 @@ function ForgotPasswordContent({
   );
 }
 
-// Get default theme from config (set by HitAppProvider)
-function getDefaultTheme(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light';
-  const win = window as unknown as { __HIT_CONFIG?: { branding?: { defaultTheme?: string } } };
-  const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
-  if (theme === 'dark') return 'dark';
-  if (theme === 'light') return 'light';
-  // 'system' - check OS preference
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
-}
-
 export function ForgotPassword(props: ForgotPasswordProps) {
   return (
-    <ThemeProvider defaultTheme={getDefaultTheme()}>
+    <ConditionalThemeProvider>
       <ForgotPasswordContent {...props} />
-    </ThemeProvider>
+    </ConditionalThemeProvider>
   );
 }
 

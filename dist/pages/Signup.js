@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Loader2, CheckCircle } from 'lucide-react';
-import { ThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useSignup, useAuthConfig } from '../hooks/useAuth';
 function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 'HIT', tagline = 'Create your account to get started', signupRedirect = '/', passwordMinLength = 8, }) {
@@ -131,24 +131,8 @@ function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName =
                                 cursor: 'pointer',
                             }), children: "Sign in" })] })] }) }));
 }
-// Get default theme from config (set by HitAppProvider)
-function getDefaultTheme() {
-    if (typeof window === 'undefined')
-        return 'light';
-    const win = window;
-    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
-    if (theme === 'dark')
-        return 'dark';
-    if (theme === 'light')
-        return 'light';
-    // 'system' - check OS preference
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-    }
-    return 'light';
-}
 export function Signup(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(SignupContent, { ...props }) }));
+    return (_jsx(ConditionalThemeProvider, { children: _jsx(SignupContent, { ...props }) }));
 }
 export default Signup;
 //# sourceMappingURL=Signup.js.map

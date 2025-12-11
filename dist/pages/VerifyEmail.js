@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
-import { ThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
 function VerifyEmailContent({ token: propToken, email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
     const [token, setToken] = useState(propToken || '');
@@ -67,24 +67,8 @@ function VerifyEmailContent({ token: propToken, email: propEmail, onNavigate, lo
     // Waiting state (no token)
     return (_jsx(AuthLayout, { children: _jsxs(AuthCard, { children: [_jsx("div", { style: styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md }), children: _jsx("img", { src: logoUrl, alt: appName, style: { height: '2rem', width: 'auto' } }) }), _jsxs("div", { style: styles({ textAlign: 'center' }), children: [_jsx("div", { style: styles({ width: '3rem', height: '3rem', backgroundColor: colors.primary.light, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', marginBottom: spacing.md }), children: _jsx(Mail, { size: 24, style: { color: colors.primary.default } }) }), _jsx("h1", { style: styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs }), children: "Check Your Email" }), _jsx("p", { style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg }), children: email ? (_jsxs(_Fragment, { children: ["We've sent a verification link to ", _jsx("strong", { style: { color: colors.text.primary }, children: email }), "."] })) : ('Please check your email for a verification link.') }), email && (_jsx("button", { type: "button", onClick: handleResend, disabled: loading, style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }), children: loading ? 'Sending...' : "Didn't receive it? Resend" })), _jsx("div", { style: styles({ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border.subtle}` }), children: _jsx("button", { type: "button", onClick: () => navigate('/login'), style: styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, background: 'none', border: 'none', cursor: 'pointer' }), children: "Back to Login" }) })] })] }) }));
 }
-// Get default theme from config (set by HitAppProvider)
-function getDefaultTheme() {
-    if (typeof window === 'undefined')
-        return 'light';
-    const win = window;
-    const theme = win.__HIT_CONFIG?.branding?.defaultTheme;
-    if (theme === 'dark')
-        return 'dark';
-    if (theme === 'light')
-        return 'light';
-    // 'system' - check OS preference
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-    }
-    return 'light';
-}
 export function VerifyEmail(props) {
-    return (_jsx(ThemeProvider, { defaultTheme: getDefaultTheme(), children: _jsx(VerifyEmailContent, { ...props }) }));
+    return (_jsx(ConditionalThemeProvider, { children: _jsx(VerifyEmailContent, { ...props }) }));
 }
 export default VerifyEmail;
 //# sourceMappingURL=VerifyEmail.js.map
