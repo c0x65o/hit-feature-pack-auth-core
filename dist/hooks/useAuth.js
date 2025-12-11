@@ -1,7 +1,7 @@
 /**
  * Auth hooks for authentication operations
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 // Get the auth module URL
 function getAuthUrl() {
     if (typeof window !== 'undefined') {
@@ -62,15 +62,19 @@ async function fetchAuth(endpoint, options) {
     return data;
 }
 /**
- * Default auth config - PERMISSIVE defaults.
+ * Default auth config - RESTRICTIVE defaults.
  *
- * This ensures UI never incorrectly hides features.
- * Backend is the source of truth and will reject disabled features.
+ * Since config is static (generated at build time from hit.yaml),
+ * we use restrictive defaults for SSR. The actual config from
+ * window.__HIT_CONFIG is read synchronously on client mount.
+ *
+ * Backend is still the source of truth for security - these
+ * defaults only affect initial SSR render before hydration.
  */
 const DEFAULT_AUTH_CONFIG = {
-    allow_signup: true, // Show signup until we know it's disabled
-    password_login: true, // Show password form until we know it's disabled
-    password_reset: true, // Show forgot password until we know it's disabled
+    allow_signup: false, // Don't show signup unless explicitly enabled
+    password_login: true, // Show password form by default
+    password_reset: true, // Show forgot password by default
     magic_link_login: false, // Don't show magic link unless explicitly enabled
     email_verification: true,
     two_factor_auth: false,
@@ -78,68 +82,43 @@ const DEFAULT_AUTH_CONFIG = {
 };
 /**
  * Get config from window global (set by HitAppProvider).
- * Returns null if not available yet.
+ * This is synchronous and available immediately on client.
  */
 function getWindowConfig() {
-    if (typeof window === 'undefined')
-        return null;
+    if (typeof window === 'undefined') {
+        // SSR: return restrictive defaults
+        return DEFAULT_AUTH_CONFIG;
+    }
     const win = window;
-    if (!win.__HIT_CONFIG?.auth)
-        return null;
+    if (!win.__HIT_CONFIG?.auth) {
+        // No config injected yet - return restrictive defaults
+        return DEFAULT_AUTH_CONFIG;
+    }
     const auth = win.__HIT_CONFIG.auth;
     return {
-        allow_signup: auth.allowSignup ?? DEFAULT_AUTH_CONFIG.allow_signup,
-        password_login: auth.passwordLogin ?? DEFAULT_AUTH_CONFIG.password_login,
-        password_reset: auth.passwordReset ?? DEFAULT_AUTH_CONFIG.password_reset,
-        magic_link_login: auth.magicLinkLogin ?? DEFAULT_AUTH_CONFIG.magic_link_login,
-        email_verification: auth.emailVerification ?? DEFAULT_AUTH_CONFIG.email_verification,
-        two_factor_auth: auth.twoFactorAuth ?? DEFAULT_AUTH_CONFIG.two_factor_auth,
+        allow_signup: auth.allowSignup ?? false,
+        password_login: auth.passwordLogin ?? true,
+        password_reset: auth.passwordReset ?? true,
+        magic_link_login: auth.magicLinkLogin ?? false,
+        email_verification: auth.emailVerification ?? true,
+        two_factor_auth: auth.twoFactorAuth ?? false,
         oauth_providers: auth.socialProviders || [],
     };
 }
 /**
  * Hook to get auth config.
  *
- * IMPORTANT: This hook uses PERMISSIVE defaults to prevent UI flicker.
- * The backend enforces actual restrictions - if a feature is disabled,
- * the API will return 403. This is the correct pattern because:
+ * Config is STATIC - generated at build time from hit.yaml and injected
+ * into window.__HIT_CONFIG by HitAppProvider. No API calls needed.
  *
- * 1. No loading states needed - UI renders immediately
- * 2. No flip-flopping between "disabled" and "enabled"
- * 3. Backend is the source of truth for security
- * 4. Config only affects UI hints (hiding links/buttons)
+ * This hook reads config synchronously from the window global,
+ * avoiding any loading states or UI flicker.
  */
 export function useAuthConfig() {
-    // Always start with permissive defaults - never block UI
-    const [config, setConfig] = useState(DEFAULT_AUTH_CONFIG);
-    useEffect(() => {
-        // Check window config first (synchronous, set by HitAppProvider)
-        const windowConfig = getWindowConfig();
-        if (windowConfig) {
-            setConfig(windowConfig);
-            return; // Don't need API call if we have static config
-        }
-        // Fallback: fetch from API (for apps without static config)
-        fetchAuth('/config')
-            .then((apiRes) => {
-            const apiConfig = (apiRes?.features || apiRes?.data || apiRes);
-            if (apiConfig) {
-                setConfig({
-                    allow_signup: apiConfig.allow_signup ?? DEFAULT_AUTH_CONFIG.allow_signup,
-                    password_login: apiConfig.password_login ?? DEFAULT_AUTH_CONFIG.password_login,
-                    password_reset: apiConfig.password_reset ?? DEFAULT_AUTH_CONFIG.password_reset,
-                    magic_link_login: apiConfig.magic_link_login ?? DEFAULT_AUTH_CONFIG.magic_link_login,
-                    email_verification: apiConfig.email_verification ?? DEFAULT_AUTH_CONFIG.email_verification,
-                    two_factor_auth: apiConfig.two_factor_auth ?? DEFAULT_AUTH_CONFIG.two_factor_auth,
-                    oauth_providers: apiConfig.oauth_providers ?? [],
-                });
-            }
-        })
-            .catch(() => {
-            // API failed - keep permissive defaults, backend will enforce
-        });
-    }, []);
-    // Never loading, config always has permissive defaults
+    // Read config synchronously - no useEffect, no fetch
+    // useState initializer runs once and reads from window.__HIT_CONFIG
+    const [config] = useState(() => getWindowConfig());
+    // No loading state needed - config is static and available immediately
     return { config, loading: false, error: null };
 }
 /**

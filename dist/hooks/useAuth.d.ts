@@ -32,14 +32,11 @@ interface AuthResponse {
 /**
  * Hook to get auth config.
  *
- * IMPORTANT: This hook uses PERMISSIVE defaults to prevent UI flicker.
- * The backend enforces actual restrictions - if a feature is disabled,
- * the API will return 403. This is the correct pattern because:
+ * Config is STATIC - generated at build time from hit.yaml and injected
+ * into window.__HIT_CONFIG by HitAppProvider. No API calls needed.
  *
- * 1. No loading states needed - UI renders immediately
- * 2. No flip-flopping between "disabled" and "enabled"
- * 3. Backend is the source of truth for security
- * 4. Config only affects UI hints (hiding links/buttons)
+ * This hook reads config synchronously from the window global,
+ * avoiding any loading states or UI flicker.
  */
 export declare function useAuthConfig(): {
     config: AuthConfig;
