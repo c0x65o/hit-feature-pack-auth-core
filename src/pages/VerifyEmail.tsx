@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles, useAlertDialog, AlertDialog } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
 
 interface VerifyEmailProps {
@@ -26,6 +26,7 @@ function VerifyEmailContent({
 
   const { verifyEmail, resendVerification, loading, error, success, clearError } = useVerifyEmail();
   const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
+  const alertDialog = useAlertDialog();
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -62,7 +63,10 @@ function VerifyEmailContent({
     clearError();
     try {
       await resendVerification(email);
-      alert('Verification email resent!');
+      await alertDialog.showAlert('Verification email resent!', {
+        variant: 'success',
+        title: 'Email Sent',
+      });
     } catch {
       // Error handled by hook
     }
@@ -71,73 +75,83 @@ function VerifyEmailContent({
   // Loading state
   if (token && loading && !success && !error) {
     return (
-      <AuthLayout>
-        <AuthCard>
-          <div style={styles({ textAlign: 'center' })}>
-            <Loader2 size={48} style={{ color: colors.primary.default, margin: '0 auto', marginBottom: spacing.md, animation: 'spin 1s linear infinite' }} />
-            <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
-              Verifying Email
-            </h1>
-            <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary })}>Please wait...</p>
-          </div>
-        </AuthCard>
-      </AuthLayout>
+      <>
+        <AuthLayout>
+          <AuthCard>
+            <div style={styles({ textAlign: 'center' })}>
+              <Loader2 size={48} style={{ color: colors.primary.default, margin: '0 auto', marginBottom: spacing.md, animation: 'spin 1s linear infinite' }} />
+              <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
+                Verifying Email
+              </h1>
+              <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary })}>Please wait...</p>
+            </div>
+          </AuthCard>
+        </AuthLayout>
+        <AlertDialog {...alertDialog.props} />
+      </>
     );
   }
 
   // Success state
   if (success) {
     return (
-      <AuthLayout>
-        <AuthCard>
-          <div style={styles({ textAlign: 'center' })}>
-            <CheckCircle size={48} style={{ color: colors.success.default, margin: '0 auto', marginBottom: spacing.md }} />
-            <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
-              Email Verified!
-            </h1>
-            <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg })}>
-              You can now sign in to your account.
-            </p>
-            <button type="button" onClick={() => navigate('/login')} style={styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: 'pointer' })}>
-              Sign In
-            </button>
-          </div>
-        </AuthCard>
-      </AuthLayout>
+      <>
+        <AuthLayout>
+          <AuthCard>
+            <div style={styles({ textAlign: 'center' })}>
+              <CheckCircle size={48} style={{ color: colors.success.default, margin: '0 auto', marginBottom: spacing.md }} />
+              <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
+                Email Verified!
+              </h1>
+              <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg })}>
+                You can now sign in to your account.
+              </p>
+              <button type="button" onClick={() => navigate('/login')} style={styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: 'pointer' })}>
+                Sign In
+              </button>
+            </div>
+          </AuthCard>
+        </AuthLayout>
+        <AlertDialog {...alertDialog.props} />
+      </>
     );
   }
 
   // Error state
   if (error && token) {
     return (
-      <AuthLayout>
-        <AuthCard>
-          <div style={styles({ textAlign: 'center' })}>
-            <XCircle size={48} style={{ color: colors.error.default, margin: '0 auto', marginBottom: spacing.md }} />
-            <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
-              Verification Failed
-            </h1>
-            <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg })}>
-              {error}
-            </p>
-            {email && (
-              <button type="button" onClick={handleResend} disabled={loading} style={styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, marginBottom: spacing.md })}>
-                {loading ? 'Sending...' : 'Resend Verification Email'}
+      <>
+        <AuthLayout>
+          <AuthCard>
+            <div style={styles({ textAlign: 'center' })}>
+              <XCircle size={48} style={{ color: colors.error.default, margin: '0 auto', marginBottom: spacing.md }} />
+              <h1 style={styles({ fontSize: ts.heading2.fontSize, fontWeight: ts.heading2.fontWeight, color: colors.text.primary, margin: 0, marginBottom: spacing.xs })}>
+                Verification Failed
+              </h1>
+              <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg })}>
+                {error}
+              </p>
+              {email && (
+                <button type="button" onClick={handleResend} disabled={loading} style={styles({ width: '100%', height: '2.25rem', backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, marginBottom: spacing.md })}>
+                  {loading ? 'Sending...' : 'Resend Verification Email'}
+                </button>
+              )}
+              <button type="button" onClick={() => navigate('/login')} style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: 'pointer' })}>
+                Back to Login
               </button>
-            )}
-            <button type="button" onClick={() => navigate('/login')} style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: 'pointer' })}>
-              Back to Login
-            </button>
-          </div>
-        </AuthCard>
-      </AuthLayout>
+            </div>
+          </AuthCard>
+        </AuthLayout>
+        <AlertDialog {...alertDialog.props} />
+      </>
     );
   }
 
   // Waiting state (no token)
   return (
-    <AuthLayout>
-      <AuthCard>
+    <>
+      <AuthLayout>
+        <AuthCard>
         <div style={styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md })}>
           <img src={logoUrl} alt={appName} style={{ height: '2rem', width: 'auto' }} />
         </div>
@@ -171,6 +185,8 @@ function VerifyEmailContent({
         </div>
       </AuthCard>
     </AuthLayout>
+    <AlertDialog {...alertDialog.props} />
+    </>
   );
 }
 
