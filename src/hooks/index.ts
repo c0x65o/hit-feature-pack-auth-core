@@ -65,3 +65,23 @@ export {
   type UserGroup,
   type GroupPagePermission,
 } from './useAuthAdmin';
+
+/**
+ * ACL Hooks
+ */
+export {
+  usePrincipals,
+  type UsePrincipalsOptions,
+  type UsePrincipalsResult,
+} from './usePrincipals';
+
+/**
+ * ACL Resolution Utilities
+ */
+export {
+  resolveEffectivePermissions,
+  hasPermission,
+  getEffectiveLevel,
+  principalMatches,
+  type AclResolutionContext,
+} from '../utils/acl-resolution';
