@@ -7,6 +7,8 @@ export interface NavItem {
     path: string;
     icon: string;
     showWhen?: 'authenticated' | 'unauthenticated' | 'always';
+    roles?: string[];
+    children?: Omit<NavItem, 'id'>[];
 }
 export declare const nav: NavItem[];
 //# sourceMappingURL=nav.d.ts.map

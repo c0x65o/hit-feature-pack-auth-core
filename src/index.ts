@@ -32,6 +32,26 @@ export {
   EmailNotVerifiedPage,
   MagicLink,
   MagicLinkPage,
+  InviteAccept,
+  InviteAcceptPage,
+
+  // Admin pages (merged into auth-core)
+  Dashboard,
+  DashboardPage,
+  Users,
+  UsersPage,
+  UserDetail,
+  UserDetailPage,
+  Sessions,
+  SessionsPage,
+  AuditLog,
+  AuditLogPage,
+  Invites,
+  InvitesPage,
+  Permissions,
+  PermissionsPage,
+  Groups,
+  GroupsPage,
 } from './pages/index';
 
 // Components - exported individually for tree-shaking

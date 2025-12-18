@@ -15,7 +15,7 @@
  * <Route path="/signup" element={<Signup />} />
  * ```
  */
-export { Login, LoginPage, Signup, SignupPage, ForgotPassword, ForgotPasswordPage, ResetPassword, ResetPasswordPage, VerifyEmail, VerifyEmailPage, EmailNotVerified, EmailNotVerifiedPage, MagicLink, MagicLinkPage, } from './pages/index';
+export { Login, LoginPage, Signup, SignupPage, ForgotPassword, ForgotPasswordPage, ResetPassword, ResetPasswordPage, VerifyEmail, VerifyEmailPage, EmailNotVerified, EmailNotVerifiedPage, MagicLink, MagicLinkPage, InviteAccept, InviteAcceptPage, Dashboard, DashboardPage, Users, UsersPage, UserDetail, UserDetailPage, Sessions, SessionsPage, AuditLog, AuditLogPage, Invites, InvitesPage, Permissions, PermissionsPage, Groups, GroupsPage, } from './pages/index';
 export * from './components/index';
 export * from './hooks/index';
 export { nav } from './nav';

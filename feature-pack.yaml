@@ -25,6 +25,35 @@ routes:
     page: InviteAccept
     featureFlag: auth.allow_invited
 
+  # Admin routes (merged into auth-core)
+  - path: /admin
+    page: Dashboard
+    roles: [admin]
+  - path: /admin/users
+    page: Users
+    roles: [admin]
+  - path: /admin/users/[email]
+    page: UserDetail
+    roles: [admin]
+  - path: /admin/sessions
+    page: Sessions
+    roles: [admin]
+  - path: /admin/audit-log
+    page: AuditLog
+    roles: [admin]
+    featureFlag: auth.audit_log
+  - path: /admin/invites
+    page: Invites
+    roles: [admin]
+    featureFlag: auth.allow_invited
+  - path: /admin/permissions
+    page: Permissions
+    roles: [admin]
+  - path: /admin/groups
+    page: Groups
+    roles: [admin]
+    featureFlag: auth.user_groups_enabled
+
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects
 nav:
@@ -40,6 +69,39 @@ nav:
     icon: user-plus
     showWhen: unauthenticated
     hideFromNav: true  # Don't show in sidebar - accessed via redirects
+
+  - id: admin
+    label: Admin
+    icon: ShieldCheck
+    group: system  # System/admin tools
+    roles: [admin]
+    showWhen: authenticated
+    weight: 1000  # Admin at bottom of nav (higher weight = lower position)
+    children:
+      - label: Dashboard
+        path: /admin
+        icon: LayoutDashboard
+      - label: Users
+        path: /admin/users
+        icon: Users
+      - label: Groups
+        path: /admin/groups
+        icon: UsersRound
+        featureFlag: auth.user_groups_enabled
+      - label: Permissions
+        path: /admin/permissions
+        icon: Shield
+      - label: Sessions
+        path: /admin/sessions
+        icon: Key
+      - label: Audit Log
+        path: /admin/audit-log
+        icon: FileText
+        featureFlag: auth.audit_log
+      - label: Invites
+        path: /admin/invites
+        icon: Mail
+        featureFlag: auth.allow_invited
 
 # Dependencies
 requires:
