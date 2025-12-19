@@ -234,6 +234,9 @@ export function Users({ onNavigate }: UsersProps) {
           total={data?.total}
           page={page}
           onPageChange={setPage}
+          onRefresh={refresh}
+          refreshing={loading}
+          tableId="admin.users"
         />
       </Card>
 
