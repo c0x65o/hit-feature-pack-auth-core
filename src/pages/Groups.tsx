@@ -234,6 +234,9 @@ export function Groups({ onNavigate }: GroupsProps) {
           searchable
           exportable
           showColumnVisibility
+          onRefresh={refresh}
+          refreshing={loading}
+          tableId="admin.groups"
         />
       </Card>
 

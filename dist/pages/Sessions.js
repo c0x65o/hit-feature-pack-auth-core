@@ -120,7 +120,7 @@ export function Sessions({ onNavigate }) {
                         created_at: session.created_at,
                         expires_at: session.expires_at,
                         current: session.current,
-                    })), emptyMessage: "No active sessions", loading: loading, searchable: true, exportable: true, showColumnVisibility: true, pageSize: 50 }) })] }));
+                    })), emptyMessage: "No active sessions", loading: loading, searchable: true, exportable: true, showColumnVisibility: true, pageSize: 50, onRefresh: refresh, refreshing: loading, tableId: "admin.sessions" }) })] }));
 }
 export default Sessions;
 //# sourceMappingURL=Sessions.js.map

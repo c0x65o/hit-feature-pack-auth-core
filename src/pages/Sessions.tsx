@@ -193,6 +193,9 @@ export function Sessions({ onNavigate }: SessionsProps) {
           exportable
           showColumnVisibility
           pageSize={50}
+          onRefresh={refresh}
+          refreshing={loading}
+          tableId="admin.sessions"
         />
       </Card>
     </Page>

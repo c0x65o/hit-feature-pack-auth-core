@@ -116,7 +116,7 @@ export function Invites({ onNavigate }) {
                         roles: invite.roles,
                         expires_at: invite.expires_at,
                         accepted_at: invite.accepted_at,
-                    })), emptyMessage: "No invitations found", loading: loading, searchable: true, exportable: true, showColumnVisibility: true, pageSize: 25 })) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
+                    })), emptyMessage: "No invitations found", loading: loading, searchable: true, exportable: true, showColumnVisibility: true, pageSize: 25, onRefresh: refresh, refreshing: loading, tableId: "admin.invites" })) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     // Clear error when closing modal
                     if (mutationError) {

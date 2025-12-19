@@ -1,1 +1,1 @@
-{"version":3,"file":"AuditLog.d.ts","sourceRoot":"","sources":["../../src/pages/AuditLog.tsx"],"names":[],"mappings":"AAQA,UAAU,aAAa;IACrB,UAAU,CAAC,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,CAAC;CACrC;AAED,wBAAgB,QAAQ,CAAC,EAAE,UAAU,EAAE,EAAE,aAAa,kDA+OrD;AAED,eAAe,QAAQ,CAAC"}
+{"version":3,"file":"AuditLog.d.ts","sourceRoot":"","sources":["../../src/pages/AuditLog.tsx"],"names":[],"mappings":"AAQA,UAAU,aAAa;IACrB,UAAU,CAAC,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,CAAC;CACrC;AAED,wBAAgB,QAAQ,CAAC,EAAE,UAAU,EAAE,EAAE,aAAa,kDAkPrD;AAED,eAAe,QAAQ,CAAC"}

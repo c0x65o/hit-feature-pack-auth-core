@@ -214,6 +214,9 @@ export function Invites({ onNavigate }: InvitesProps) {
             exportable
             showColumnVisibility
             pageSize={25}
+            onRefresh={refresh}
+            refreshing={loading}
+            tableId="admin.invites"
           />
         )}
       </Card>

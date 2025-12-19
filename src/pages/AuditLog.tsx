@@ -190,6 +190,9 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
           exportable
           showColumnVisibility
           pageSize={50}
+          onRefresh={refresh}
+          refreshing={loading}
+          tableId="admin.audit-log"
         />
       </Card>
 
