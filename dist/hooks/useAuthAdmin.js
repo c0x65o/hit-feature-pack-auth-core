@@ -91,6 +91,16 @@ async function fetchWithAuth(endpoint, options) {
         const detail = errorBody.detail || errorBody.message || `Request failed: ${res.status}`;
         throw new AuthAdminError(res.status, detail);
     }
+    // Many endpoints (DELETE, etc.) correctly return 204 No Content.
+    // In that case, avoid calling res.json() (it will throw).
+    if (res.status === 204 || res.status === 205 || res.status === 304) {
+        return undefined;
+    }
+    // If server returns empty body, treat it as undefined as well.
+    const contentLength = res.headers.get('content-length');
+    if (contentLength === '0') {
+        return undefined;
+    }
     return res.json();
 }
 export function useStats() {

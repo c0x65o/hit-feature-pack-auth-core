@@ -188,6 +188,18 @@ async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promis
     throw new AuthAdminError(res.status, detail);
   }
 
+  // Many endpoints (DELETE, etc.) correctly return 204 No Content.
+  // In that case, avoid calling res.json() (it will throw).
+  if (res.status === 204 || res.status === 205 || res.status === 304) {
+    return undefined as T;
+  }
+
+  // If server returns empty body, treat it as undefined as well.
+  const contentLength = res.headers.get('content-length');
+  if (contentLength === '0') {
+    return undefined as T;
+  }
+
   return res.json();
 }
 
