@@ -10,7 +10,7 @@ import {
   useGroupMutations,
   useUsers,
   useAuthFeatures,
-  useUserListMetrics,
+  useSegments,
   type Group,
   type UserGroup,
 } from '../hooks/useAuthAdmin';
@@ -32,7 +32,7 @@ export function Groups({ onNavigate }: GroupsProps) {
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [groupKind, setGroupKind] = useState<'static' | 'dynamic'>('static');
-  const [dynamicMetricKey, setDynamicMetricKey] = useState<string>('');
+  const [segmentKey, setSegmentKey] = useState<string>('');
 
   const { data: groups, loading, error, refresh } = useGroups();
   const { createGroup, updateGroup, deleteGroup, addUserToGroup, removeUserFromGroup, loading: mutating } =
@@ -41,7 +41,7 @@ export function Groups({ onNavigate }: GroupsProps) {
   const { data: groupUsers, refresh: refreshGroupUsers } = useGroupUsers(selectedGroup?.id || null);
   const { data: authFeatures } = useAuthFeatures();
   const dynamicGroupsEnabled = authFeatures?.dynamic_groups_enabled === true;
-  const { data: userListMetrics, loading: loadingUserListMetrics } = useUserListMetrics({ enabled: dynamicGroupsEnabled });
+  const { data: userSegments, loading: loadingUserSegments } = useSegments({ enabled: dynamicGroupsEnabled, entityKind: 'user' });
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -56,7 +56,7 @@ export function Groups({ onNavigate }: GroupsProps) {
       const metadata: Record<string, unknown> | undefined = dynamicGroupsEnabled
         ? {
             kind: groupKind,
-            ...(groupKind === 'dynamic' ? { dynamic_metric_key: dynamicMetricKey } : {}),
+            ...(groupKind === 'dynamic' ? { segment_key: segmentKey } : {}),
           }
         : undefined;
       await createGroup({
@@ -68,7 +68,7 @@ export function Groups({ onNavigate }: GroupsProps) {
       setGroupName('');
       setGroupDescription('');
       setGroupKind('static');
-      setDynamicMetricKey('');
+      setSegmentKey('');
       refresh();
     } catch {
       // Error handled by hook
@@ -83,9 +83,9 @@ export function Groups({ onNavigate }: GroupsProps) {
       if (dynamicGroupsEnabled) {
         nextMeta.kind = groupKind;
         if (groupKind === 'dynamic') {
-          nextMeta.dynamic_metric_key = dynamicMetricKey;
+          nextMeta.segment_key = segmentKey;
         } else {
-          delete nextMeta.dynamic_metric_key;
+          delete nextMeta.segment_key;
         }
       }
       await updateGroup(selectedGroup.id, {
@@ -98,7 +98,7 @@ export function Groups({ onNavigate }: GroupsProps) {
       setGroupName('');
       setGroupDescription('');
       setGroupKind('static');
-      setDynamicMetricKey('');
+      setSegmentKey('');
       refresh();
     } catch {
       // Error handled by hook
@@ -140,12 +140,12 @@ export function Groups({ onNavigate }: GroupsProps) {
   const openEditModal = (group: Group) => {
     const meta = (group.metadata && typeof group.metadata === 'object') ? (group.metadata as any) : {};
     const kind = typeof meta?.kind === 'string' ? String(meta.kind).toLowerCase() : 'static';
-    const mk = typeof meta?.dynamic_metric_key === 'string' ? String(meta.dynamic_metric_key) : '';
+    const sk = typeof meta?.segment_key === 'string' ? String(meta.segment_key) : '';
     setSelectedGroup(group);
     setGroupName(group.name);
     setGroupDescription(group.description || '');
     setGroupKind(dynamicGroupsEnabled && kind === 'dynamic' ? 'dynamic' : 'static');
-    setDynamicMetricKey(mk);
+    setSegmentKey(sk);
     setEditModalOpen(true);
   };
 
@@ -168,11 +168,11 @@ export function Groups({ onNavigate }: GroupsProps) {
     ? (selectedGroup.metadata as any)
     : {};
   const selectedGroupIsDynamic = dynamicGroupsEnabled && String(selectedGroupMeta?.kind || '').toLowerCase() === 'dynamic';
-  const selectedGroupDynamicMetricKey = selectedGroupIsDynamic && typeof selectedGroupMeta?.dynamic_metric_key === 'string'
-    ? String(selectedGroupMeta.dynamic_metric_key)
+  const selectedGroupSegmentKey = selectedGroupIsDynamic && typeof selectedGroupMeta?.segment_key === 'string'
+    ? String(selectedGroupMeta.segment_key)
     : '';
-  const selectedGroupDynamicMetricLabel = selectedGroupDynamicMetricKey
-    ? (userListMetrics || [])?.find((m) => m.key === selectedGroupDynamicMetricKey)?.label || selectedGroupDynamicMetricKey
+  const selectedGroupSegmentLabel = selectedGroupSegmentKey
+    ? (userSegments || [])?.find((s) => s.key === selectedGroupSegmentKey)?.label || selectedGroupSegmentKey
     : '';
 
   return (
@@ -335,18 +335,18 @@ export function Groups({ onNavigate }: GroupsProps) {
                 onChange={(v: string) => setGroupKind(v === 'dynamic' ? 'dynamic' : 'static')}
                 options={[
                   { value: 'static', label: 'Static (manual members)' },
-                  { value: 'dynamic', label: 'Dynamic (computed by metric)' },
+                  { value: 'dynamic', label: 'Dynamic (computed by segment)' },
                 ]}
               />
               {groupKind === 'dynamic' && (
                 <Select
-                  label="User List Metric"
-                  value={dynamicMetricKey}
-                  onChange={(v: string) => setDynamicMetricKey(v)}
-                  placeholder={loadingUserListMetrics ? 'Loading metrics...' : 'Select a metric'}
-                  options={(userListMetrics || []).map((m) => ({
-                    value: m.key,
-                    label: m.label,
+                  label="Segment"
+                  value={segmentKey}
+                  onChange={(v: string) => setSegmentKey(v)}
+                  placeholder={loadingUserSegments ? 'Loading segments...' : 'Select a segment'}
+                  options={(userSegments || []).filter((s) => s.isActive).map((s) => ({
+                    value: s.key,
+                    label: s.label,
                   }))}
                 />
               )}
@@ -360,7 +360,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               variant="primary"
               onClick={handleCreateGroup}
               loading={mutating}
-              disabled={!groupName.trim() || (dynamicGroupsEnabled && groupKind === 'dynamic' && !dynamicMetricKey)}
+              disabled={!groupName.trim() || (dynamicGroupsEnabled && groupKind === 'dynamic' && !segmentKey)}
             >
               Create Group
             </Button>
@@ -377,7 +377,7 @@ export function Groups({ onNavigate }: GroupsProps) {
           setGroupName('');
           setGroupDescription('');
           setGroupKind('static');
-          setDynamicMetricKey('');
+          setSegmentKey('');
         }}
         title="Edit Group"
         description="Update group details"
@@ -405,18 +405,18 @@ export function Groups({ onNavigate }: GroupsProps) {
                 onChange={(v: string) => setGroupKind(v === 'dynamic' ? 'dynamic' : 'static')}
                 options={[
                   { value: 'static', label: 'Static (manual members)' },
-                  { value: 'dynamic', label: 'Dynamic (computed by metric)' },
+                  { value: 'dynamic', label: 'Dynamic (computed by segment)' },
                 ]}
               />
               {groupKind === 'dynamic' && (
                 <Select
-                  label="User List Metric"
-                  value={dynamicMetricKey}
-                  onChange={(v: string) => setDynamicMetricKey(v)}
-                  placeholder={loadingUserListMetrics ? 'Loading metrics...' : 'Select a metric'}
-                  options={(userListMetrics || []).map((m) => ({
-                    value: m.key,
-                    label: m.label,
+                  label="Segment"
+                  value={segmentKey}
+                  onChange={(v: string) => setSegmentKey(v)}
+                  placeholder={loadingUserSegments ? 'Loading segments...' : 'Select a segment'}
+                  options={(userSegments || []).filter((s) => s.isActive).map((s) => ({
+                    value: s.key,
+                    label: s.label,
                   }))}
                 />
               )}
@@ -431,7 +431,7 @@ export function Groups({ onNavigate }: GroupsProps) {
                 setGroupName('');
                 setGroupDescription('');
                 setGroupKind('static');
-                setDynamicMetricKey('');
+                setSegmentKey('');
               }}
             >
               Cancel
@@ -440,7 +440,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               variant="primary"
               onClick={handleEditGroup}
               loading={mutating}
-              disabled={!groupName.trim() || (dynamicGroupsEnabled && groupKind === 'dynamic' && !dynamicMetricKey)}
+              disabled={!groupName.trim() || (dynamicGroupsEnabled && groupKind === 'dynamic' && !segmentKey)}
             >
               Save Changes
             </Button>
@@ -494,7 +494,7 @@ export function Groups({ onNavigate }: GroupsProps) {
           setSelectedGroup(null);
         }}
         title={`Manage Users - ${selectedGroup?.name}`}
-        description={selectedGroupIsDynamic ? "This is a dynamic group; membership is computed by a metric." : "Add or remove users from this group"}
+        description={selectedGroupIsDynamic ? "This is a dynamic group; membership is computed by a segment." : "Add or remove users from this group"}
         size="lg"
       >
         <div className="space-y-6">
@@ -503,7 +503,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               variant="info"
               title="Dynamic Group"
             >
-              Membership is computed from <strong>{selectedGroupDynamicMetricLabel}</strong>. You can’t add or remove users manually.
+              Membership is computed from <strong>{selectedGroupSegmentLabel}</strong>. You can’t add or remove users manually.
             </Alert>
           )}
           {/* Current Members */}

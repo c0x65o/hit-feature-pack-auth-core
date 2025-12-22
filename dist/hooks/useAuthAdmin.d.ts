@@ -354,15 +354,18 @@ interface UserGroup {
     created_at: string;
     created_by: string | null;
 }
-export interface UserListMetricDef {
+export interface SegmentDef {
     key: string;
     label: string;
     description?: string | null;
+    entityKind: string;
+    isActive: boolean;
 }
-export declare function useUserListMetrics(options?: {
+export declare function useSegments(options?: {
     enabled?: boolean;
+    entityKind?: string;
 }): {
-    data: UserListMetricDef[] | null;
+    data: SegmentDef[] | null;
     loading: boolean;
     error: Error | null;
     refresh: () => Promise<void>;

@@ -1213,8 +1213,9 @@ export function useGroupPagePermissionsMutations() {
         error,
     };
 }
-export function useUserListMetrics(options) {
+export function useSegments(options) {
     const enabled = options?.enabled !== false;
+    const entityKind = typeof options?.entityKind === 'string' ? options?.entityKind : '';
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -1228,25 +1229,39 @@ export function useUserListMetrics(options) {
         setLoading(true);
         setError(null);
         try {
-            const items = await fetchWithAuth('/admin/user-list-metrics');
-            setData(Array.isArray(items) ? items : []);
+            const url = new URL('/api/metrics/segments', window.location.origin);
+            if (entityKind.trim())
+                url.searchParams.set('entityKind', entityKind.trim());
+            const res = await fetch(url.toString(), { method: 'GET' });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                // If not allowed (403) or unauthenticated (401), just hide segment UI.
+                if (res.status === 401 || res.status === 403) {
+                    setData([]);
+                    setError(null);
+                    return;
+                }
+                throw new Error(json?.error || `Failed to load segments (${res.status})`);
+            }
+            const rows = Array.isArray(json?.data) ? json.data : [];
+            setData(rows
+                .map((r) => ({
+                key: String(r?.key || ''),
+                label: String(r?.label || r?.key || ''),
+                description: typeof r?.description === 'string' ? r.description : null,
+                entityKind: String(r?.entityKind || ''),
+                isActive: Boolean(r?.isActive !== false),
+            }))
+                .filter((r) => r.key && r.entityKind));
         }
         catch (e) {
-            // If feature is disabled (403) or endpoint missing, return empty list without breaking UI.
-            const err = e;
-            if (err && typeof err.status === 'number' && err.status === 403) {
-                setData([]);
-                setError(null);
-            }
-            else {
-                setError(e);
-                setData(null);
-            }
+            setError(e);
+            setData(null);
         }
         finally {
             setLoading(false);
         }
-    }, [enabled]);
+    }, [enabled, entityKind]);
     useEffect(() => {
         refresh();
     }, [refresh]);

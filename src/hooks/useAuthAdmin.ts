@@ -1501,15 +1501,18 @@ interface UserGroup {
   created_by: string | null;
 }
 
-export interface UserListMetricDef {
+export interface SegmentDef {
   key: string;
   label: string;
   description?: string | null;
+  entityKind: string;
+  isActive: boolean;
 }
 
-export function useUserListMetrics(options?: { enabled?: boolean }) {
+export function useSegments(options?: { enabled?: boolean; entityKind?: string }) {
   const enabled = options?.enabled !== false;
-  const [data, setData] = useState<UserListMetricDef[] | null>(null);
+  const entityKind = typeof options?.entityKind === 'string' ? options?.entityKind : '';
+  const [data, setData] = useState<SegmentDef[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -1523,22 +1526,38 @@ export function useUserListMetrics(options?: { enabled?: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const items = await fetchWithAuth<UserListMetricDef[]>('/admin/user-list-metrics');
-      setData(Array.isArray(items) ? items : []);
-    } catch (e) {
-      // If feature is disabled (403) or endpoint missing, return empty list without breaking UI.
-      const err = e as any;
-      if (err && typeof err.status === 'number' && err.status === 403) {
-        setData([]);
-        setError(null);
-      } else {
-        setError(e as Error);
-        setData(null);
+      const url = new URL('/api/metrics/segments', window.location.origin);
+      if (entityKind.trim()) url.searchParams.set('entityKind', entityKind.trim());
+      const res = await fetch(url.toString(), { method: 'GET' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // If not allowed (403) or unauthenticated (401), just hide segment UI.
+        if (res.status === 401 || res.status === 403) {
+          setData([]);
+          setError(null);
+          return;
+        }
+        throw new Error(json?.error || `Failed to load segments (${res.status})`);
       }
+      const rows = Array.isArray(json?.data) ? json.data : [];
+      setData(
+        rows
+          .map((r: any) => ({
+            key: String(r?.key || ''),
+            label: String(r?.label || r?.key || ''),
+            description: typeof r?.description === 'string' ? r.description : null,
+            entityKind: String(r?.entityKind || ''),
+            isActive: Boolean(r?.isActive !== false),
+          }))
+          .filter((r: any) => r.key && r.entityKind)
+      );
+    } catch (e) {
+      setError(e as Error);
+      setData(null);
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, entityKind]);
 
   useEffect(() => {
     refresh();
