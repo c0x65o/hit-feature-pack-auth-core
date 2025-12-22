@@ -92,7 +92,7 @@ export function Groups({ onNavigate }: GroupsProps) {
     if (!selectedGroup) return;
     try {
       await addUserToGroup(selectedGroup.id, userEmail);
-      refreshGroupUsers();
+      await refreshGroupUsers();
     } catch {
       // Error handled by hook
     }
@@ -102,7 +102,7 @@ export function Groups({ onNavigate }: GroupsProps) {
     if (!selectedGroup) return;
     try {
       await removeUserFromGroup(selectedGroup.id, userEmail);
-      refreshGroupUsers();
+      await refreshGroupUsers();
     } catch {
       // Error handled by hook
     }

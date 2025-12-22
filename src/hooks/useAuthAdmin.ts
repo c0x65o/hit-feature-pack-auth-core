@@ -70,6 +70,58 @@ interface PaginatedResponse<T> {
   total_pages: number;
 }
 
+// =============================================================================
+// FEATURE FLAGS (runtime from auth module)
+// =============================================================================
+
+export interface AuthFeatures {
+  // We only type the bits we need in the UI.
+  user_groups_enabled?: boolean;
+  dynamic_groups_enabled?: boolean;
+  [k: string]: unknown;
+}
+
+export function useAuthFeatures() {
+  const [features, setFeatures] = useState<AuthFeatures | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const authUrl = getAuthUrl();
+      const res = await fetch(`${authUrl}/features`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new AuthAdminError(res.status, body?.detail || body?.message || `Failed to fetch features: ${res.status}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      const f = (json && typeof json === 'object' && (json as any).features && typeof (json as any).features === 'object')
+        ? ((json as any).features as AuthFeatures)
+        : ({} as AuthFeatures);
+      setFeatures(f);
+    } catch (e) {
+      setError(e as Error);
+      setFeatures(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data: features, loading, error, refresh };
+}
+
 interface UseQueryOptions {
   page?: number;
   pageSize?: number;
@@ -1435,6 +1487,52 @@ interface UserGroup {
   group_name: string;
   created_at: string;
   created_by: string | null;
+}
+
+export interface UserListMetricDef {
+  key: string;
+  label: string;
+  description?: string | null;
+}
+
+export function useUserListMetrics(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled !== false;
+  const [data, setData] = useState<UserListMetricDef[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!enabled) {
+      setData([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const items = await fetchWithAuth<UserListMetricDef[]>('/admin/user-list-metrics');
+      setData(Array.isArray(items) ? items : []);
+    } catch (e) {
+      // If feature is disabled (403) or endpoint missing, return empty list without breaking UI.
+      const err = e as any;
+      if (err && typeof err.status === 'number' && err.status === 403) {
+        setData([]);
+        setError(null);
+      } else {
+        setError(e as Error);
+        setData(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
 }
 
 export function useGroups() {

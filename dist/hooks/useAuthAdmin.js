@@ -3,6 +3,45 @@
  * Auth Admin API hooks
  */
 import { useState, useEffect, useCallback } from 'react';
+export function useAuthFeatures() {
+    const [features, setFeatures] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const authUrl = getAuthUrl();
+            const res = await fetch(`${authUrl}/features`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders(),
+                },
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new AuthAdminError(res.status, body?.detail || body?.message || `Failed to fetch features: ${res.status}`);
+            }
+            const json = await res.json().catch(() => ({}));
+            const f = (json && typeof json === 'object' && json.features && typeof json.features === 'object')
+                ? json.features
+                : {};
+            setFeatures(f);
+        }
+        catch (e) {
+            setError(e);
+            setFeatures(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data: features, loading, error, refresh };
+}
 // Get the auth module URL from environment or defaults
 function getAuthUrl() {
     if (typeof window !== 'undefined') {
@@ -1163,6 +1202,45 @@ export function useGroupPagePermissionsMutations() {
         loading,
         error,
     };
+}
+export function useUserListMetrics(options) {
+    const enabled = options?.enabled !== false;
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        if (!enabled) {
+            setData([]);
+            setLoading(false);
+            setError(null);
+            return;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            const items = await fetchWithAuth('/admin/user-list-metrics');
+            setData(Array.isArray(items) ? items : []);
+        }
+        catch (e) {
+            // If feature is disabled (403) or endpoint missing, return empty list without breaking UI.
+            const err = e;
+            if (err && typeof err.status === 'number' && err.status === 403) {
+                setData([]);
+                setError(null);
+            }
+            else {
+                setError(e);
+                setData(null);
+            }
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [enabled]);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data, loading, error, refresh };
 }
 export function useGroups() {
     const [groups, setGroups] = useState([]);

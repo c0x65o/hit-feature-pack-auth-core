@@ -59,6 +59,17 @@ interface PaginatedResponse<T> {
     page_size: number;
     total_pages: number;
 }
+export interface AuthFeatures {
+    user_groups_enabled?: boolean;
+    dynamic_groups_enabled?: boolean;
+    [k: string]: unknown;
+}
+export declare function useAuthFeatures(): {
+    data: AuthFeatures | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
 interface UseQueryOptions {
     page?: number;
     pageSize?: number;
@@ -343,6 +354,19 @@ interface UserGroup {
     created_at: string;
     created_by: string | null;
 }
+export interface UserListMetricDef {
+    key: string;
+    label: string;
+    description?: string | null;
+}
+export declare function useUserListMetrics(options?: {
+    enabled?: boolean;
+}): {
+    data: UserListMetricDef[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
 export declare function useGroups(): {
     data: Group[];
     loading: boolean;
