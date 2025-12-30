@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { useResetPassword } from '../hooks/useAuth';
 
 interface ResetPasswordProps {
@@ -24,8 +24,10 @@ function ResetPasswordContent({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [success, setSuccess] = useState(false);
 
-  const { resetPassword, loading, error, success, clearError } = useResetPassword();
+  const { resetPassword } = useResetPassword();
+  const { submitting, error, submit, clearError } = useFormSubmit();
   const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
   const navigate = (path: string) => {
@@ -60,13 +62,15 @@ function ResetPasswordContent({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError();
     if (!validateForm()) return;
 
-    try {
+    const result = await submit(async () => {
       await resetPassword(token, password);
-    } catch {
-      // Error is handled by the hook
+      return { success: true };
+    });
+
+    if (result) {
+      setSuccess(true);
     }
   };
 
@@ -193,13 +197,29 @@ function ResetPasswordContent({
             backgroundColor: `${colors.error.default}15`,
             border: `1px solid ${colors.error.default}30`,
             borderRadius: radius.md,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           })}>
             <p style={styles({
               fontSize: ts.bodySmall.fontSize,
               fontWeight: ts.label.fontWeight,
               color: colors.error.default,
               margin: 0,
-            })}>{error}</p>
+            })}>{error.message}</p>
+            <button
+              onClick={clearError}
+              style={styles({
+                background: 'none',
+                border: 'none',
+                color: colors.error.default,
+                cursor: 'pointer',
+                fontSize: ts.bodySmall.fontSize,
+                padding: spacing.xs,
+              })}
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -228,7 +248,7 @@ function ResetPasswordContent({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             style={styles({
               width: '100%',
               height: '2.25rem',
@@ -242,13 +262,13 @@ function ResetPasswordContent({
               fontWeight: ts.label.fontWeight,
               borderRadius: radius.md,
               border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.5 : 1,
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              opacity: submitting ? 0.5 : 1,
               marginTop: spacing.xs,
             })}
           >
-            {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
-            {loading ? 'Resetting...' : 'Reset Password'}
+            {submitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+            {submitting ? 'Resetting...' : 'Reset Password'}
           </button>
         </form>
       </AuthCard>

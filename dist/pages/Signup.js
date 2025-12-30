@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Loader2, CheckCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useSignup, useAuthConfig } from '../hooks/useAuth';
 function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 'HIT', tagline = 'Create your account to get started', signupRedirect = '/', passwordMinLength = 8, }) {
@@ -12,7 +12,8 @@ function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName =
     const [name, setName] = useState('');
     const [fieldErrors, setFieldErrors] = useState({});
     const [success, setSuccess] = useState(false);
-    const { signup, loading, error, clearError } = useSignup();
+    const { signup } = useSignup();
+    const { submitting, error, submit, clearError } = useFormSubmit();
     const { config: authConfig } = useAuthConfig();
     const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
@@ -45,18 +46,17 @@ function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName =
     };
     const handleSubmit = async (e) => {
         e.preventDefault();
-        clearError();
         if (!validateForm())
             return;
-        try {
+        const result = await submit(async () => {
             await signup({ email, password, name: name || undefined });
+            return { success: true };
+        });
+        if (result) {
             setSuccess(true);
             if (onSuccess) {
                 onSuccess();
             }
-        }
-        catch {
-            // Error is handled by the hook
         }
     };
     if (success) {
@@ -91,18 +91,28 @@ function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName =
                         color: colors.text.secondary,
                         margin: 0,
                         marginBottom: spacing.lg,
-                    }), children: tagline }), error && (_jsx("div", { style: styles({
+                    }), children: tagline }), error && (_jsxs("div", { style: styles({
                         marginBottom: spacing.md,
                         padding: `${spacing.sm} ${spacing.md}`,
                         backgroundColor: `${colors.error.default}15`,
                         border: `1px solid ${colors.error.default}30`,
                         borderRadius: radius.md,
-                    }), children: _jsx("p", { style: styles({
-                            fontSize: ts.bodySmall.fontSize,
-                            fontWeight: ts.label.fontWeight,
-                            color: colors.error.default,
-                            margin: 0,
-                        }), children: error }) })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Name (optional)", type: "text", value: name, onChange: (e) => setName(e.target.value), placeholder: "John Doe", autoComplete: "name" }), _jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: loading, style: styles({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }), children: [_jsx("p", { style: styles({
+                                fontSize: ts.bodySmall.fontSize,
+                                fontWeight: ts.label.fontWeight,
+                                color: colors.error.default,
+                                margin: 0,
+                            }), children: error.message }), _jsx("button", { onClick: clearError, style: styles({
+                                background: 'none',
+                                border: 'none',
+                                color: colors.error.default,
+                                cursor: 'pointer',
+                                fontSize: ts.bodySmall.fontSize,
+                                padding: spacing.xs,
+                            }), children: "\u00D7" })] })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Name (optional)", type: "text", value: name, onChange: (e) => setName(e.target.value), placeholder: "John Doe", autoComplete: "name" }), _jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: submitting, style: styles({
                                 width: '100%',
                                 height: '2.25rem',
                                 display: 'flex',
@@ -115,10 +125,10 @@ function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName =
                                 fontWeight: ts.label.fontWeight,
                                 borderRadius: radius.md,
                                 border: 'none',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                opacity: loading ? 0.5 : 1,
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.5 : 1,
                                 marginTop: spacing.xs,
-                            }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Creating account...' : 'Create Account'] })] }), authConfig?.oauth_providers && authConfig.oauth_providers.length > 0 && (_jsx(OAuthButtons, { providers: authConfig.oauth_providers })), _jsxs("p", { style: styles({
+                            }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Creating account...' : 'Create Account'] })] }), authConfig?.oauth_providers && authConfig.oauth_providers.length > 0 && (_jsx(OAuthButtons, { providers: authConfig.oauth_providers })), _jsxs("p", { style: styles({
                         marginTop: spacing.lg,
                         textAlign: 'center',
                         fontSize: ts.bodySmall.fontSize,

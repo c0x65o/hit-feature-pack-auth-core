@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { useForgotPassword } from '../hooks/useAuth';
 
 interface ForgotPasswordProps {
@@ -18,8 +18,10 @@ function ForgotPasswordContent({
 }: ForgotPasswordProps) {
   const [email, setEmail] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [success, setSuccess] = useState(false);
 
-  const { sendResetEmail, loading, error, success, clearError } = useForgotPassword();
+  const { sendResetEmail } = useForgotPassword();
+  const { submitting, error, submit, clearError } = useFormSubmit();
   const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
   const navigate = (path: string) => {
@@ -43,13 +45,15 @@ function ForgotPasswordContent({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError();
     if (!validateForm()) return;
 
-    try {
+    const result = await submit(async () => {
       await sendResetEmail(email);
-    } catch {
-      // Error is handled by the hook
+      return { success: true };
+    });
+
+    if (result) {
+      setSuccess(true);
     }
   };
 
@@ -152,13 +156,29 @@ function ForgotPasswordContent({
             backgroundColor: `${colors.error.default}15`,
             border: `1px solid ${colors.error.default}30`,
             borderRadius: radius.md,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           })}>
             <p style={styles({
               fontSize: ts.bodySmall.fontSize,
               fontWeight: ts.label.fontWeight,
               color: colors.error.default,
               margin: 0,
-            })}>{error}</p>
+            })}>{error.message}</p>
+            <button
+              onClick={clearError}
+              style={styles({
+                background: 'none',
+                border: 'none',
+                color: colors.error.default,
+                cursor: 'pointer',
+                fontSize: ts.bodySmall.fontSize,
+                padding: spacing.xs,
+              })}
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -177,7 +197,7 @@ function ForgotPasswordContent({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             style={styles({
               width: '100%',
               height: '2.25rem',
@@ -191,13 +211,13 @@ function ForgotPasswordContent({
               fontWeight: ts.label.fontWeight,
               borderRadius: radius.md,
               border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.5 : 1,
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              opacity: submitting ? 0.5 : 1,
               marginTop: spacing.xs,
             })}
           >
-            {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
-            {loading ? 'Sending...' : 'Send Reset Link'}
+            {submitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+            {submitting ? 'Sending...' : 'Send Reset Link'}
           </button>
         </form>
       </AuthCard>

@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useLogin, useAuthConfig } from '../hooks/useAuth';
 function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 'HIT', tagline = 'Sign in to continue your journey', showRememberMe = true, loginRedirect = '/', }) {
@@ -10,7 +10,8 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
     const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
-    const { login, loading, error, clearError } = useLogin();
+    const { login } = useLogin();
+    const { submitting, error, submit, clearError } = useFormSubmit();
     const { config: authConfig } = useAuthConfig();
     const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
@@ -37,11 +38,23 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
     };
     const handleSubmit = async (e) => {
         e.preventDefault();
-        clearError();
         if (!validateForm())
             return;
-        try {
+        const result = await submit(async () => {
             await login({ email, password, remember_me: rememberMe });
+            return { success: true };
+        });
+        if (result) {
+            // Check if error is email verification required
+            if (error) {
+                const errorMessage = error.message.toLowerCase();
+                const isVerificationError = errorMessage.includes('email verification required') ||
+                    errorMessage.includes('verification required');
+                if (isVerificationError) {
+                    navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
+                    return;
+                }
+            }
             if (onSuccess) {
                 onSuccess();
             }
@@ -49,18 +62,14 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
                 navigate(loginRedirect);
             }
         }
-        catch (err) {
+        else if (error) {
             // Check if error is email verification required
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            const isVerificationError = errorMessage.toLowerCase().includes('email verification required') ||
-                errorMessage.toLowerCase().includes('verification required');
+            const errorMessage = error.message.toLowerCase();
+            const isVerificationError = errorMessage.includes('email verification required') ||
+                errorMessage.includes('verification required');
             if (isVerificationError) {
-                // Redirect immediately without showing error message
-                // The hook won't set error state for verification errors, so no need to clear
                 navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
-                return;
             }
-            // Other errors are handled by the hook and displayed
         }
     };
     return (_jsx(AuthLayout, { children: _jsxs(AuthCard, { children: [_jsx("div", { style: styles({ display: 'flex', justifyContent: 'center', marginBottom: spacing.md }), children: _jsx("img", { src: logoUrl, alt: appName, style: { height: '2rem', width: 'auto' } }) }), _jsx("h1", { style: styles({
@@ -76,18 +85,28 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
                         color: colors.text.secondary,
                         margin: 0,
                         marginBottom: spacing.lg,
-                    }), children: tagline }), error && (_jsx("div", { style: styles({
+                    }), children: tagline }), error && (_jsxs("div", { style: styles({
                         marginBottom: spacing.md,
                         padding: `${spacing.sm} ${spacing.md}`,
                         backgroundColor: `${colors.error.default}15`,
                         border: `1px solid ${colors.error.default}30`,
                         borderRadius: radius.md,
-                    }), children: _jsx("p", { style: styles({
-                            fontSize: ts.bodySmall.fontSize,
-                            fontWeight: ts.label.fontWeight,
-                            color: colors.error.default,
-                            margin: 0,
-                        }), children: error }) })), authConfig?.password_login ? (_jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "current-password" }), _jsxs("div", { style: styles({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }), children: [_jsx("p", { style: styles({
+                                fontSize: ts.bodySmall.fontSize,
+                                fontWeight: ts.label.fontWeight,
+                                color: colors.error.default,
+                                margin: 0,
+                            }), children: error.message }), _jsx("button", { onClick: clearError, style: styles({
+                                background: 'none',
+                                border: 'none',
+                                color: colors.error.default,
+                                cursor: 'pointer',
+                                fontSize: ts.bodySmall.fontSize,
+                                padding: spacing.xs,
+                            }), children: "\u00D7" })] })), authConfig?.password_login ? (_jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "current-password" }), _jsxs("div", { style: styles({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
@@ -107,7 +126,7 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
                                         background: 'none',
                                         border: 'none',
                                         cursor: 'pointer',
-                                    }), children: "Forgot password?" }))] }), _jsxs("button", { type: "submit", disabled: loading, style: styles({
+                                    }), children: "Forgot password?" }))] }), _jsxs("button", { type: "submit", disabled: submitting, style: styles({
                                 width: '100%',
                                 height: '2.25rem',
                                 display: 'flex',
@@ -120,9 +139,9 @@ function LoginContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 
                                 fontWeight: ts.label.fontWeight,
                                 borderRadius: radius.md,
                                 border: 'none',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                opacity: loading ? 0.5 : 1,
-                            }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Signing in...' : 'Sign In'] })] })) : (_jsx("div", { style: styles({
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.5 : 1,
+                            }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Signing in...' : 'Sign In'] })] })) : (_jsx("div", { style: styles({
                         marginBottom: spacing.lg,
                         padding: spacing.md,
                         backgroundColor: colors.bg.muted,

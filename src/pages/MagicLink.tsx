@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, Mail, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 
 interface MagicLinkProps {
   token?: string;
@@ -50,11 +50,10 @@ function MagicLinkContent({
   const [email, setEmail] = useState('');
   const [token, setToken] = useState(propToken || '');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
+  const { submitting, error, submit, clearError, setError } = useFormSubmit();
 
   const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
@@ -79,7 +78,6 @@ function MagicLinkContent({
 
   const handleVerifyToken = async (tokenToVerify: string) => {
     setVerifying(true);
-    setError(null);
 
     try {
       const response = await fetchAuth<{ token?: string }>('/magic-link/verify', {
@@ -113,21 +111,18 @@ function MagicLinkContent({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(false);
     if (!validateForm()) return;
 
-    setLoading(true);
-    try {
+    const result = await submit(async () => {
       await fetchAuth('/magic-link/request', {
         method: 'POST',
         body: JSON.stringify({ email }),
       });
+      return { success: true };
+    });
+
+    if (result) {
       setSuccess(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send magic link');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -198,9 +193,9 @@ function MagicLinkContent({
               Invalid Magic Link
             </h1>
             <p style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.text.secondary, marginBottom: spacing.lg })}>
-              {error}
+              {error.message}
             </p>
-            <button type="button" onClick={() => { setToken(''); setError(null); navigate('/magic-link'); }} style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: 'pointer' })}>
+            <button type="button" onClick={() => { setToken(''); clearError(); navigate('/magic-link'); }} style={styles({ fontSize: ts.bodySmall.fontSize, color: colors.primary.default, background: 'none', border: 'none', cursor: 'pointer' })}>
               Request New Link
             </button>
           </div>
@@ -230,17 +225,30 @@ function MagicLinkContent({
         </p>
 
         {error && (
-          <div style={styles({ marginBottom: spacing.md, padding: `${spacing.sm} ${spacing.md}`, backgroundColor: `${colors.error.default}15`, border: `1px solid ${colors.error.default}30`, borderRadius: radius.md })}>
-            <p style={styles({ fontSize: ts.bodySmall.fontSize, fontWeight: ts.label.fontWeight, color: colors.error.default, margin: 0 })}>{error}</p>
+          <div style={styles({ marginBottom: spacing.md, padding: `${spacing.sm} ${spacing.md}`, backgroundColor: `${colors.error.default}15`, border: `1px solid ${colors.error.default}30`, borderRadius: radius.md, display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
+            <p style={styles({ fontSize: ts.bodySmall.fontSize, fontWeight: ts.label.fontWeight, color: colors.error.default, margin: 0 })}>{error.message}</p>
+            <button
+              onClick={clearError}
+              style={styles({
+                background: 'none',
+                border: 'none',
+                color: colors.error.default,
+                cursor: 'pointer',
+                fontSize: ts.bodySmall.fontSize,
+                padding: spacing.xs,
+              })}
+            >
+              ×
+            </button>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <FormInput label="Email address" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" error={fieldErrors.email} autoComplete="email" />
 
-          <button type="submit" disabled={loading} style={styles({ width: '100%', height: '2.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, marginTop: spacing.xs })}>
-            {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
-            {loading ? 'Sending...' : 'Send Magic Link'}
+          <button type="submit" disabled={submitting} style={styles({ width: '100%', height: '2.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.5 : 1, marginTop: spacing.xs })}>
+            {submitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+            {submitting ? 'Sending...' : 'Send Magic Link'}
           </button>
         </form>
       </AuthCard>

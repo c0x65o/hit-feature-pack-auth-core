@@ -2,12 +2,14 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { useForgotPassword } from '../hooks/useAuth';
 function ForgotPasswordContent({ onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
     const [email, setEmail] = useState('');
     const [fieldErrors, setFieldErrors] = useState({});
-    const { sendResetEmail, loading, error, success, clearError } = useForgotPassword();
+    const [success, setSuccess] = useState(false);
+    const { sendResetEmail } = useForgotPassword();
+    const { submitting, error, submit, clearError } = useFormSubmit();
     const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
         if (onNavigate) {
@@ -30,14 +32,14 @@ function ForgotPasswordContent({ onNavigate, logoUrl = '/icon.png', appName = 'H
     };
     const handleSubmit = async (e) => {
         e.preventDefault();
-        clearError();
         if (!validateForm())
             return;
-        try {
+        const result = await submit(async () => {
             await sendResetEmail(email);
-        }
-        catch {
-            // Error is handled by the hook
+            return { success: true };
+        });
+        if (result) {
+            setSuccess(true);
         }
     };
     if (success) {
@@ -82,18 +84,28 @@ function ForgotPasswordContent({ onNavigate, logoUrl = '/icon.png', appName = 'H
                         color: colors.text.secondary,
                         margin: 0,
                         marginBottom: spacing.lg,
-                    }), children: "No worries, we'll send you reset instructions." }), error && (_jsx("div", { style: styles({
+                    }), children: "No worries, we'll send you reset instructions." }), error && (_jsxs("div", { style: styles({
                         marginBottom: spacing.md,
                         padding: `${spacing.sm} ${spacing.md}`,
                         backgroundColor: `${colors.error.default}15`,
                         border: `1px solid ${colors.error.default}30`,
                         borderRadius: radius.md,
-                    }), children: _jsx("p", { style: styles({
-                            fontSize: ts.bodySmall.fontSize,
-                            fontWeight: ts.label.fontWeight,
-                            color: colors.error.default,
-                            margin: 0,
-                        }), children: error }) })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsxs("button", { type: "submit", disabled: loading, style: styles({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }), children: [_jsx("p", { style: styles({
+                                fontSize: ts.bodySmall.fontSize,
+                                fontWeight: ts.label.fontWeight,
+                                color: colors.error.default,
+                                margin: 0,
+                            }), children: error.message }), _jsx("button", { onClick: clearError, style: styles({
+                                background: 'none',
+                                border: 'none',
+                                color: colors.error.default,
+                                cursor: 'pointer',
+                                fontSize: ts.bodySmall.fontSize,
+                                padding: spacing.xs,
+                            }), children: "\u00D7" })] })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Email address", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com", error: fieldErrors.email, autoComplete: "email" }), _jsxs("button", { type: "submit", disabled: submitting, style: styles({
                                 width: '100%',
                                 height: '2.25rem',
                                 display: 'flex',
@@ -106,10 +118,10 @@ function ForgotPasswordContent({ onNavigate, logoUrl = '/icon.png', appName = 'H
                                 fontWeight: ts.label.fontWeight,
                                 borderRadius: radius.md,
                                 border: 'none',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                opacity: loading ? 0.5 : 1,
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.5 : 1,
                                 marginTop: spacing.xs,
-                            }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Sending...' : 'Send Reset Link'] })] })] }) }));
+                            }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Sending...' : 'Send Reset Link'] })] })] }) }));
 }
 export function ForgotPassword(props) {
     return (_jsx(ConditionalThemeProvider, { children: _jsx(ForgotPasswordContent, { ...props }) }));

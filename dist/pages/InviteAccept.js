@@ -2,14 +2,16 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { useAcceptInvite, useAuthConfig } from '../hooks/useAuth';
 function InviteAcceptContent({ token: propToken, onNavigate, logoUrl = '/icon.png', appName = 'HIT', welcomeMessage, passwordMinLength = 8, }) {
     const [token, setToken] = useState(propToken || '');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [fieldErrors, setFieldErrors] = useState({});
-    const { acceptInvite, loading, error, success, clearError } = useAcceptInvite();
+    const [success, setSuccess] = useState(false);
+    const { acceptInvite } = useAcceptInvite();
+    const { submitting, error, submit, clearError } = useFormSubmit();
     const { config: authConfig } = useAuthConfig();
     const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
@@ -49,18 +51,18 @@ function InviteAcceptContent({ token: propToken, onNavigate, logoUrl = '/icon.pn
     };
     const handleSubmit = async (e) => {
         e.preventDefault();
-        clearError();
         if (!validateForm())
             return;
-        try {
+        const result = await submit(async () => {
             await acceptInvite(token, passwordRequired ? password : undefined);
+            return { success: true };
+        });
+        if (result) {
+            setSuccess(true);
             // Redirect after successful acceptance
             setTimeout(() => {
                 navigate('/');
             }, 2000);
-        }
-        catch {
-            // Error is handled by the hook
         }
     };
     if (!token) {
@@ -102,18 +104,28 @@ function InviteAcceptContent({ token: propToken, onNavigate, logoUrl = '/icon.pn
                         color: colors.text.secondary,
                         margin: 0,
                         marginBottom: spacing.lg,
-                    }), children: welcomeMessage || `You've been invited to join ${appName}. Please set up your account to continue.` }), error && (_jsx("div", { style: styles({
+                    }), children: welcomeMessage || `You've been invited to join ${appName}. Please set up your account to continue.` }), error && (_jsxs("div", { style: styles({
                         marginBottom: spacing.md,
                         padding: `${spacing.sm} ${spacing.md}`,
                         backgroundColor: `${colors.error.default}15`,
                         border: `1px solid ${colors.error.default}30`,
                         borderRadius: radius.md,
-                    }), children: _jsx("p", { style: styles({
-                            fontSize: ts.bodySmall.fontSize,
-                            fontWeight: ts.label.fontWeight,
-                            color: colors.error.default,
-                            margin: 0,
-                        }), children: error }) })), passwordRequired && (_jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: loading, style: styles({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }), children: [_jsx("p", { style: styles({
+                                fontSize: ts.bodySmall.fontSize,
+                                fontWeight: ts.label.fontWeight,
+                                color: colors.error.default,
+                                margin: 0,
+                            }), children: error.message }), _jsx("button", { onClick: clearError, style: styles({
+                                background: 'none',
+                                border: 'none',
+                                color: colors.error.default,
+                                cursor: 'pointer',
+                                fontSize: ts.bodySmall.fontSize,
+                                padding: spacing.xs,
+                            }), children: "\u00D7" })] })), passwordRequired && (_jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: submitting, style: styles({
                                 width: '100%',
                                 height: '2.25rem',
                                 display: 'flex',
@@ -126,10 +138,10 @@ function InviteAcceptContent({ token: propToken, onNavigate, logoUrl = '/icon.pn
                                 fontWeight: ts.label.fontWeight,
                                 borderRadius: radius.md,
                                 border: 'none',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                opacity: loading ? 0.5 : 1,
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.5 : 1,
                                 marginTop: spacing.xs,
-                            }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Setting up account...' : 'Accept Invitation'] })] })), !passwordRequired && !hasOAuthProviders && (_jsxs("button", { type: "button", onClick: handleSubmit, disabled: loading, style: styles({
+                            }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Setting up account...' : 'Accept Invitation'] })] })), !passwordRequired && !hasOAuthProviders && (_jsxs("button", { type: "button", onClick: handleSubmit, disabled: submitting, style: styles({
                         width: '100%',
                         height: '2.25rem',
                         display: 'flex',
@@ -142,9 +154,9 @@ function InviteAcceptContent({ token: propToken, onNavigate, logoUrl = '/icon.pn
                         fontWeight: ts.label.fontWeight,
                         borderRadius: radius.md,
                         border: 'none',
-                        cursor: loading ? 'not-allowed' : 'pointer',
-                        opacity: loading ? 0.5 : 1,
-                    }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Accepting...' : 'Accept Invitation'] }))] }) }));
+                        cursor: submitting ? 'not-allowed' : 'pointer',
+                        opacity: submitting ? 0.5 : 1,
+                    }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Accepting...' : 'Accept Invitation'] }))] }) }));
 }
 export function InviteAccept(props) {
     return (_jsx(ConditionalThemeProvider, { children: _jsx(InviteAcceptContent, { ...props }) }));

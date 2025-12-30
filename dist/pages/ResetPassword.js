@@ -2,14 +2,16 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { useResetPassword } from '../hooks/useAuth';
 function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.png', appName = 'HIT', passwordMinLength = 8, }) {
     const [token, setToken] = useState(propToken || '');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [fieldErrors, setFieldErrors] = useState({});
-    const { resetPassword, loading, error, success, clearError } = useResetPassword();
+    const [success, setSuccess] = useState(false);
+    const { resetPassword } = useResetPassword();
+    const { submitting, error, submit, clearError } = useFormSubmit();
     const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
     const navigate = (path) => {
         if (onNavigate) {
@@ -43,14 +45,14 @@ function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.p
     };
     const handleSubmit = async (e) => {
         e.preventDefault();
-        clearError();
         if (!validateForm())
             return;
-        try {
+        const result = await submit(async () => {
             await resetPassword(token, password);
-        }
-        catch {
-            // Error is handled by the hook
+            return { success: true };
+        });
+        if (result) {
+            setSuccess(true);
         }
     };
     if (!token) {
@@ -108,18 +110,28 @@ function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.p
                         color: colors.text.secondary,
                         margin: 0,
                         marginBottom: spacing.lg,
-                    }), children: "Enter your new password below." }), error && (_jsx("div", { style: styles({
+                    }), children: "Enter your new password below." }), error && (_jsxs("div", { style: styles({
                         marginBottom: spacing.md,
                         padding: `${spacing.sm} ${spacing.md}`,
                         backgroundColor: `${colors.error.default}15`,
                         border: `1px solid ${colors.error.default}30`,
                         borderRadius: radius.md,
-                    }), children: _jsx("p", { style: styles({
-                            fontSize: ts.bodySmall.fontSize,
-                            fontWeight: ts.label.fontWeight,
-                            color: colors.error.default,
-                            margin: 0,
-                        }), children: error }) })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "New Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: loading, style: styles({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }), children: [_jsx("p", { style: styles({
+                                fontSize: ts.bodySmall.fontSize,
+                                fontWeight: ts.label.fontWeight,
+                                color: colors.error.default,
+                                margin: 0,
+                            }), children: error.message }), _jsx("button", { onClick: clearError, style: styles({
+                                background: 'none',
+                                border: 'none',
+                                color: colors.error.default,
+                                cursor: 'pointer',
+                                fontSize: ts.bodySmall.fontSize,
+                                padding: spacing.xs,
+                            }), children: "\u00D7" })] })), _jsxs("form", { onSubmit: handleSubmit, children: [_jsx(FormInput, { label: "New Password", type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.password, autoComplete: "new-password" }), _jsx(FormInput, { label: "Confirm Password", type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", error: fieldErrors.confirmPassword, autoComplete: "new-password" }), _jsxs("button", { type: "submit", disabled: submitting, style: styles({
                                 width: '100%',
                                 height: '2.25rem',
                                 display: 'flex',
@@ -132,10 +144,10 @@ function ResetPasswordContent({ token: propToken, onNavigate, logoUrl = '/icon.p
                                 fontWeight: ts.label.fontWeight,
                                 borderRadius: radius.md,
                                 border: 'none',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                opacity: loading ? 0.5 : 1,
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.5 : 1,
                                 marginTop: spacing.xs,
-                            }), children: [loading && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), loading ? 'Resetting...' : 'Reset Password'] })] })] }) }));
+                            }), children: [submitting && _jsx(Loader2, { size: 16, style: { animation: 'spin 1s linear infinite' } }), submitting ? 'Resetting...' : 'Reset Password'] })] })] }) }));
 }
 export function ResetPassword(props) {
     return (_jsx(ConditionalThemeProvider, { children: _jsx(ResetPasswordContent, { ...props }) }));

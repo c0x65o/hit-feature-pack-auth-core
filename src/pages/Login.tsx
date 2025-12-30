@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useLogin, useAuthConfig } from '../hooks/useAuth';
 
@@ -30,7 +30,8 @@ function LoginContent({
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const { login, loading, error, clearError } = useLogin();
+  const { login } = useLogin();
+  const { submitting, error, submit, clearError } = useFormSubmit();
   const { config: authConfig } = useAuthConfig();
   const { colors, textStyles: ts, spacing, radius } = useThemeTokens();
 
@@ -58,30 +59,42 @@ function LoginContent({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError();
     if (!validateForm()) return;
 
-    try {
+    const result = await submit(async () => {
       await login({ email, password, remember_me: rememberMe });
+      return { success: true };
+    });
+
+    if (result) {
+      // Check if error is email verification required
+      if (error) {
+        const errorMessage = error.message.toLowerCase();
+        const isVerificationError = 
+          errorMessage.includes('email verification required') || 
+          errorMessage.includes('verification required');
+        
+        if (isVerificationError) {
+          navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
+          return;
+        }
+      }
+      
       if (onSuccess) {
         onSuccess();
       } else {
         navigate(loginRedirect);
       }
-    } catch (err) {
+    } else if (error) {
       // Check if error is email verification required
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = error.message.toLowerCase();
       const isVerificationError = 
-        errorMessage.toLowerCase().includes('email verification required') || 
-        errorMessage.toLowerCase().includes('verification required');
+        errorMessage.includes('email verification required') || 
+        errorMessage.includes('verification required');
       
       if (isVerificationError) {
-        // Redirect immediately without showing error message
-        // The hook won't set error state for verification errors, so no need to clear
         navigate(`/email-not-verified?email=${encodeURIComponent(email)}`);
-        return;
       }
-      // Other errors are handled by the hook and displayed
     }
   };
 
@@ -122,6 +135,9 @@ function LoginContent({
             backgroundColor: `${colors.error.default}15`,
             border: `1px solid ${colors.error.default}30`,
             borderRadius: radius.md,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           })}>
             <p style={styles({
               fontSize: ts.bodySmall.fontSize,
@@ -129,8 +145,21 @@ function LoginContent({
               color: colors.error.default,
               margin: 0,
             })}>
-              {error}
+              {error.message}
             </p>
+            <button
+              onClick={clearError}
+              style={styles({
+                background: 'none',
+                border: 'none',
+                color: colors.error.default,
+                cursor: 'pointer',
+                fontSize: ts.bodySmall.fontSize,
+                padding: spacing.xs,
+              })}
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -206,7 +235,7 @@ function LoginContent({
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={submitting}
               style={styles({
                 width: '100%',
                 height: '2.25rem',
@@ -220,12 +249,12 @@ function LoginContent({
                 fontWeight: ts.label.fontWeight,
                 borderRadius: radius.md,
                 border: 'none',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.5 : 1,
+                cursor: submitting ? 'not-allowed' : 'pointer',
+                opacity: submitting ? 0.5 : 1,
               })}
             >
-              {loading && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
-              {loading ? 'Signing in...' : 'Sign In'}
+              {submitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+              {submitting ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         ) : (
