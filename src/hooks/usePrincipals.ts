@@ -111,42 +111,6 @@ export function usePrincipals(options: UsePrincipalsOptions = {}): UsePrincipals
           displayName: role.charAt(0).toUpperCase() + role.slice(1),
         }));
       } else {
-        // Fallback: try to extract roles from users
-        const userResponse = await fetch(`${authUrl}/users`, {
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-        });
-        
-        if (userResponse.ok) {
-          const authUsers = await userResponse.json();
-          if (Array.isArray(authUsers) && authUsers.length > 0) {
-            const roleSet = new Set<string>();
-            authUsers.forEach((user: { role?: string }) => {
-              const role = user.role || 'user';
-              roleSet.add(role);
-            });
-            const roles = Array.from(roleSet).sort();
-            
-            // Filter by search if provided
-            let filteredRoles = roles;
-            if (search) {
-              const searchLower = search.toLowerCase();
-              filteredRoles = roles.filter((role: string) =>
-                role.toLowerCase().includes(searchLower)
-              );
-            }
-
-            return filteredRoles.map((role: string) => ({
-              type: 'role' as PrincipalType,
-              id: role,
-              displayName: role.charAt(0).toUpperCase() + role.slice(1),
-            }));
-          }
-        }
-        
         // Final fallback
         return [
           { type: 'role' as PrincipalType, id: 'admin', displayName: 'Admin' },

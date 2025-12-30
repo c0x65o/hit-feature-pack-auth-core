@@ -81,36 +81,6 @@ export function usePrincipals(options = {}) {
                 }));
             }
             else {
-                // Fallback: try to extract roles from users
-                const userResponse = await fetch(`${authUrl}/users`, {
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...getAuthHeaders(),
-                    },
-                });
-                if (userResponse.ok) {
-                    const authUsers = await userResponse.json();
-                    if (Array.isArray(authUsers) && authUsers.length > 0) {
-                        const roleSet = new Set();
-                        authUsers.forEach((user) => {
-                            const role = user.role || 'user';
-                            roleSet.add(role);
-                        });
-                        const roles = Array.from(roleSet).sort();
-                        // Filter by search if provided
-                        let filteredRoles = roles;
-                        if (search) {
-                            const searchLower = search.toLowerCase();
-                            filteredRoles = roles.filter((role) => role.toLowerCase().includes(searchLower));
-                        }
-                        return filteredRoles.map((role) => ({
-                            type: 'role',
-                            id: role,
-                            displayName: role.charAt(0).toUpperCase() + role.slice(1),
-                        }));
-                    }
-                }
                 // Final fallback
                 return [
                     { type: 'role', id: 'admin', displayName: 'Admin' },
