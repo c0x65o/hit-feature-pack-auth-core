@@ -99,7 +99,7 @@ export function Users({ onNavigate }: UsersProps) {
               key: 'email',
               label: 'Email',
               sortable: true,
-              render: (_, row) => (
+              render: (_: unknown, row: Record<string, unknown>) => (
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{String(row.email)}</span>
                       {row.locked ? <Lock size={14} className="text-red-500" /> : null}
@@ -115,8 +115,8 @@ export function Users({ onNavigate }: UsersProps) {
                       .map((field: any) => ({
                         key: `profile_fields.${field.field_key}`,
                         label: field.field_label,
-                        render: (_: unknown, row: any) => {
-                          const value = row.profile_fields?.[field.field_key];
+                        render: (_: unknown, row: Record<string, unknown>) => {
+                          const value = (row.profile_fields as Record<string, unknown>)?.[field.field_key];
                           return (
                             <span className="text-gray-900 dark:text-gray-100">
                               {value !== undefined && value !== null ? String(value) : '—'}
@@ -150,7 +150,7 @@ export function Users({ onNavigate }: UsersProps) {
                 {
                   key: 'role',
                   label: 'Role',
-                  render: (value) => {
+                  render: (value: unknown) => {
                     // Value is already a string from the API (user.get_role())
                     const userRole = (typeof value === 'string' ? value : 'user') || 'user';
                     return (
@@ -163,7 +163,7 @@ export function Users({ onNavigate }: UsersProps) {
                 {
                   key: 'status',
                   label: 'Status',
-                  render: (_, row) => {
+                  render: (_: unknown, row: Record<string, unknown>) => {
                     const user = row as unknown as User;
                     const isLocked = user.locked || false;
                     return (
@@ -177,13 +177,13 @@ export function Users({ onNavigate }: UsersProps) {
               key: 'created_at',
               label: 'Created',
               sortable: true,
-              render: (value) => formatDateOrNever(value as string | null),
+              render: (value: unknown) => formatDateOrNever(value as string | null),
             },
             {
               key: 'last_login',
               label: 'Last Login',
               sortable: true,
-              render: (value) => formatDateOrNever(value as string | null),
+              render: (value: unknown) => formatDateOrNever(value as string | null),
             },
             {
               key: 'actions',
@@ -191,7 +191,7 @@ export function Users({ onNavigate }: UsersProps) {
               align: 'right' as const,
               sortable: false,
               hideable: false,
-              render: (_, row) => {
+              render: (_: unknown, row: Record<string, unknown>) => {
                     const user = row as unknown as User;
                     return (
                       <div className="flex items-center justify-end gap-2">
@@ -223,7 +223,7 @@ export function Users({ onNavigate }: UsersProps) {
               locked: user.locked,
               profile_fields: user.profile_fields || {}, // Include profile_fields for table rendering
           }))}
-          onRowClick={(row) => navigate(`/admin/users/${encodeURIComponent(row.email as string)}`)}
+          onRowClick={(row: Record<string, unknown>) => navigate(`/admin/users/${encodeURIComponent(row.email as string)}`)}
           emptyMessage="No users found"
           loading={loading}
           searchable

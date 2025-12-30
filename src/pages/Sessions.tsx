@@ -86,7 +86,7 @@ export function Sessions({ onNavigate }: SessionsProps) {
               key: 'user_email',
               label: 'User',
               sortable: true,
-              render: (value) => (
+              render: (value: unknown) => (
                 <button
                   className="text-blue-500 hover:text-blue-400"
                   onClick={() => navigate(`/admin/users/${encodeURIComponent(value as string)}`)}
@@ -98,7 +98,7 @@ export function Sessions({ onNavigate }: SessionsProps) {
             {
               key: 'device',
               label: 'Device',
-              render: (_, row) => (
+              render: (_: unknown, row: Record<string, unknown>) => (
                 <div className="flex items-center gap-2">
                   {getDeviceIcon(row.user_agent as string)}
                   <span>{getDeviceName(row.user_agent as string)}</span>
@@ -109,7 +109,7 @@ export function Sessions({ onNavigate }: SessionsProps) {
               key: 'ip_address',
               label: 'IP Address',
               sortable: true,
-              render: (value) => (
+              render: (value: unknown) => (
                 <div className="flex items-center gap-2">
                   <Globe size={16} className="text-gray-400" />
                   <span className="font-mono text-sm">{value as string}</span>
@@ -120,13 +120,13 @@ export function Sessions({ onNavigate }: SessionsProps) {
               key: 'created_at',
               label: 'Started',
               sortable: true,
-              render: (value) => formatDateTime(value as string),
+              render: (value: unknown) => formatDateTime(value as string),
             },
             {
               key: 'expires_at',
               label: 'Expires',
               sortable: true,
-              render: (value) => {
+              render: (value: unknown) => {
                 const expiresAt = value as string;
                 if (!expiresAt) return '—';
                 const expired = isExpired(expiresAt);
@@ -147,7 +147,7 @@ export function Sessions({ onNavigate }: SessionsProps) {
             {
               key: 'status',
               label: 'Status',
-              render: (_, row) => {
+              render: (_: unknown, row: Record<string, unknown>) => {
                 const current = row.current as boolean;
                 const expired = isExpired(row.expires_at as string);
                 return (
@@ -163,7 +163,7 @@ export function Sessions({ onNavigate }: SessionsProps) {
               align: 'right' as const,
               sortable: false,
               hideable: false,
-              render: (_, row) => {
+              render: (_: unknown, row: Record<string, unknown>) => {
                 if (row.current) return null;
                 return (
                   <Button

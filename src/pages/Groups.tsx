@@ -201,7 +201,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               key: 'name',
               label: 'Group Name',
               sortable: true,
-              render: (_, row) => (
+              render: (_: unknown, row: Record<string, unknown>) => (
                 <div className="flex items-center gap-2">
                   <Users size={16} className="text-gray-400" />
                   <span className="font-medium">{String(row.name)}</span>
@@ -213,9 +213,9 @@ export function Groups({ onNavigate }: GroupsProps) {
                 key: 'kind',
                 label: 'Type',
                 sortable: false,
-                render: (_value: unknown, row: any) => {
+                render: (_value: unknown, row: Record<string, unknown>) => {
                   const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-                  const k = String((meta as any)?.kind || 'static').toLowerCase();
+                  const k = String((meta as Record<string, unknown>)?.kind || 'static').toLowerCase();
                   const isDyn = k === 'dynamic';
                   return (
                     <Badge variant={isDyn ? 'info' : 'default'}>
@@ -228,7 +228,7 @@ export function Groups({ onNavigate }: GroupsProps) {
             {
               key: 'description',
               label: 'Description',
-              render: (value) => (
+              render: (value: unknown) => (
                 <span className="text-gray-500 dark:text-gray-400">
                   {value ? String(value) : '—'}
                 </span>
@@ -238,7 +238,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               key: 'user_count',
               label: 'Members',
               sortable: true,
-              render: (value) => (
+              render: (value: unknown) => (
                 <Badge variant="default">
                   <Users size={12} className="mr-1" />
                   {String(value)} {Number(value) === 1 ? 'user' : 'users'}
@@ -249,7 +249,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               key: 'created_at',
               label: 'Created',
               sortable: true,
-              render: (value) => formatDate(value as string),
+              render: (value: unknown) => formatDate(value as string),
             },
             {
               key: 'actions',
@@ -257,7 +257,7 @@ export function Groups({ onNavigate }: GroupsProps) {
               align: 'right' as const,
               sortable: false,
               hideable: false,
-              render: (_, row) => {
+              render: (_: unknown, row: Record<string, unknown>) => {
                 const group = row as unknown as Group;
                 const meta = group?.metadata && typeof group.metadata === 'object' ? (group.metadata as any) : {};
                 const isDynamic = dynamicGroupsEnabled && String(meta?.kind || '').toLowerCase() === 'dynamic';

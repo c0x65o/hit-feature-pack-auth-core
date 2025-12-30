@@ -112,13 +112,13 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
               key: 'created_at',
               label: 'Time',
               sortable: true,
-              render: (value) => <span className="text-sm">{formatDateTime(value as string)}</span>,
+              render: (value: unknown) => <span className="text-sm">{formatDateTime(value as string)}</span>,
             },
             {
               key: 'user_email',
               label: 'User',
               sortable: true,
-              render: (value) => (
+              render: (value: unknown) => (
                 <button
                   className="text-blue-500 hover:text-blue-400"
                   onClick={() => navigate(`/admin/users/${encodeURIComponent(value as string)}`)}
@@ -131,10 +131,10 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
               key: 'event_type',
               label: 'Event',
               sortable: true,
-              render: (value, row) => {
+              render: (value: unknown, row: Record<string, unknown>) => {
                 const eventType = value as string;
-                const metadata = (row as any).metadata || (row as any).details;
-                const failureReason = getFailureReason(eventType, metadata);
+                const metadata = (row as Record<string, unknown>).metadata || (row as Record<string, unknown>).details;
+                const failureReason = getFailureReason(eventType, metadata as Record<string, unknown> | undefined);
                 
                 return (
                   <div className="flex flex-col gap-1">
@@ -154,7 +154,7 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
               key: 'ip_address',
               label: 'IP Address',
               sortable: true,
-              render: (value) => <span className="font-mono text-sm">{value as string}</span>,
+              render: (value: unknown) => <span className="font-mono text-sm">{value as string}</span>,
             },
             {
               key: 'actions',
@@ -162,7 +162,7 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
               align: 'right' as const,
               sortable: false,
               hideable: false,
-              render: (_, row) => (
+              render: (_: unknown, row: Record<string, unknown>) => (
                 <Button
                   variant="ghost"
                   size="sm"

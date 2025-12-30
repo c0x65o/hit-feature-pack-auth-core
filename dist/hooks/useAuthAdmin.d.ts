@@ -38,8 +38,10 @@ interface AuditLogEntry {
 interface Invite {
     id: string;
     email: string;
-    roles: string[];
-    invited_by: string;
+    role?: string;
+    roles?: string[];
+    invited_by?: string;
+    inviter_email?: string;
     created_at: string;
     expires_at: string;
     accepted_at: string | null;

@@ -46,8 +46,12 @@ interface AuditLogEntry {
 interface Invite {
   id: string;
   email: string;
-  roles: string[];
-  invited_by: string;
+  // Backend historically used a single `role` string, while some UIs expect `roles: string[]`.
+  // Normalize to `roles` in the hook so the UI can render consistently.
+  role?: string;
+  roles?: string[];
+  invited_by?: string;
+  inviter_email?: string;
   created_at: string;
   expires_at: string;
   accepted_at: string | null;
@@ -523,7 +527,12 @@ export function useInvites(options: UseQueryOptions = {}) {
       const total = Array.isArray(result) ? result.length : (result.total || 0);
 
       setData({
-        items: invites,
+        items: invites.map((inv) => {
+          const roles = Array.isArray(inv.roles)
+            ? inv.roles
+            : (typeof inv.role === 'string' && inv.role ? [inv.role] : []);
+          return { ...inv, roles };
+        }),
         total,
         page,
         page_size: pageSize,

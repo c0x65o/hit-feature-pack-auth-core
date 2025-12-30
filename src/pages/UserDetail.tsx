@@ -474,7 +474,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
               <label className="block text-sm font-medium text-gray-400 mb-1">Role</label>
               <Select
                 value={newRole}
-                onChange={(value) => setNewRole(value)}
+                onChange={(value: string) => setNewRole(value)}
                 options={availableRoles.map((role) => ({
                   value: role,
                   label: role.charAt(0).toUpperCase() + role.slice(1),
@@ -650,7 +650,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 key: 'ip_address',
                 label: 'IP Address',
                 sortable: true,
-                render: (value) => (
+                render: (value: unknown) => (
                   <div className="flex items-center gap-2">
                     <Globe size={16} className="text-gray-400" />
                     <span className="font-mono text-sm">{value as string}</span>
@@ -661,7 +661,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 key: 'created_at',
                 label: 'Started',
                 sortable: true,
-                render: (value) => formatDateOrNever(value as string),
+                render: (value: unknown) => formatDateOrNever(value as string),
               },
               {
                 key: 'status',
@@ -678,7 +678,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 align: 'right' as const,
                 sortable: false,
                 hideable: false,
-                render: (_, row) => (
+                render: (_: unknown, row: Record<string, unknown>) => (
                   <Button
                     variant="ghost"
                     size="sm"

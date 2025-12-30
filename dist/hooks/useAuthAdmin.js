@@ -386,7 +386,12 @@ export function useInvites(options = {}) {
             const invites = Array.isArray(result) ? result : (result.invites || []);
             const total = Array.isArray(result) ? result.length : (result.total || 0);
             setData({
-                items: invites,
+                items: invites.map((inv) => {
+                    const roles = Array.isArray(inv.roles)
+                        ? inv.roles
+                        : (typeof inv.role === 'string' && inv.role ? [inv.role] : []);
+                    return { ...inv, roles };
+                }),
                 total,
                 page,
                 page_size: pageSize,

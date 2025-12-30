@@ -136,12 +136,12 @@ export function Invites({ onNavigate }: InvitesProps) {
                 key: 'email',
                 label: 'Email',
                 sortable: true,
-                render: (value) => <span className="font-medium">{value as string}</span>,
+                render: (value: unknown) => <span className="font-medium">{value as string}</span>,
               },
               {
                 key: 'roles',
                 label: 'Roles',
-                render: (value) => (
+                render: (value: unknown) => (
                   <div className="flex gap-1">
                     {(value as string[])?.map((role) => (
                       <Badge key={role} variant={role === 'admin' ? 'info' : 'default'}>
@@ -154,7 +154,7 @@ export function Invites({ onNavigate }: InvitesProps) {
               {
                 key: 'status',
                 label: 'Status',
-                render: (_, row) => {
+                render: (_: unknown, row: Record<string, unknown>) => {
                   const expired = isExpired(row.expires_at as string);
                   const accepted = !!row.accepted_at;
                   return (
@@ -168,7 +168,7 @@ export function Invites({ onNavigate }: InvitesProps) {
                 key: 'expires_at',
                 label: 'Expires',
                 sortable: true,
-                render: (value) => formatDateShort(value as string),
+                render: (value: unknown) => formatDateShort(value as string),
               },
               {
                 key: 'actions',
@@ -176,7 +176,7 @@ export function Invites({ onNavigate }: InvitesProps) {
                 align: 'right' as const,
                 sortable: false,
                 hideable: false,
-                render: (_, row) => {
+                render: (_: unknown, row: Record<string, unknown>) => {
                   if (row.accepted_at) return null;
                   return (
                     <div className="flex gap-2">
