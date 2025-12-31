@@ -185,8 +185,7 @@ export function SecurityGroups({ onNavigate }: SecurityGroupsProps) {
                     label: 'Action Grants',
                     content: (
                       <div className="mt-4 space-y-4">
-                        <GrantsManager
-                          kind="action"
+                        <ActionGrantsExplorer
                           psId={selected.id}
                           grants={(detailNonNull as any).action_grants}
                           onChanged={refreshDetail}
@@ -562,6 +561,338 @@ function GrantsManager({
           </div>
         </div>
       </Modal>
+    </Card>
+  );
+}
+
+function titleCase(s: string): string {
+  const x = String(s || '').trim();
+  if (!x) return '';
+  return x.charAt(0).toUpperCase() + x.slice(1);
+}
+
+type ActionCatalogItem = {
+  key: string;
+  pack_name: string | null;
+  label: string;
+  description: string | null;
+  default_enabled: boolean;
+};
+
+function parseActionEntity(actionKey: string, packName: string | null): string {
+  const key = String(actionKey || '').trim();
+  const parts = key.split('.').filter(Boolean);
+  // Typical: crm.company.create
+  if (parts.length >= 2) {
+    if (packName && parts[0] === packName) return parts[1];
+    return parts[1];
+  }
+  return 'other';
+}
+
+function ActionGrantsExplorer({
+  psId,
+  grants,
+  onChanged,
+}: {
+  psId: string;
+  grants: PermissionSetActionGrant[];
+  onChanged: () => void;
+}) {
+  const { Card, Button, Badge, Alert, Input, Spinner, Checkbox } = useUi();
+  const mutations = usePermissionSetMutations();
+  const { data: actionDefs, loading: actionDefsLoading, error: actionDefsError } = usePermissionActions();
+
+  const explicitGrantIdsByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of grants || []) {
+      m.set(String((g as any).action_key), String((g as any).id));
+    }
+    return m;
+  }, [grants]);
+
+  const explicitKeys = useMemo(() => new Set(Array.from(explicitGrantIdsByKey.keys())), [explicitGrantIdsByKey]);
+
+  const catalog: ActionCatalogItem[] = useMemo(() => {
+    const xs = Array.isArray(actionDefs) ? (actionDefs as any[]) : [];
+    return xs
+      .map((a: any) => ({
+        key: String(a?.key || '').trim(),
+        pack_name: typeof a?.pack_name === 'string' && a.pack_name.trim() ? a.pack_name.trim() : null,
+        label: String(a?.label || a?.key || '').trim(),
+        description: typeof a?.description === 'string' ? a.description : null,
+        default_enabled: Boolean(a?.default_enabled),
+      }))
+      .filter((a) => Boolean(a.key))
+      .sort((a, b) => (a.pack_name || '').localeCompare(b.pack_name || '') || a.key.localeCompare(b.key));
+  }, [actionDefs]);
+
+  const packs = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of catalog) {
+      const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
+      set.add(pack);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [catalog]);
+
+  const [selectedPack, setSelectedPack] = useState<string>('');
+  const [selectedEntity, setSelectedEntity] = useState<string>('');
+  const [search, setSearch] = useState<string>('');
+
+  // Initialize selection
+  useEffect(() => {
+    if (selectedPack) return;
+    if (packs.length > 0) setSelectedPack(packs[0]);
+  }, [packs, selectedPack]);
+
+  const entitiesForPack = useMemo(() => {
+    const pack = selectedPack;
+    if (!pack) return [];
+    const set = new Set<string>();
+    for (const a of catalog) {
+      const p = a.pack_name || a.key.split('.')[0] || 'unknown';
+      if (p !== pack) continue;
+      set.add(parseActionEntity(a.key, a.pack_name || pack));
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [catalog, selectedPack]);
+
+  useEffect(() => {
+    if (!selectedEntity && entitiesForPack.length > 0) setSelectedEntity(entitiesForPack[0]);
+    if (selectedEntity && !entitiesForPack.includes(selectedEntity)) {
+      setSelectedEntity(entitiesForPack[0] || '');
+    }
+  }, [entitiesForPack, selectedEntity]);
+
+  const visibleActions = useMemo(() => {
+    const pack = selectedPack;
+    const entity = selectedEntity;
+    const q = search.trim().toLowerCase();
+    return catalog.filter((a) => {
+      const p = a.pack_name || a.key.split('.')[0] || 'unknown';
+      if (pack && p !== pack) return false;
+      const e = parseActionEntity(a.key, a.pack_name || p);
+      if (entity && e !== entity) return false;
+      if (!q) return true;
+      return (
+        a.key.toLowerCase().includes(q) ||
+        (a.label || '').toLowerCase().includes(q) ||
+        (a.description || '').toLowerCase().includes(q)
+      );
+    });
+  }, [catalog, search, selectedEntity, selectedPack]);
+
+  const packStats = useMemo(() => {
+    const stats: Record<string, { total: number; overrides: number }> = {};
+    for (const a of catalog) {
+      const p = a.pack_name || a.key.split('.')[0] || 'unknown';
+      if (!stats[p]) stats[p] = { total: 0, overrides: 0 };
+      stats[p].total += 1;
+      // "override" = default deny but explicitly granted by this set
+      if (!a.default_enabled && explicitKeys.has(a.key)) stats[p].overrides += 1;
+    }
+    return stats;
+  }, [catalog, explicitKeys]);
+
+  const entityStats = useMemo(() => {
+    const stats: Record<string, { total: number; overrides: number }> = {};
+    for (const a of catalog) {
+      const p = a.pack_name || a.key.split('.')[0] || 'unknown';
+      if (p !== selectedPack) continue;
+      const e = parseActionEntity(a.key, a.pack_name || p);
+      if (!stats[e]) stats[e] = { total: 0, overrides: 0 };
+      stats[e].total += 1;
+      if (!a.default_enabled && explicitKeys.has(a.key)) stats[e].overrides += 1;
+    }
+    return stats;
+  }, [catalog, explicitKeys, selectedPack]);
+
+  const setExplicit = async (actionKey: string, enabled: boolean) => {
+    const key = String(actionKey || '').trim();
+    if (!key) return;
+    if (enabled) {
+      await mutations.addActionGrant(psId, key);
+    } else {
+      const grantId = explicitGrantIdsByKey.get(key);
+      if (grantId) await mutations.removeActionGrant(psId, grantId);
+    }
+    onChanged();
+  };
+
+  const grantAllDefaultDeny = async () => {
+    const toGrant = visibleActions.filter((a) => !a.default_enabled && !explicitKeys.has(a.key));
+    for (const a of toGrant) {
+      await mutations.addActionGrant(psId, a.key);
+    }
+    onChanged();
+  };
+
+  const clearAllExplicitInView = async () => {
+    const toClear = visibleActions.filter((a) => explicitKeys.has(a.key));
+    for (const a of toClear) {
+      const id = explicitGrantIdsByKey.get(a.key);
+      if (id) await mutations.removeActionGrant(psId, id);
+    }
+    onChanged();
+  };
+
+  if (actionDefsLoading) {
+    return (
+      <Card>
+        <Spinner />
+      </Card>
+    );
+  }
+
+  if (actionDefsError) {
+    return (
+      <Card>
+        <Alert variant="error">{actionDefsError.message}</Alert>
+      </Card>
+    );
+  }
+
+  if (!catalog.length) {
+    return (
+      <Card>
+        <Alert variant="warning">
+          No compiled action catalog found. Feature packs should declare actions in `permissions.actions` so `hit run` can compile them.
+        </Alert>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-lg font-semibold">Action Grants</div>
+          <div className="text-sm text-gray-500">
+            Browse actions by feature pack and entity. This security group can add access beyond the default baseline.
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4">
+        {/* Packs */}
+        <div className="col-span-12 lg:col-span-3">
+          <div className="text-xs font-semibold text-gray-500 mb-2">FEATURE PACKS</div>
+          <div className="border rounded-lg divide-y bg-white dark:bg-gray-900 max-h-[60vh] overflow-y-auto">
+            {packs.map((p) => {
+              const active = p === selectedPack;
+              const st = packStats[p] || { total: 0, overrides: 0 };
+              return (
+                <button
+                  key={p}
+                  className={`w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-800 ${active ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  onClick={() => { setSelectedPack(p); setSelectedEntity(''); setSearch(''); }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium truncate">{titleCase(p)}</div>
+                    {st.overrides > 0 ? (
+                      <Badge variant="info" className="text-xs">Overrides: {st.overrides}</Badge>
+                    ) : (
+                      <Badge variant="default" className="text-xs">{st.total}</Badge>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Entities */}
+        <div className="col-span-12 lg:col-span-3">
+          <div className="text-xs font-semibold text-gray-500 mb-2">AREAS</div>
+          <div className="border rounded-lg divide-y bg-white dark:bg-gray-900 max-h-[60vh] overflow-y-auto">
+            {entitiesForPack.map((e) => {
+              const active = e === selectedEntity;
+              const st = entityStats[e] || { total: 0, overrides: 0 };
+              return (
+                <button
+                  key={e}
+                  className={`w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-800 ${active ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  onClick={() => { setSelectedEntity(e); setSearch(''); }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium truncate">{titleCase(e)}</div>
+                    {st.overrides > 0 ? (
+                      <Badge variant="info" className="text-xs">{st.overrides}</Badge>
+                    ) : (
+                      <Badge variant="default" className="text-xs">{st.total}</Badge>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+            {entitiesForPack.length === 0 ? (
+              <div className="p-3 text-sm text-gray-500">No actions for this pack.</div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="col-span-12 lg:col-span-6">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-xs font-semibold text-gray-500">ACTIONS</div>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => grantAllDefaultDeny().catch(() => void 0)} disabled={mutations.loading}>
+                Grant all (default-deny)
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => clearAllExplicitInView().catch(() => void 0)} disabled={mutations.loading}>
+                Clear grants
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <Input value={search} onChange={setSearch} placeholder="Search actions (key, label, description)..." />
+          </div>
+
+          <div className="border rounded-lg divide-y bg-white dark:bg-gray-900 max-h-[60vh] overflow-y-auto">
+            {visibleActions.map((a) => {
+              const explicit = explicitKeys.has(a.key);
+              const effective = Boolean(a.default_enabled || explicit);
+              const isOverride = Boolean(!a.default_enabled && explicit);
+              return (
+                <div
+                  key={a.key}
+                  className={`p-3 flex items-start gap-3 ${isOverride ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="font-medium truncate">{a.label || a.key}</div>
+                      <div className="text-xs text-gray-500 truncate">{a.key}</div>
+                      {a.default_enabled ? (
+                        <Badge variant="default" className="text-xs">Default: Allow</Badge>
+                      ) : (
+                        <Badge variant="warning" className="text-xs">Default: Deny</Badge>
+                      )}
+                      {isOverride ? <Badge variant="info" className="text-xs">Override</Badge> : null}
+                    </div>
+                    {a.description ? <div className="text-xs text-gray-500 mt-1">{a.description}</div> : null}
+                    <div className="text-xs text-gray-500 mt-1">
+                      Effective: <span className={effective ? 'text-green-600' : 'text-red-600'}>{effective ? 'Allow' : 'Deny'}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="text-xs text-gray-500">Grant</div>
+                    <Checkbox
+                      checked={explicit}
+                      disabled={mutations.loading}
+                      onChange={(checked: boolean) => setExplicit(a.key, checked).catch(() => void 0)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            {visibleActions.length === 0 ? (
+              <div className="p-3 text-sm text-gray-500">No actions match your selection.</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </Card>
   );
 }
