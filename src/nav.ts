@@ -38,7 +38,7 @@ export const nav: NavItem[] = [
       { label: 'Dashboard', path: '/admin', icon: 'layout-dashboard' },
       { label: 'Users', path: '/admin/users', icon: 'users' },
       { label: 'Groups', path: '/admin/groups', icon: 'users-round' },
-      { label: 'Permissions', path: '/admin/permissions', icon: 'shield' },
+      { label: 'Security Groups', path: '/admin/security-groups', icon: 'lock' },
       { label: 'Sessions', path: '/admin/sessions', icon: 'key' },
       { label: 'Audit Log', path: '/admin/audit-log', icon: 'file-text' },
       { label: 'Invites', path: '/admin/invites', icon: 'mail' },

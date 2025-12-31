@@ -45,9 +45,6 @@ routes:
     page: Invites
     roles: [admin]
     featureFlag: auth.allow_invited
-  - path: /admin/permissions
-    page: Permissions
-    roles: [admin]
   - path: /admin/groups
     page: Groups
     roles: [admin]
@@ -90,9 +87,6 @@ nav:
         path: /admin/groups
         icon: UsersRound
         featureFlag: auth.user_groups_enabled
-      - label: Permissions
-        path: /admin/permissions
-        icon: Shield
       - label: Security Groups
         path: /admin/security-groups
         icon: Lock

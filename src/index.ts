@@ -48,8 +48,6 @@ export {
   AuditLogPage,
   Invites,
   InvitesPage,
-  Permissions,
-  PermissionsPage,
   Groups,
   GroupsPage,
 } from './pages/index';
