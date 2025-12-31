@@ -1,1 +1,1 @@
-{"version":3,"file":"Permissions.d.ts","sourceRoot":"","sources":["../../src/pages/Permissions.tsx"],"names":[],"mappings":"AAuBA,UAAU,gBAAgB;IACxB,UAAU,CAAC,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,CAAC;CACrC;AAgLD,wBAAgB,WAAW,CAAC,EAAE,UAAU,EAAE,EAAE,gBAAgB,2CAu+B3D;AAED,eAAe,WAAW,CAAC"}
+{"version":3,"file":"Permissions.d.ts","sourceRoot":"","sources":["../../src/pages/Permissions.tsx"],"names":[],"mappings":"AAuBA,UAAU,gBAAgB;IACxB,UAAU,CAAC,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,CAAC;CACrC;AAyKD,wBAAgB,WAAW,CAAC,EAAE,UAAU,EAAE,EAAE,gBAAgB,2CA0/B3D;AAED,eAAe,WAAW,CAAC"}

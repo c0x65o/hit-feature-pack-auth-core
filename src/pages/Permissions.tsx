@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Shield, Users, ChevronRight, ChevronDown, Folder, File } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import {
@@ -113,36 +113,6 @@ type GeneratedRoute = {
   shell: boolean;
 };
 
-// Get all pages from generated routes (feature-pack.yaml routes are the source of truth).
-function getAllPages(): Array<{ path: string; label: string }> {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const routesMod = require('@/.hit/generated/routes');
-    const featurePackRoutes: GeneratedRoute[] = routesMod.featurePackRoutes || [];
-    const authRoutes: string[] = routesMod.authRoutes || [];
-
-    const pages = featurePackRoutes
-      .filter((r) => r && typeof r.path === 'string')
-      // Only shell routes are "app pages" (auth routes are public standalone pages)
-      .filter((r) => Boolean((r as any).shell))
-      // Skip auth/admin pages
-      .filter((r) => !String(r.path).startsWith('/admin'))
-      .filter((r) => !authRoutes.includes(String(r.path)))
-      .filter((r) => String(r.path) !== '/')
-      .map((r) => ({
-        path: r.path,
-        label: `${r.packName}: ${r.componentName}`,
-      }));
-
-    const unique = Array.from(new Map(pages.map((p) => [p.path, p])).values());
-    return unique.sort((a, b) => a.path.localeCompare(b.path));
-  } catch (error) {
-    console.warn('Could not load generated routes:', error);
-    return [];
-  }
-}
-
 function buildPathTree(pages: Array<{ path: string; label: string }>): TreeNode[] {
   const root: TreeNode[] = [];
   const byPath = new Map<string, TreeNode>();
@@ -180,9 +150,32 @@ function buildPathTree(pages: Array<{ path: string; label: string }>): TreeNode[
   return root;
 }
 
-// Get a hierarchical tree for display
-function getNavTree(): TreeNode[] {
-  return buildPathTree(getAllPages());
+async function loadGeneratedPages(): Promise<Array<{ path: string; label: string }>> {
+  // Client-only. This is used inside useEffect.
+  try {
+    const routesMod = await import('@/.hit/generated/routes');
+    const featurePackRoutes: GeneratedRoute[] = (routesMod as any).featurePackRoutes || [];
+    const authRoutes: string[] = (routesMod as any).authRoutes || [];
+
+    const pages = featurePackRoutes
+      .filter((r) => r && typeof r.path === 'string')
+      // Only shell routes are "app pages" (auth routes are public standalone pages)
+      .filter((r) => Boolean((r as any).shell))
+      // Skip admin pages and auth pages
+      .filter((r) => !String(r.path).startsWith('/admin'))
+      .filter((r) => !authRoutes.includes(String(r.path)))
+      .filter((r) => String(r.path) !== '/')
+      .map((r) => ({
+        path: r.path,
+        label: `${r.packName}: ${r.componentName}`,
+      }));
+
+    const unique = Array.from(new Map(pages.map((p) => [p.path, p])).values());
+    return unique.sort((a, b) => a.path.localeCompare(b.path));
+  } catch (error) {
+    console.warn('Could not load generated routes:', error);
+    return [];
+  }
 }
 
 // Check if a path is a parent of another path
@@ -320,9 +313,28 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     return ['admin', 'user'];
   }, [availableRoles, usersData]);
 
-  const navTree = useMemo(() => getNavTree(), []);
-  const allPages = useMemo(() => getAllPages(), []);
-  const allPagePaths = useMemo(() => allPages.map(p => p.path), [allPages]);
+  const [allPages, setAllPages] = useState<Array<{ path: string; label: string }>>([]);
+  const [pagesLoading, setPagesLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPagesLoading(true);
+    loadGeneratedPages()
+      .then((pages) => {
+        if (cancelled) return;
+        setAllPages(pages);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setPagesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navTree = useMemo(() => buildPathTree(allPages), [allPages]);
+  const allPagePaths = useMemo(() => allPages.map((p) => p.path), [allPages]);
 
   // Build permission maps
   const rolePermissionMap = useMemo(() => {
@@ -711,7 +723,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                           </Alert>
                         </div>
 
-                        {groupPermissionsLoading ? (
+                        {pagesLoading || groupPermissionsLoading ? (
                           <Spinner />
                         ) : navTree.length === 0 ? (
                           <Alert variant="warning">
@@ -776,7 +788,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                               </Alert>
                             </div>
 
-                            {rolePermissionsLoading ? (
+                        {pagesLoading || rolePermissionsLoading ? (
                               <Spinner />
                             ) : navTree.length === 0 ? (
                               <Alert variant="warning">
@@ -886,7 +898,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                         </div>
                       )}
 
-                      {userOverridesLoading ? (
+                      {pagesLoading || userOverridesLoading ? (
                         <Spinner />
                       ) : (
                         <div className="space-y-2">

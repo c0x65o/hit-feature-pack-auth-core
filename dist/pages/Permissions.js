@@ -1,6 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Shield, Users, ChevronRight, ChevronDown, Folder, File } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useUsers, useRolePagePermissions, useUserPageOverrides, useUsersWithOverrides, usePagePermissionsMutations, useGroups, useGroupPagePermissions, useGroupPagePermissionsMutations, usePermissionActions, useRoleActionPermissions, useGroupActionPermissions, useUserActionOverrides, useActionPermissionsMutations, } from '../hooks/useAuthAdmin';
@@ -58,34 +58,6 @@ function buildNavTree(navItems) {
     sortTree(tree);
     return tree;
 }
-// Get all pages from generated routes (feature-pack.yaml routes are the source of truth).
-function getAllPages() {
-    if (typeof window === 'undefined')
-        return [];
-    try {
-        const routesMod = require('@/.hit/generated/routes');
-        const featurePackRoutes = routesMod.featurePackRoutes || [];
-        const authRoutes = routesMod.authRoutes || [];
-        const pages = featurePackRoutes
-            .filter((r) => r && typeof r.path === 'string')
-            // Only shell routes are "app pages" (auth routes are public standalone pages)
-            .filter((r) => Boolean(r.shell))
-            // Skip auth/admin pages
-            .filter((r) => !String(r.path).startsWith('/admin'))
-            .filter((r) => !authRoutes.includes(String(r.path)))
-            .filter((r) => String(r.path) !== '/')
-            .map((r) => ({
-            path: r.path,
-            label: `${r.packName}: ${r.componentName}`,
-        }));
-        const unique = Array.from(new Map(pages.map((p) => [p.path, p])).values());
-        return unique.sort((a, b) => a.path.localeCompare(b.path));
-    }
-    catch (error) {
-        console.warn('Could not load generated routes:', error);
-        return [];
-    }
-}
 function buildPathTree(pages) {
     const root = [];
     const byPath = new Map();
@@ -121,9 +93,31 @@ function buildPathTree(pages) {
     sortTree(root);
     return root;
 }
-// Get a hierarchical tree for display
-function getNavTree() {
-    return buildPathTree(getAllPages());
+async function loadGeneratedPages() {
+    // Client-only. This is used inside useEffect.
+    try {
+        const routesMod = await import('@/.hit/generated/routes');
+        const featurePackRoutes = routesMod.featurePackRoutes || [];
+        const authRoutes = routesMod.authRoutes || [];
+        const pages = featurePackRoutes
+            .filter((r) => r && typeof r.path === 'string')
+            // Only shell routes are "app pages" (auth routes are public standalone pages)
+            .filter((r) => Boolean(r.shell))
+            // Skip admin pages and auth pages
+            .filter((r) => !String(r.path).startsWith('/admin'))
+            .filter((r) => !authRoutes.includes(String(r.path)))
+            .filter((r) => String(r.path) !== '/')
+            .map((r) => ({
+            path: r.path,
+            label: `${r.packName}: ${r.componentName}`,
+        }));
+        const unique = Array.from(new Map(pages.map((p) => [p.path, p])).values());
+        return unique.sort((a, b) => a.path.localeCompare(b.path));
+    }
+    catch (error) {
+        console.warn('Could not load generated routes:', error);
+        return [];
+    }
 }
 // Check if a path is a parent of another path
 function isParentPath(parentPath, childPath) {
@@ -228,9 +222,28 @@ export function Permissions({ onNavigate }) {
         }
         return ['admin', 'user'];
     }, [availableRoles, usersData]);
-    const navTree = useMemo(() => getNavTree(), []);
-    const allPages = useMemo(() => getAllPages(), []);
-    const allPagePaths = useMemo(() => allPages.map(p => p.path), [allPages]);
+    const [allPages, setAllPages] = useState([]);
+    const [pagesLoading, setPagesLoading] = useState(true);
+    useEffect(() => {
+        let cancelled = false;
+        setPagesLoading(true);
+        loadGeneratedPages()
+            .then((pages) => {
+            if (cancelled)
+                return;
+            setAllPages(pages);
+        })
+            .finally(() => {
+            if (cancelled)
+                return;
+            setPagesLoading(false);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+    const navTree = useMemo(() => buildPathTree(allPages), [allPages]);
+    const allPagePaths = useMemo(() => allPages.map((p) => p.path), [allPages]);
     // Build permission maps
     const rolePermissionMap = useMemo(() => {
         const map = new Map();
@@ -479,12 +492,12 @@ export function Permissions({ onNavigate }) {
                     {
                         id: 'groups',
                         label: 'Group Permissions',
-                        content: (_jsx("div", { className: "space-y-4 mt-4", children: _jsx(Card, { children: _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { children: [_jsx("label", { className: "block text-sm font-medium mb-2", children: "Select Group" }), groupsLoading ? (_jsx(Spinner, {})) : groups && groups.length > 0 ? (_jsx("div", { className: "flex flex-wrap gap-2", children: groups.map((group) => (_jsxs(Button, { variant: selectedGroup === group.id ? 'primary' : 'ghost', onClick: () => setSelectedGroup(group.id), children: [_jsx(Users, { size: 16, className: "mr-2" }), group.name, _jsx(Badge, { variant: "default", className: "ml-2", children: group.user_count })] }, group.id))) })) : (_jsx(Alert, { variant: "warning", children: "No groups found. Create groups first to manage group-based permissions." }))] }), selectedGroup && (_jsxs("div", { className: "mt-4", children: [_jsxs("h3", { className: "text-lg font-semibold mb-2", children: ["Page Permissions for Group: ", _jsx(Badge, { children: groups?.find(g => g.id === selectedGroup)?.name })] }), _jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "Groups take precedence over roles. If a user is in a group with permissions, those are used instead of role permissions. Disabling a parent path automatically disables all child paths." }) }), groupPermissionsLoading ? (_jsx(Spinner, {})) : navTree.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (_jsx("div", { className: "border rounded-lg p-4 bg-gray-50 dark:bg-gray-900", children: navTree.map(node => renderTreeNode(node, groupPermissionMap, handleGroupPermissionToggle)) }))] })), !selectedGroup && groups && groups.length > 0 && (_jsx(Alert, { variant: "info", children: "Select a group above to manage its page permissions." }))] }) }) })),
+                        content: (_jsx("div", { className: "space-y-4 mt-4", children: _jsx(Card, { children: _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { children: [_jsx("label", { className: "block text-sm font-medium mb-2", children: "Select Group" }), groupsLoading ? (_jsx(Spinner, {})) : groups && groups.length > 0 ? (_jsx("div", { className: "flex flex-wrap gap-2", children: groups.map((group) => (_jsxs(Button, { variant: selectedGroup === group.id ? 'primary' : 'ghost', onClick: () => setSelectedGroup(group.id), children: [_jsx(Users, { size: 16, className: "mr-2" }), group.name, _jsx(Badge, { variant: "default", className: "ml-2", children: group.user_count })] }, group.id))) })) : (_jsx(Alert, { variant: "warning", children: "No groups found. Create groups first to manage group-based permissions." }))] }), selectedGroup && (_jsxs("div", { className: "mt-4", children: [_jsxs("h3", { className: "text-lg font-semibold mb-2", children: ["Page Permissions for Group: ", _jsx(Badge, { children: groups?.find(g => g.id === selectedGroup)?.name })] }), _jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "Groups take precedence over roles. If a user is in a group with permissions, those are used instead of role permissions. Disabling a parent path automatically disables all child paths." }) }), pagesLoading || groupPermissionsLoading ? (_jsx(Spinner, {})) : navTree.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (_jsx("div", { className: "border rounded-lg p-4 bg-gray-50 dark:bg-gray-900", children: navTree.map(node => renderTreeNode(node, groupPermissionMap, handleGroupPermissionToggle)) }))] })), !selectedGroup && groups && groups.length > 0 && (_jsx(Alert, { variant: "info", children: "Select a group above to manage its page permissions." }))] }) }) })),
                     },
                     {
                         id: 'roles',
                         label: 'Role Permissions',
-                        content: (_jsx("div", { className: "space-y-4 mt-4", children: _jsx(Card, { children: _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { children: [_jsx("label", { className: "block text-sm font-medium mb-2", children: "Select Role" }), _jsx("div", { className: "flex flex-wrap gap-2", children: roles.map((role) => (_jsxs(Button, { variant: selectedRole === role ? 'primary' : 'ghost', onClick: () => setSelectedRole(role), children: [_jsx(Shield, { size: 16, className: "mr-2" }), role] }, role))) })] }), selectedRole && (_jsxs("div", { className: "mt-4", children: [_jsxs("h3", { className: "text-lg font-semibold mb-2", children: ["Page Permissions for Role: ", _jsx(Badge, { children: selectedRole })] }), selectedRole.toLowerCase() === 'admin' ? (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "warning", children: "Admin role permissions cannot be modified. Admin role always has full access to all pages." }) })) : (_jsxs(_Fragment, { children: [_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "Role permissions are used as a fallback when group permissions are not set. Disabling a parent path automatically disables all child paths." }) }), rolePermissionsLoading ? (_jsx(Spinner, {})) : navTree.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (_jsx("div", { className: "border rounded-lg p-4 bg-gray-50 dark:bg-gray-900", children: navTree.map(node => renderTreeNode(node, rolePermissionMap, handleRolePermissionToggle, selectedRole.toLowerCase() === 'admin')) }))] }))] })), !selectedRole && (_jsx(Alert, { variant: "info", children: "Select a role above to manage its page permissions." }))] }) }) })),
+                        content: (_jsx("div", { className: "space-y-4 mt-4", children: _jsx(Card, { children: _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { children: [_jsx("label", { className: "block text-sm font-medium mb-2", children: "Select Role" }), _jsx("div", { className: "flex flex-wrap gap-2", children: roles.map((role) => (_jsxs(Button, { variant: selectedRole === role ? 'primary' : 'ghost', onClick: () => setSelectedRole(role), children: [_jsx(Shield, { size: 16, className: "mr-2" }), role] }, role))) })] }), selectedRole && (_jsxs("div", { className: "mt-4", children: [_jsxs("h3", { className: "text-lg font-semibold mb-2", children: ["Page Permissions for Role: ", _jsx(Badge, { children: selectedRole })] }), selectedRole.toLowerCase() === 'admin' ? (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "warning", children: "Admin role permissions cannot be modified. Admin role always has full access to all pages." }) })) : (_jsxs(_Fragment, { children: [_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "Role permissions are used as a fallback when group permissions are not set. Disabling a parent path automatically disables all child paths." }) }), pagesLoading || rolePermissionsLoading ? (_jsx(Spinner, {})) : navTree.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (_jsx("div", { className: "border rounded-lg p-4 bg-gray-50 dark:bg-gray-900", children: navTree.map(node => renderTreeNode(node, rolePermissionMap, handleRolePermissionToggle, selectedRole.toLowerCase() === 'admin')) }))] }))] })), !selectedRole && (_jsx(Alert, { variant: "info", children: "Select a role above to manage its page permissions." }))] }) }) })),
                     },
                     {
                         id: 'users',
@@ -500,7 +513,7 @@ export function Permissions({ onNavigate }) {
                                                         }, children: [_jsxs("div", { children: [_jsx("div", { className: "font-medium", children: user.email }), _jsxs("div", { className: "text-sm text-gray-500", children: ["Role: ", user.role, " \u2022 ", user.override_count, " override", user.override_count === 1 ? '' : 's'] })] }), _jsx(Button, { variant: "ghost", size: "sm", children: "View" })] }, user.email))), (!usersWithOverrides || usersWithOverrides.length === 0) && (_jsx(Alert, { variant: "info", children: "No users with overrides" }))] }))] }) }), selectedUser && selectedUserForOverride && (_jsx(Card, { children: _jsxs("div", { className: "space-y-4", children: [_jsxs("div", { className: "flex items-center justify-between", children: [_jsxs("h3", { className: "text-lg font-semibold", children: ["Page Overrides for: ", _jsx(Badge, { children: selectedUserForOverride.email }), _jsxs("span", { className: "ml-2 text-sm text-gray-500", children: ["(Role: ", selectedUserForOverride.role || 'user', ")"] })] }), _jsx(Button, { variant: "ghost", onClick: () => {
                                                             setSelectedUser('');
                                                             setSelectedUserForOverride(null);
-                                                        }, children: "Close" })] }), selectedUserForOverride.role?.toLowerCase() === 'admin' ? (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "warning", children: "Admin user overrides cannot be modified. Admin users always have full access to all pages." }) })) : (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "User overrides take precedence over both group and role permissions." }) })), userOverridesLoading ? (_jsx(Spinner, {})) : (_jsx("div", { className: "space-y-2", children: allPages.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (allPages.map((page) => {
+                                                        }, children: "Close" })] }), selectedUserForOverride.role?.toLowerCase() === 'admin' ? (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "warning", children: "Admin user overrides cannot be modified. Admin users always have full access to all pages." }) })) : (_jsx("div", { className: "mb-4", children: _jsx(Alert, { variant: "info", children: "User overrides take precedence over both group and role permissions." }) })), pagesLoading || userOverridesLoading ? (_jsx(Spinner, {})) : (_jsx("div", { className: "space-y-2", children: allPages.length === 0 ? (_jsx(Alert, { variant: "warning", children: "No pages found. Pages are discovered from generated route definitions." })) : (allPages.map((page) => {
                                                     const override = userOverrides?.find((o) => o.page_path === page.path);
                                                     const isEnabled = override ? override.enabled : undefined;
                                                     return (_jsxs("div", { className: "flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800", children: [_jsxs("div", { children: [_jsx("div", { className: "font-medium", children: page.label || page.path }), _jsx("div", { className: "text-sm text-gray-500", children: page.path }), isEnabled === undefined && (_jsx("div", { className: "text-xs text-gray-400 mt-1", children: "Using group/role default" }))] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Checkbox, { checked: isEnabled ?? true, onChange: (checked) => handleUserOverrideToggle(selectedUser, page.path, checked), disabled: mutatingPermissions || selectedUserForOverride.role?.toLowerCase() === 'admin' }), isEnabled !== undefined && selectedUserForOverride.role?.toLowerCase() !== 'admin' && (_jsx(Button, { variant: "ghost", size: "sm", onClick: async () => {
