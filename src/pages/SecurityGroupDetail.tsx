@@ -72,6 +72,7 @@ type GeneratedRoute = {
 type ActionCatalogItem = {
   key: string;
   pack_name: string | null;
+  pack_title: string | null;
   label: string;
   description: string | null;
   default_enabled: boolean;
@@ -94,7 +95,7 @@ function pageGrantCandidates(path: string): string[] {
   return Array.from(new Set(out));
 }
 
-async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; defaultEnabled: boolean }>> {
+async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>> {
   try {
     const routesMod = await import('@/.hit/generated/routes');
     const featurePackRoutes: GeneratedRoute[] = (routesMod as any).featurePackRoutes || [];
@@ -109,6 +110,7 @@ async function loadShellPages(): Promise<Array<{ path: string; label: string; pa
         path: normalizePath(r.path),
         label: r.componentName,
         packName: r.packName,
+        packTitle: typeof (r as any)?.packTitle === 'string' ? String((r as any).packTitle) : null,
         // Must mirror `/api/permissions/catalog` policy:
         // 1.0 default policy: non-adminish shell pages default-allow for Default Access.
         defaultEnabled: Boolean((r as any).shell) && !isAdminishPath(String(r.path)),
@@ -150,7 +152,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Grants
   const [search, setSearch] = useState('');
   const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
-  const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; defaultEnabled: boolean }>>([]);
+  const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>>([]);
   const [pagesLoading, setPagesLoading] = useState(true);
 
   // Add grant modal
@@ -216,6 +218,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       .map((a: any) => ({
         key: String(a?.key || '').trim(),
         pack_name: typeof a?.pack_name === 'string' && a.pack_name.trim() ? a.pack_name.trim() : null,
+        pack_title: typeof a?.pack_title === 'string' && a.pack_title.trim() ? a.pack_title.trim() : null,
         label: String(a?.label || a?.key || '').trim(),
         description: typeof a?.description === 'string' ? a.description : null,
         default_enabled: Boolean(a?.default_enabled),
@@ -257,6 +260,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Group everything by feature pack
   const packData = useMemo(() => {
     const packs = new Map<string, {
+      title: string | null;
       pages: Array<{ path: string; label: string; default_enabled: boolean; explicit: boolean; effective: boolean; via?: string }>;
       actions: Array<ActionCatalogItem & { explicit: boolean; effective: boolean }>;
       metrics: Array<{ key: string; id: string }>;
@@ -265,7 +269,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     // Add pages
     for (const p of pages) {
       const pack = p.packName || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { pages: [], actions: [], metrics: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: p.packTitle, pages: [], actions: [], metrics: [] });
+      else if (!packs.get(pack)!.title && p.packTitle) packs.get(pack)!.title = p.packTitle;
       const candidates = pageGrantCandidates(p.path);
       let explicit = false;
       let effective = false;
@@ -302,7 +307,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     // Add actions
     for (const a of actionCatalog) {
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { pages: [], actions: [], metrics: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [], metrics: [] });
+      else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
       const explicit = actionGrantSet.has(a.key);
       const effective = Boolean(a.default_enabled || explicit);
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
@@ -312,7 +318,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     for (const g of metricGrants) {
       const key = String((g as any).metric_key);
       const pack = key.split('.')[0] || 'app';
-      if (!packs.has(pack)) packs.set(pack, { pages: [], actions: [], metrics: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: null, pages: [], actions: [], metrics: [] });
       packs.get(pack)!.metrics.push({ key, id: String((g as any).id) });
     }
 
@@ -649,7 +655,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                     <Package size={18} className="text-gray-500" />
-                    <span className="font-semibold">{titleCase(pack.name)}</span>
+                    <span className="font-semibold">{pack.title || titleCase(pack.name)}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
                     {pack.pageCount > 0 && (

@@ -2,6 +2,7 @@
 # Core authentication UI (login, signup, forgot password, email verification)
 
 name: auth-core
+title: HIT Auth
 description: Core authentication UI - login, signup, forgot password, email verification
 
 # Route definitions

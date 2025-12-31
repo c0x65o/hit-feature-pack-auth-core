@@ -1497,6 +1497,7 @@ export function useGroupPagePermissionsMutations() {
 export interface PermissionActionDefinition {
   key: string;
   pack_name: string | null;
+  pack_title: string | null;
   label: string;
   description: string | null;
   default_enabled: boolean;
@@ -1543,6 +1544,7 @@ export function usePermissionActions() {
         .map((a: any) => ({
           key: String(a?.key || '').trim(),
           pack_name: typeof a?.packName === 'string' ? a.packName : null,
+          pack_title: typeof a?.packTitle === 'string' ? a.packTitle : null,
           label: String(a?.label || a?.key || '').trim(),
           description: typeof a?.description === 'string' ? a.description : null,
           default_enabled: Boolean(a?.defaultEnabled),
