@@ -2199,6 +2199,22 @@ export function usePermissionSetMutations() {
     }
   }, []);
 
+  const updatePermissionSet = useCallback(async (id: string, data: { name?: string; description?: string }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fetchWithAuth<PermissionSet>(`/admin/permissions/sets/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    } catch (e) {
+      setError(e as Error);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const addAssignment = useCallback(async (psId: string, principalType: string, principalId: string) => {
     setLoading(true);
     setError(null);
@@ -2317,6 +2333,7 @@ export function usePermissionSetMutations() {
 
   return {
     createPermissionSet,
+    updatePermissionSet,
     deletePermissionSet,
     addAssignment,
     removeAssignment,

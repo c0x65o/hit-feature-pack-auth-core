@@ -50,6 +50,12 @@ export {
   InvitesPage,
   Groups,
   GroupsPage,
+
+  // Security Groups
+  SecurityGroupsList,
+  SecurityGroupsListPage,
+  SecurityGroupDetail,
+  SecurityGroupDetailPage,
 } from './pages/index';
 
 // Components - exported individually for tree-shaking

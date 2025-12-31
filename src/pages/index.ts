@@ -22,4 +22,7 @@ export { Sessions, default as SessionsPage } from './Sessions';
 export { AuditLog, default as AuditLogPage } from './AuditLog';
 export { Invites, default as InvitesPage } from './Invites';
 export { Groups, default as GroupsPage } from './Groups';
-export { SecurityGroups, default as SecurityGroupsPage } from './SecurityGroups';
+
+// Security Groups
+export { SecurityGroupsList, default as SecurityGroupsListPage } from './SecurityGroupsList';
+export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './SecurityGroupDetail';

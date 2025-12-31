@@ -50,7 +50,10 @@ routes:
     roles: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/security-groups
-    page: SecurityGroups
+    page: SecurityGroupsList
+    roles: [admin]
+  - path: /admin/security-groups/[id]
+    page: SecurityGroupDetail
     roles: [admin]
 
 # Navigation contributions
