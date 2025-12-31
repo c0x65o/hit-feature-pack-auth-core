@@ -1554,6 +1554,33 @@ export function usePermissionActions() {
   return { data, loading, error, refresh };
 }
 
+export async function syncPermissionActions(actions: Array<{
+  key: string;
+  packName?: string;
+  pack_name?: string | null;
+  label: string;
+  description?: string;
+  defaultEnabled?: boolean;
+  default_enabled?: boolean;
+}>) {
+  const normalized = Array.isArray(actions)
+    ? actions
+        .map((a) => ({
+          key: String((a as any)?.key || '').trim(),
+          pack_name: String((a as any)?.pack_name || (a as any)?.packName || '').trim() || null,
+          label: String((a as any)?.label || '').trim() || String((a as any)?.key || '').trim(),
+          description: typeof (a as any)?.description === 'string' ? (a as any).description : null,
+          default_enabled: Boolean((a as any)?.default_enabled ?? (a as any)?.defaultEnabled ?? false),
+        }))
+        .filter((x) => Boolean(x.key))
+    : [];
+
+  await fetchWithAuth(`/admin/permissions/actions/sync`, {
+    method: 'POST',
+    body: JSON.stringify({ actions: normalized }),
+  });
+}
+
 export function useRoleActionPermissions(role: string) {
   const [data, setData] = useState<RoleActionPermission[] | null>(null);
   const [loading, setLoading] = useState(true);

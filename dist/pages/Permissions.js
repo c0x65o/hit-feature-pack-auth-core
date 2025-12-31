@@ -3,61 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
 import React, { useEffect, useState, useMemo } from 'react';
 import { Shield, Users, ChevronRight, ChevronDown, Folder, File } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
-import { useUsers, useRolePagePermissions, useUserPageOverrides, useUsersWithOverrides, usePagePermissionsMutations, useGroups, useGroupPagePermissions, useGroupPagePermissionsMutations, usePermissionActions, useRoleActionPermissions, useGroupActionPermissions, useUserActionOverrides, useActionPermissionsMutations, } from '../hooks/useAuthAdmin';
-// Build tree structure from navigation items
-function buildNavTree(navItems) {
-    const tree = [];
-    const pathMap = new Map();
-    function processItem(item, parentPath = '', level = 0) {
-        // Skip admin pages and auth pages
-        if (item.path?.startsWith('/admin') || item.path?.startsWith('/auth') || item.path?.startsWith('/login')) {
-            return;
-        }
-        // Skip items that require admin role
-        if (item.roles && item.roles.includes('admin')) {
-            return;
-        }
-        const currentPath = item.path || parentPath;
-        if (!currentPath || currentPath === '/') {
-            // Process children without adding parent
-            if (item.children) {
-                item.children.forEach(child => processItem(child, parentPath, level));
-            }
-            return;
-        }
-        // Check if node already exists
-        let node = pathMap.get(currentPath);
-        if (!node) {
-            node = {
-                path: currentPath,
-                label: item.label || currentPath,
-                icon: item.icon,
-                children: [],
-                level,
-            };
-            pathMap.set(currentPath, node);
-            // Add to tree or parent's children
-            if (parentPath && pathMap.has(parentPath)) {
-                pathMap.get(parentPath).children.push(node);
-            }
-            else {
-                tree.push(node);
-            }
-        }
-        // Process children
-        if (item.children) {
-            item.children.forEach(child => processItem(child, currentPath, level + 1));
-        }
-    }
-    navItems.forEach(item => processItem(item));
-    // Sort tree recursively
-    function sortTree(nodes) {
-        nodes.sort((a, b) => a.label.localeCompare(b.label));
-        nodes.forEach(node => sortTree(node.children));
-    }
-    sortTree(tree);
-    return tree;
-}
+import { useUsers, useRolePagePermissions, useUserPageOverrides, useUsersWithOverrides, usePagePermissionsMutations, useGroups, useGroupPagePermissions, useGroupPagePermissionsMutations, usePermissionActions, useRoleActionPermissions, useGroupActionPermissions, useUserActionOverrides, useActionPermissionsMutations, syncPermissionActions, } from '../hooks/useAuthAdmin';
 function buildPathTree(pages) {
     const root = [];
     const byPath = new Map();
@@ -156,6 +102,75 @@ export function Permissions({ onNavigate }) {
     const { data: groupActionPermissions, loading: groupActionPermissionsLoading, refresh: refreshGroupActionPermissions } = useGroupActionPermissions(selectedGroup);
     const { data: userActionOverrides, loading: userActionOverridesLoading, refresh: refreshUserActionOverrides } = useUserActionOverrides(selectedUser);
     const { setRoleActionPermission, deleteRoleActionPermission, setUserActionOverride, deleteUserActionOverride, setGroupActionPermission, deleteGroupActionPermission, loading: mutatingActionPermissions, } = useActionPermissionsMutations();
+    const [generatedActions, setGeneratedActions] = useState([]);
+    const [generatedActionsLoading, setGeneratedActionsLoading] = useState(true);
+    const [actionSyncStatus, setActionSyncStatus] = useState({ state: 'idle' });
+    // Load generated action registry (client-only) and try to sync it into auth.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                setGeneratedActionsLoading(true);
+                const gen = await import('@/.hit/generated/actions').catch(() => null);
+                const actions = Array.isArray(gen?.featurePackActions) ? gen.featurePackActions : [];
+                const normalized = actions
+                    .map((a) => ({
+                    key: String(a?.key || '').trim(),
+                    packName: String(a?.packName || '').trim(),
+                    label: String(a?.label || a?.key || '').trim(),
+                    description: String(a?.description || '').trim(),
+                    defaultEnabled: Boolean(a?.defaultEnabled),
+                }))
+                    .filter((a) => Boolean(a.key));
+                if (!cancelled)
+                    setGeneratedActions(normalized);
+                if (normalized.length === 0) {
+                    if (!cancelled)
+                        setActionSyncStatus({ state: 'idle' });
+                    return;
+                }
+                setActionSyncStatus({ state: 'syncing' });
+                await syncPermissionActions(normalized);
+                if (cancelled)
+                    return;
+                setActionSyncStatus({ state: 'synced', at: new Date().toISOString() });
+                refreshActionDefs();
+            }
+            catch (e) {
+                if (cancelled)
+                    return;
+                setActionSyncStatus({
+                    state: 'error',
+                    error: String(e?.message || 'Failed to sync action definitions'),
+                    at: new Date().toISOString(),
+                });
+            }
+            finally {
+                if (!cancelled)
+                    setGeneratedActionsLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [refreshActionDefs]);
+    const syncActionsNow = async () => {
+        if (!generatedActions.length)
+            return;
+        setActionSyncStatus({ state: 'syncing' });
+        try {
+            await syncPermissionActions(generatedActions);
+            setActionSyncStatus({ state: 'synced', at: new Date().toISOString() });
+            refreshActionDefs();
+        }
+        catch (e) {
+            setActionSyncStatus({
+                state: 'error',
+                error: String(e?.message || 'Failed to sync action definitions'),
+                at: new Date().toISOString(),
+            });
+        }
+    };
     // Get available roles
     const [availableRoles, setAvailableRoles] = useState([]);
     React.useEffect(() => {
@@ -264,10 +279,23 @@ export function Permissions({ onNavigate }) {
         return map;
     }, [groupPermissions]);
     // Action definition + override maps
+    const actionCatalog = useMemo(() => {
+        // Prefer DB-backed definitions (so defaults match server evaluation).
+        if (Array.isArray(actionDefs) && actionDefs.length > 0)
+            return actionDefs;
+        // Fall back to generated registry so the UI can still show "what exists".
+        return generatedActions.map((a) => ({
+            key: a.key,
+            pack_name: a.packName || null,
+            label: a.label || a.key,
+            description: a.description || null,
+            default_enabled: Boolean(a.defaultEnabled),
+        }));
+    }, [actionDefs, generatedActions]);
     const actionDefsByKey = useMemo(() => {
         const map = new Map();
-        if (actionDefs) {
-            actionDefs.forEach((a) => {
+        if (actionCatalog) {
+            actionCatalog.forEach((a) => {
                 map.set(a.key, {
                     default_enabled: Boolean(a.default_enabled),
                     label: a.label || a.key,
@@ -277,12 +305,12 @@ export function Permissions({ onNavigate }) {
             });
         }
         return map;
-    }, [actionDefs]);
+    }, [actionCatalog]);
     const allActions = useMemo(() => {
-        const xs = Array.isArray(actionDefs) ? [...actionDefs] : [];
+        const xs = Array.isArray(actionCatalog) ? [...actionCatalog] : [];
         xs.sort((a, b) => a.key.localeCompare(b.key));
         return xs;
-    }, [actionDefs]);
+    }, [actionCatalog]);
     const roleActionMap = useMemo(() => {
         const map = new Map();
         if (roleActionPermissions) {
@@ -474,19 +502,20 @@ export function Permissions({ onNavigate }) {
         return (_jsxs("div", { className: "select-none", children: [_jsxs("div", { className: "flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded", style: { paddingLeft: `${node.level * 20 + 8}px` }, children: [hasChildren ? (_jsx("button", { onClick: () => toggleExpanded(node.path), className: "p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded", children: isExpanded ? (_jsx(ChevronDown, { size: 16, className: "text-gray-500" })) : (_jsx(ChevronRight, { size: 16, className: "text-gray-500" })) })) : (_jsx("div", { className: "w-[24px]" })), _jsxs("div", { className: "flex-1 flex items-center gap-2", children: [hasChildren ? (_jsx(Folder, { size: 16, className: "text-blue-500" })) : (_jsx(File, { size: 16, className: "text-gray-400" })), _jsx("span", { className: "font-medium", children: node.label }), _jsx("span", { className: "text-xs text-gray-500", children: node.path }), isExplicit && (_jsx(Badge, { variant: "info", className: "text-xs", children: "Explicit" })), effectivePermission === null && (_jsx(Badge, { variant: "default", className: "text-xs", children: "Default" }))] }), _jsx(Checkbox, { checked: isEnabled, onChange: (checked) => onToggle(node.path, checked), disabled: disabled || mutatingPermissions || mutatingGroupPermissions })] }), hasChildren && isExpanded && (_jsx("div", { children: node.children.map(child => renderTreeNode(child, permissionMap, onToggle, disabled || !isEnabled)) }))] }, node.path));
     };
     const renderActionList = (permissionMap, onToggle, disabled = false) => {
-        if (actionDefsLoading)
+        if (actionDefsLoading || generatedActionsLoading)
             return _jsx(Spinner, {});
         if (!allActions.length) {
             return (_jsx(Alert, { variant: "warning", children: "No action definitions found. Feature packs can add `permissions.actions` to their `feature-pack.yaml`." }));
         }
-        return (_jsx("div", { className: "border rounded-lg divide-y bg-white dark:bg-gray-900", children: allActions.map((a) => {
-                const def = actionDefsByKey.get(a.key);
-                const defaultEnabled = def ? Boolean(def.default_enabled) : false;
-                const override = permissionMap.get(a.key);
-                const effective = override !== undefined ? override : defaultEnabled;
-                const isExplicit = override !== undefined;
-                return (_jsxs("div", { className: "flex items-center gap-3 p-3", children: [_jsxs("div", { className: "flex-1 min-w-0", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "font-medium truncate", children: def?.label || a.key }), _jsx("span", { className: "text-xs text-gray-500 truncate", children: a.key }), isExplicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "Explicit" })) : (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["Default: ", defaultEnabled ? 'Allow' : 'Deny'] }))] }), def?.description ? (_jsx("div", { className: "text-xs text-gray-500 mt-1", children: def.description })) : null] }), _jsx(Checkbox, { checked: effective, onChange: (checked) => onToggle(a.key, checked), disabled: disabled || mutatingActionPermissions })] }, a.key));
-            }) }));
+        const syncBlocked = actionSyncStatus.state === 'error' || (Array.isArray(actionDefs) && actionDefs.length === 0);
+        return (_jsxs("div", { className: "space-y-3", children: [generatedActions.length > 0 && (_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "text-xs text-gray-500", children: ["Action catalog: ", Array.isArray(actionDefs) && actionDefs.length > 0 ? 'Synced' : 'Generated (not yet synced)', actionSyncStatus.at ? ` • Last: ${new Date(actionSyncStatus.at).toLocaleString()}` : ''] }), _jsx(Button, { variant: "secondary", size: "sm", onClick: syncActionsNow, disabled: actionSyncStatus.state === 'syncing', children: actionSyncStatus.state === 'syncing' ? 'Syncing…' : 'Sync Now' })] })), actionSyncStatus.state === 'error' && (_jsxs(Alert, { variant: "warning", title: "Action sync failed", children: [actionSyncStatus.error || 'Failed to sync action definitions into the auth module.', _jsx("div", { className: "mt-2 text-xs text-gray-500", children: "Until this is fixed, action toggles are disabled because the backend won\u2019t recognize the action keys." })] })), _jsx("div", { className: "border rounded-lg divide-y bg-white dark:bg-gray-900", children: allActions.map((a) => {
+                        const def = actionDefsByKey.get(a.key);
+                        const defaultEnabled = def ? Boolean(def.default_enabled) : false;
+                        const override = permissionMap.get(a.key);
+                        const effective = override !== undefined ? override : defaultEnabled;
+                        const isExplicit = override !== undefined;
+                        return (_jsxs("div", { className: "flex items-center gap-3 p-3", children: [_jsxs("div", { className: "flex-1 min-w-0", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "font-medium truncate", children: def?.label || a.key }), _jsx("span", { className: "text-xs text-gray-500 truncate", children: a.key }), isExplicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "Explicit" })) : (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["Default: ", defaultEnabled ? 'Allow' : 'Deny'] }))] }), def?.description ? (_jsx("div", { className: "text-xs text-gray-500 mt-1", children: def.description })) : null] }), _jsx(Checkbox, { checked: effective, onChange: (checked) => onToggle(a.key, checked), disabled: disabled || mutatingActionPermissions || syncBlocked })] }, a.key));
+                    }) })] }));
     };
     return (_jsxs(Page, { title: "Permissions", description: "Manage page access and action permissions using groups (preferred) or roles (fallback), with user-level overrides.", children: [_jsx(Tabs, { activeTab: activeTab, onChange: (tabId) => setActiveTab(tabId), tabs: [
                     {

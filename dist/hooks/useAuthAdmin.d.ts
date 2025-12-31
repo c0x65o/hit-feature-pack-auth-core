@@ -373,6 +373,15 @@ export declare function usePermissionActions(): {
     error: Error | null;
     refresh: () => Promise<void>;
 };
+export declare function syncPermissionActions(actions: Array<{
+    key: string;
+    packName?: string;
+    pack_name?: string | null;
+    label: string;
+    description?: string;
+    defaultEnabled?: boolean;
+    default_enabled?: boolean;
+}>): Promise<void>;
 export declare function useRoleActionPermissions(role: string): {
     data: RoleActionPermission[] | null;
     loading: boolean;

@@ -1242,6 +1242,23 @@ export function usePermissionActions() {
     }, [refresh]);
     return { data, loading, error, refresh };
 }
+export async function syncPermissionActions(actions) {
+    const normalized = Array.isArray(actions)
+        ? actions
+            .map((a) => ({
+            key: String(a?.key || '').trim(),
+            pack_name: String(a?.pack_name || a?.packName || '').trim() || null,
+            label: String(a?.label || '').trim() || String(a?.key || '').trim(),
+            description: typeof a?.description === 'string' ? a.description : null,
+            default_enabled: Boolean(a?.default_enabled ?? a?.defaultEnabled ?? false),
+        }))
+            .filter((x) => Boolean(x.key))
+        : [];
+    await fetchWithAuth(`/admin/permissions/actions/sync`, {
+        method: 'POST',
+        body: JSON.stringify({ actions: normalized }),
+    });
+}
 export function useRoleActionPermissions(role) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);

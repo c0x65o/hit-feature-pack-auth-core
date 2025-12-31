@@ -17,21 +17,13 @@ import {
   useGroupActionPermissions,
   useUserActionOverrides,
   useActionPermissionsMutations,
+  syncPermissionActions,
   type User,
   type Group,
 } from '../hooks/useAuthAdmin';
 
 interface PermissionsProps {
   onNavigate?: (path: string) => void;
-}
-
-interface NavItem {
-  id?: string;
-  label: string;
-  path?: string;
-  icon?: string;
-  children?: NavItem[];
-  [key: string]: any;
 }
 
 interface TreeNode {
@@ -42,75 +34,20 @@ interface TreeNode {
   level: number;
 }
 
-// Build tree structure from navigation items
-function buildNavTree(navItems: NavItem[]): TreeNode[] {
-  const tree: TreeNode[] = [];
-  const pathMap = new Map<string, TreeNode>();
-
-  function processItem(item: NavItem, parentPath: string = '', level: number = 0): void {
-    // Skip admin pages and auth pages
-    if (item.path?.startsWith('/admin') || item.path?.startsWith('/auth') || item.path?.startsWith('/login')) {
-      return;
-    }
-
-    // Skip items that require admin role
-    if (item.roles && item.roles.includes('admin')) {
-      return;
-    }
-
-    const currentPath = item.path || parentPath;
-    if (!currentPath || currentPath === '/') {
-      // Process children without adding parent
-      if (item.children) {
-        item.children.forEach(child => processItem(child, parentPath, level));
-      }
-      return;
-    }
-
-    // Check if node already exists
-    let node = pathMap.get(currentPath);
-    if (!node) {
-      node = {
-        path: currentPath,
-        label: item.label || currentPath,
-        icon: item.icon,
-        children: [],
-        level,
-      };
-      pathMap.set(currentPath, node);
-
-      // Add to tree or parent's children
-      if (parentPath && pathMap.has(parentPath)) {
-        pathMap.get(parentPath)!.children.push(node);
-      } else {
-        tree.push(node);
-      }
-    }
-
-    // Process children
-    if (item.children) {
-      item.children.forEach(child => processItem(child, currentPath, level + 1));
-    }
-  }
-
-  navItems.forEach(item => processItem(item));
-
-  // Sort tree recursively
-  function sortTree(nodes: TreeNode[]): void {
-    nodes.sort((a, b) => a.label.localeCompare(b.label));
-    nodes.forEach(node => sortTree(node.children));
-  }
-  sortTree(tree);
-
-  return tree;
-}
-
 type GeneratedRoute = {
   path: string;
   packName: string;
   componentName: string;
   roles: string[];
   shell: boolean;
+};
+
+type GeneratedAction = {
+  key: string;
+  packName: string;
+  label: string;
+  description: string;
+  defaultEnabled: boolean;
 };
 
 function buildPathTree(pages: Array<{ path: string; label: string }>): TreeNode[] {
@@ -246,6 +183,74 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     loading: mutatingActionPermissions,
   } = useActionPermissionsMutations();
 
+  const [generatedActions, setGeneratedActions] = useState<GeneratedAction[]>([]);
+  const [generatedActionsLoading, setGeneratedActionsLoading] = useState(true);
+  const [actionSyncStatus, setActionSyncStatus] = useState<
+    { state: 'idle' | 'syncing' | 'synced' | 'error'; error?: string; at?: string }
+  >({ state: 'idle' });
+
+  // Load generated action registry (client-only) and try to sync it into auth.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setGeneratedActionsLoading(true);
+        const gen = await import('@/.hit/generated/actions').catch(() => null);
+        const actions = Array.isArray((gen as any)?.featurePackActions) ? (gen as any).featurePackActions : [];
+        const normalized: GeneratedAction[] = actions
+          .map((a: any) => ({
+            key: String(a?.key || '').trim(),
+            packName: String(a?.packName || '').trim(),
+            label: String(a?.label || a?.key || '').trim(),
+            description: String(a?.description || '').trim(),
+            defaultEnabled: Boolean(a?.defaultEnabled),
+          }))
+          .filter((a: GeneratedAction) => Boolean(a.key));
+
+        if (!cancelled) setGeneratedActions(normalized);
+
+        if (normalized.length === 0) {
+          if (!cancelled) setActionSyncStatus({ state: 'idle' });
+          return;
+        }
+
+        setActionSyncStatus({ state: 'syncing' });
+        await syncPermissionActions(normalized);
+        if (cancelled) return;
+        setActionSyncStatus({ state: 'synced', at: new Date().toISOString() });
+        refreshActionDefs();
+      } catch (e: any) {
+        if (cancelled) return;
+        setActionSyncStatus({
+          state: 'error',
+          error: String(e?.message || 'Failed to sync action definitions'),
+          at: new Date().toISOString(),
+        });
+      } finally {
+        if (!cancelled) setGeneratedActionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshActionDefs]);
+
+  const syncActionsNow = async () => {
+    if (!generatedActions.length) return;
+    setActionSyncStatus({ state: 'syncing' });
+    try {
+      await syncPermissionActions(generatedActions);
+      setActionSyncStatus({ state: 'synced', at: new Date().toISOString() });
+      refreshActionDefs();
+    } catch (e: any) {
+      setActionSyncStatus({
+        state: 'error',
+        error: String(e?.message || 'Failed to sync action definitions'),
+        at: new Date().toISOString(),
+      });
+    }
+  };
+
   // Get available roles
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   
@@ -358,10 +363,23 @@ export function Permissions({ onNavigate }: PermissionsProps) {
   }, [groupPermissions]);
 
   // Action definition + override maps
+  const actionCatalog = useMemo(() => {
+    // Prefer DB-backed definitions (so defaults match server evaluation).
+    if (Array.isArray(actionDefs) && actionDefs.length > 0) return actionDefs;
+    // Fall back to generated registry so the UI can still show "what exists".
+    return generatedActions.map((a) => ({
+      key: a.key,
+      pack_name: a.packName || null,
+      label: a.label || a.key,
+      description: a.description || null,
+      default_enabled: Boolean(a.defaultEnabled),
+    }));
+  }, [actionDefs, generatedActions]);
+
   const actionDefsByKey = useMemo(() => {
     const map = new Map<string, { default_enabled: boolean; label: string; pack_name: string | null; description: string | null }>();
-    if (actionDefs) {
-      actionDefs.forEach((a) => {
+    if (actionCatalog) {
+      actionCatalog.forEach((a: any) => {
         map.set(a.key, {
           default_enabled: Boolean(a.default_enabled),
           label: a.label || a.key,
@@ -371,13 +389,13 @@ export function Permissions({ onNavigate }: PermissionsProps) {
       });
     }
     return map;
-  }, [actionDefs]);
+  }, [actionCatalog]);
 
   const allActions = useMemo(() => {
-    const xs = Array.isArray(actionDefs) ? [...actionDefs] : [];
+    const xs = Array.isArray(actionCatalog) ? [...(actionCatalog as any[])] : [];
     xs.sort((a, b) => a.key.localeCompare(b.key));
     return xs;
-  }, [actionDefs]);
+  }, [actionCatalog]);
 
   const roleActionMap = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -619,7 +637,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     onToggle: (actionKey: string, enabled: boolean) => void,
     disabled: boolean = false
   ) => {
-    if (actionDefsLoading) return <Spinner />;
+    if (actionDefsLoading || generatedActionsLoading) return <Spinner />;
     if (!allActions.length) {
       return (
         <Alert variant="warning">
@@ -628,7 +646,35 @@ export function Permissions({ onNavigate }: PermissionsProps) {
       );
     }
 
+    const syncBlocked = actionSyncStatus.state === 'error' || (Array.isArray(actionDefs) && actionDefs.length === 0);
+
     return (
+      <div className="space-y-3">
+        {generatedActions.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-gray-500">
+              Action catalog: {Array.isArray(actionDefs) && actionDefs.length > 0 ? 'Synced' : 'Generated (not yet synced)'}
+              {actionSyncStatus.at ? ` • Last: ${new Date(actionSyncStatus.at).toLocaleString()}` : ''}
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={syncActionsNow}
+              disabled={actionSyncStatus.state === 'syncing'}
+            >
+              {actionSyncStatus.state === 'syncing' ? 'Syncing…' : 'Sync Now'}
+            </Button>
+          </div>
+        )}
+        {actionSyncStatus.state === 'error' && (
+          <Alert variant="warning" title="Action sync failed">
+            {actionSyncStatus.error || 'Failed to sync action definitions into the auth module.'}
+            <div className="mt-2 text-xs text-gray-500">
+              Until this is fixed, action toggles are disabled because the backend won’t recognize the action keys.
+            </div>
+          </Alert>
+        )}
+
       <div className="border rounded-lg divide-y bg-white dark:bg-gray-900">
         {allActions.map((a) => {
           const def = actionDefsByKey.get(a.key);
@@ -657,11 +703,12 @@ export function Permissions({ onNavigate }: PermissionsProps) {
               <Checkbox
                 checked={effective}
                 onChange={(checked: boolean) => onToggle(a.key, checked)}
-                disabled={disabled || mutatingActionPermissions}
+                disabled={disabled || mutatingActionPermissions || syncBlocked}
               />
             </div>
           );
         })}
+      </div>
       </div>
     );
   };
