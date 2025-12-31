@@ -1712,6 +1712,228 @@ export function useGroupMutations() {
         error,
     };
 }
+export function usePermissionSets() {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth('/admin/permissions/sets');
+            setData(result.permission_sets);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function usePermissionSet(id) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        if (!id) {
+            setData(null);
+            setLoading(false);
+            return;
+        }
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth(`/admin/permissions/sets/${id}`);
+            setData(result);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [id]);
+    useEffect(() => { refresh(); }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function usePermissionSetMutations() {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const createPermissionSet = useCallback(async (data) => {
+        setLoading(true);
+        setError(null);
+        try {
+            return await fetchWithAuth('/admin/permissions/sets', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const deletePermissionSet = useCallback(async (id) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${id}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const addAssignment = useCallback(async (psId, principalType, principalId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/assignments`, {
+                method: 'POST',
+                body: JSON.stringify({ principal_type: principalType, principal_id: principalId }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const removeAssignment = useCallback(async (psId, assignmentId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/assignments/${assignmentId}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const addPageGrant = useCallback(async (psId, pagePath) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/pages`, {
+                method: 'POST',
+                body: JSON.stringify({ page_path: pagePath }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const removePageGrant = useCallback(async (psId, grantId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/pages/${grantId}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const addActionGrant = useCallback(async (psId, actionKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/actions`, {
+                method: 'POST',
+                body: JSON.stringify({ action_key: actionKey }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const removeActionGrant = useCallback(async (psId, grantId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/actions/${grantId}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const addMetricGrant = useCallback(async (psId, metricKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/metrics`, {
+                method: 'POST',
+                body: JSON.stringify({ metric_key: metricKey }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const removeMetricGrant = useCallback(async (psId, grantId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/metrics/${grantId}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    return {
+        createPermissionSet,
+        deletePermissionSet,
+        addAssignment,
+        removeAssignment,
+        addPageGrant,
+        removePageGrant,
+        addActionGrant,
+        removeActionGrant,
+        addMetricGrant,
+        removeMetricGrant,
+        loading,
+        error,
+    };
+}
 // Export types and error class
 export { AuthAdminError };
 //# sourceMappingURL=useAuthAdmin.js.map

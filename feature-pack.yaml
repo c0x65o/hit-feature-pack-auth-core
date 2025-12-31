@@ -52,6 +52,9 @@ routes:
     page: Groups
     roles: [admin]
     featureFlag: auth.user_groups_enabled
+  - path: /admin/security-groups
+    page: SecurityGroups
+    roles: [admin]
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects
@@ -90,6 +93,9 @@ nav:
       - label: Permissions
         path: /admin/permissions
         icon: Shield
+      - label: Security Groups
+        path: /admin/security-groups
+        icon: Lock
       - label: Sessions
         path: /admin/sessions
         icon: Key

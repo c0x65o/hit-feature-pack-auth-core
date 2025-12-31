@@ -484,6 +484,69 @@ export declare function useGroupMutations(): {
     loading: boolean;
     error: Error | null;
 };
+export interface PermissionSet {
+    id: string;
+    name: string;
+    description: string | null;
+    created_at: string;
+    updated_at: string;
+}
+export interface PermissionSetAssignment {
+    id: string;
+    principal_type: 'user' | 'group' | 'role';
+    principal_id: string;
+    created_at: string;
+}
+export interface PermissionSetPageGrant {
+    id: string;
+    page_path: string;
+    created_at: string;
+}
+export interface PermissionSetActionGrant {
+    id: string;
+    action_key: string;
+    created_at: string;
+}
+export interface PermissionSetMetricGrant {
+    id: string;
+    metric_key: string;
+    created_at: string;
+}
+export declare function usePermissionSets(): {
+    data: PermissionSet[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function usePermissionSet(id: string | null): {
+    data: {
+        permission_set: PermissionSet;
+        assignments: PermissionSetAssignment[];
+        page_grants: PermissionSetPageGrant[];
+        action_grants: PermissionSetActionGrant[];
+        metric_grants: PermissionSetMetricGrant[];
+    } | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function usePermissionSetMutations(): {
+    createPermissionSet: (data: {
+        name: string;
+        description?: string;
+    }) => Promise<PermissionSet>;
+    deletePermissionSet: (id: string) => Promise<void>;
+    addAssignment: (psId: string, principalType: string, principalId: string) => Promise<void>;
+    removeAssignment: (psId: string, assignmentId: string) => Promise<void>;
+    addPageGrant: (psId: string, pagePath: string) => Promise<void>;
+    removePageGrant: (psId: string, grantId: string) => Promise<void>;
+    addActionGrant: (psId: string, actionKey: string) => Promise<void>;
+    removeActionGrant: (psId: string, grantId: string) => Promise<void>;
+    addMetricGrant: (psId: string, metricKey: string) => Promise<void>;
+    removeMetricGrant: (psId: string, grantId: string) => Promise<void>;
+    loading: boolean;
+    error: Error | null;
+};
 export { AuthAdminError };
-export type { User, Session, AuditLogEntry, Invite, Stats, PaginatedResponse, AuthAdminConfig, Group, UserGroup, GroupPagePermission };
+export type { User, Session, AuditLogEntry, Invite, Stats, PaginatedResponse, AuthAdminConfig, Group, UserGroup, GroupPagePermission, };
 //# sourceMappingURL=useAuthAdmin.d.ts.map
