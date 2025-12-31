@@ -2107,6 +2107,83 @@ export interface PermissionSetMetricGrant {
   created_at: string;
 }
 
+export interface EffectivePrincipalRef {
+  principal_type: 'user' | 'group' | 'role';
+  principal_id: string;
+  label: string;
+}
+
+export interface EffectiveUserGroupRef {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: string | null;
+  segment_key: string | null;
+}
+
+export interface UserEffectivePermissions {
+  user_email: string;
+  role: string;
+  is_admin: boolean;
+  features: {
+    user_groups_enabled: boolean;
+    dynamic_groups_enabled: boolean;
+  };
+  groups: EffectiveUserGroupRef[];
+  permission_sets: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    assigned_via: EffectivePrincipalRef[];
+  }>;
+  has_default_access: boolean;
+  explicit_grants: {
+    pages: string[];
+    actions: string[];
+    metrics: string[];
+  };
+  effective: {
+    pages: string[];
+    actions: string[];
+    metrics: string[];
+  };
+  counts: Record<string, number>;
+}
+
+export function useUserEffectivePermissions(userEmail: string | null) {
+  const [data, setData] = useState<UserEffectivePermissions | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!userEmail) {
+      setData(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await fetchWithAuth<UserEffectivePermissions>(
+        `/admin/permissions/users/${encodeURIComponent(userEmail)}/effective`
+      );
+      setData(result);
+    } catch (e) {
+      setError(e as Error);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [userEmail]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
+}
+
 export function usePermissionSets() {
   const [data, setData] = useState<PermissionSet[] | null>(null);
   const [loading, setLoading] = useState(true);

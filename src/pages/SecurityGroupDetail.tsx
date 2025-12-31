@@ -77,7 +77,24 @@ type ActionCatalogItem = {
   default_enabled: boolean;
 };
 
-async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string }>> {
+function isAdminishPath(path: string): boolean {
+  const p = String(path || '');
+  return p.startsWith('/admin') || p.startsWith('/setup') || p.startsWith('/settings');
+}
+
+function pageGrantCandidates(path: string): string[] {
+  const p = normalizePath(path);
+  const segs = p.split('/').filter(Boolean);
+  const out: string[] = [p, '/*'];
+  let cur = '';
+  for (const s of segs) {
+    cur += `/${s}`;
+    out.push(`${cur}/*`);
+  }
+  return Array.from(new Set(out));
+}
+
+async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; defaultEnabled: boolean }>> {
   try {
     const routesMod = await import('@/.hit/generated/routes');
     const featurePackRoutes: GeneratedRoute[] = (routesMod as any).featurePackRoutes || [];
@@ -92,6 +109,9 @@ async function loadShellPages(): Promise<Array<{ path: string; label: string; pa
         path: normalizePath(r.path),
         label: r.componentName,
         packName: r.packName,
+        // Must mirror `/api/permissions/catalog` policy:
+        // 1.0 default policy: non-adminish shell pages default-allow for Default Access.
+        defaultEnabled: Boolean((r as any).shell) && !isAdminishPath(String(r.path)),
       }));
 
     return Array.from(new Map(pages.map((p) => [p.path, p])).values()).sort((a, b) =>
@@ -130,7 +150,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Grants
   const [search, setSearch] = useState('');
   const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
-  const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string }>>([]);
+  const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; defaultEnabled: boolean }>>([]);
   const [pagesLoading, setPagesLoading] = useState(true);
 
   // Add grant modal
@@ -237,8 +257,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Group everything by feature pack
   const packData = useMemo(() => {
     const packs = new Map<string, {
-      pages: Array<{ path: string; label: string; granted: boolean }>;
-      actions: Array<ActionCatalogItem & { granted: boolean }>;
+      pages: Array<{ path: string; label: string; default_enabled: boolean; explicit: boolean; effective: boolean; via?: string }>;
+      actions: Array<ActionCatalogItem & { explicit: boolean; effective: boolean }>;
       metrics: Array<{ key: string; id: string }>;
     }>();
 
@@ -246,16 +266,46 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     for (const p of pages) {
       const pack = p.packName || 'unknown';
       if (!packs.has(pack)) packs.set(pack, { pages: [], actions: [], metrics: [] });
-      const granted = pageGrantSet.has(p.path) || pageGrantSet.has(`${p.path}/*`);
-      packs.get(pack)!.pages.push({ path: p.path, label: p.label, granted });
+      const candidates = pageGrantCandidates(p.path);
+      let explicit = false;
+      let effective = false;
+      let via: string | undefined;
+
+      // Default allow (catalog)
+      if (p.defaultEnabled) {
+        effective = true;
+        via = 'default';
+      }
+
+      // Explicit grants in this permission set (exact/subtree + inherited subtrees)
+      for (const c of candidates) {
+        if (pageGrantSet.has(c)) {
+          effective = true;
+          via = c;
+          // explicit if it’s exactly this node (exact or node subtree), not inherited from ancestor
+          const norm = normalizePath(p.path);
+          explicit = (c === norm) || (c === `${norm}/*`) || (c === '/*' && norm === '/');
+          break;
+        }
+      }
+
+      packs.get(pack)!.pages.push({
+        path: p.path,
+        label: p.label,
+        default_enabled: p.defaultEnabled,
+        explicit,
+        effective,
+        via,
+      });
     }
 
     // Add actions
     for (const a of actionCatalog) {
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
       if (!packs.has(pack)) packs.set(pack, { pages: [], actions: [], metrics: [] });
-      const granted = actionGrantSet.has(a.key);
-      packs.get(pack)!.actions.push({ ...a, granted });
+      const explicit = actionGrantSet.has(a.key);
+      const effective = Boolean(a.default_enabled || explicit);
+      packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
 
     // Add metrics (group by first segment of key)
@@ -273,9 +323,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         name,
         ...data,
         pageCount: data.pages.length,
-        grantedPages: data.pages.filter((p) => p.granted).length,
+        effectivePages: data.pages.filter((p) => p.effective).length,
+        explicitPages: data.pages.filter((p) => p.explicit).length,
         actionCount: data.actions.length,
-        grantedActions: data.actions.filter((a) => a.granted).length,
+        effectiveActions: data.actions.filter((a) => a.effective).length,
+        explicitActions: data.actions.filter((a) => a.explicit).length,
         metricCount: data.metrics.length,
       }));
   }, [pages, actionCatalog, pageGrantSet, actionGrantSet, metricGrants]);
@@ -442,13 +494,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
           permissionSet.name
         )
       }
-      description={
-        isEditing ? (
-          <Input value={editDescription} onChange={setEditDescription} placeholder="Description" />
-        ) : (
-          permissionSet.description || 'No description'
-        )
-      }
+      description={permissionSet.description || 'No description'}
       breadcrumbs={breadcrumbs}
       onNavigate={navigate}
       actions={
@@ -475,6 +521,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         </div>
       }
     >
+      {isEditing ? (
+        <Card className="mb-6">
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <Input value={editDescription} onChange={setEditDescription} placeholder="Description (optional)" />
+            </div>
+            <div className="text-xs text-gray-500">
+              Tip: name/description changes don’t affect permissions; they just help organization.
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {/* ─────────────────────────────────────────────────────────────────────
           ASSIGNMENTS SECTION
       ───────────────────────────────────────────────────────────────────── */}
@@ -554,7 +614,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
               </div>
             </div>
             <div className="text-gray-500 text-xs mt-2">
-              Note: Admins bypass all permission checks. Checkbox = explicit grant from THIS security group.
+              Note: Admins bypass all permission checks. “Effective” is read-only; “Grant” is the explicit toggle from THIS security group.
             </div>
           </div>
         </Alert>
@@ -575,7 +635,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasGrants = pack.grantedPages > 0 || pack.grantedActions > 0 || pack.metricCount > 0;
+            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.metricCount > 0;
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -583,7 +643,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 <button
                   onClick={() => togglePack(pack.name)}
                   className={`w-full flex items-center justify-between p-4 text-left transition-colors ${
-                    hasGrants ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                    hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -595,17 +655,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {pack.pageCount > 0 && (
                       <div className="flex items-center gap-1">
                         <FileText size={14} className="text-gray-400" />
-                        <span className={pack.grantedPages > 0 ? 'text-blue-600 font-medium' : 'text-gray-500'}>
-                          {pack.grantedPages}/{pack.pageCount}
+                        <span className={pack.effectivePages > 0 ? 'text-blue-600 font-medium' : 'text-gray-500'}>
+                          {pack.effectivePages}/{pack.pageCount}
                         </span>
+                        {pack.explicitPages > 0 ? (
+                          <span className="text-gray-400">({pack.explicitPages} explicit)</span>
+                        ) : null}
                       </div>
                     )}
                     {pack.actionCount > 0 && (
                       <div className="flex items-center gap-1">
                         <KeyRound size={14} className="text-gray-400" />
-                        <span className={pack.grantedActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                          {pack.grantedActions}/{pack.actionCount}
+                        <span className={pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
+                          {pack.effectiveActions}/{pack.actionCount}
                         </span>
+                        {pack.explicitActions > 0 ? (
+                          <span className="text-gray-400">({pack.explicitActions} explicit)</span>
+                        ) : null}
                       </div>
                     )}
                     {pack.metricCount > 0 && (
@@ -626,35 +692,46 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         <div className="flex items-center gap-2 mb-3">
                           <FileText size={16} className="text-blue-500" />
                           <span className="text-sm font-medium text-gray-600">Pages</span>
-                          <span className="text-xs text-gray-400">(all require explicit grant)</span>
+                          <span className="text-xs text-gray-400">
+                            ({pack.pages.filter(p => p.default_enabled).length} default-allow,{' '}
+                            {pack.pages.filter(p => !p.default_enabled).length} default-deny)
+                          </span>
                         </div>
                         <div className="space-y-1 ml-6">
                           {pack.pages.map((p) => (
                             <div
                               key={p.path}
                               className={`flex items-center justify-between py-1.5 px-2 rounded ${
-                                p.granted ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''
+                                p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''
                               } hover:bg-gray-50 dark:hover:bg-gray-800`}
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                {/* Status dot */}
-                                <span
-                                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                    p.granted ? 'bg-green-500' : 'bg-red-500'
-                                  }`}
-                                  title={p.granted ? 'Granted' : 'Not granted'}
-                                />
                                 <span className="font-medium text-sm truncate">{p.label}</span>
                                 <span className="text-xs text-gray-500 truncate">{p.path}</span>
-                                {p.granted && <Badge variant="info" className="text-xs">granted</Badge>}
+                                {p.default_enabled ? (
+                                  <Badge variant="success" className="text-xs">default-allow</Badge>
+                                ) : (
+                                  <Badge variant="warning" className="text-xs">default-deny</Badge>
+                                )}
+                                {p.explicit ? (
+                                  <Badge variant="info" className="text-xs">explicit</Badge>
+                                ) : (p.effective && p.via && p.via !== 'default') ? (
+                                  <Badge variant="default" className="text-xs">via {p.via}</Badge>
+                                ) : null}
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">Grant:</span>
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Effective:</span>
+                                  <Checkbox checked={Boolean(p.effective)} disabled={true} onChange={() => void 0} />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Grant:</span>
                                 <Checkbox
-                                  checked={p.granted}
+                                  checked={p.explicit}
                                   onChange={() => togglePageGrant(p.path).catch(() => void 0)}
                                   disabled={mutations.loading}
                                 />
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -675,12 +752,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         </div>
                         <div className="space-y-1 ml-6">
                           {pack.actions.map((a) => {
-                            const effective = a.default_enabled || a.granted;
                             return (
                               <div
                                 key={a.key}
                                 className={`flex items-center justify-between py-1.5 px-2 rounded ${
-                                  a.granted && !a.default_enabled
+                                  a.explicit && !a.default_enabled
                                     ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
                                     : a.default_enabled
                                     ? 'bg-green-50/30 dark:bg-green-900/5'
@@ -688,30 +764,29 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 } hover:bg-gray-50 dark:hover:bg-gray-800`}
                               >
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  {/* Status dot */}
-                                  <span
-                                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                      effective ? 'bg-green-500' : 'bg-red-500'
-                                    }`}
-                                    title={effective ? 'Effective: Allow' : 'Effective: Deny'}
-                                  />
                                   <span className="font-medium text-sm truncate">{a.label}</span>
                                   <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
                                   {a.default_enabled ? (
                                     <Badge variant="success" className="text-xs">default-allow</Badge>
-                                  ) : a.granted ? (
+                                  ) : a.explicit ? (
                                     <Badge variant="info" className="text-xs">granted</Badge>
                                   ) : (
                                     <Badge variant="warning" className="text-xs">default-deny</Badge>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">Grant:</span>
+                                <div className="flex items-center gap-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400">Effective:</span>
+                                    <Checkbox checked={Boolean(a.effective)} disabled={true} onChange={() => void 0} />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400">Grant:</span>
                                   <Checkbox
-                                    checked={a.granted}
+                                    checked={a.explicit}
                                     onChange={() => toggleActionGrant(a.key).catch(() => void 0)}
                                     disabled={mutations.loading}
                                   />
+                                  </div>
                                 </div>
                               </div>
                             );

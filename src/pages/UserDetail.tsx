@@ -31,6 +31,7 @@ import {
   useSessionMutations,
   useAuthAdminConfig,
   useProfileFields,
+  useUserEffectivePermissions,
 } from '../hooks/useAuthAdmin';
 
 interface UserDetailProps {
@@ -39,13 +40,14 @@ interface UserDetailProps {
 }
 
 export function UserDetail({ email, onNavigate }: UserDetailProps) {
-  const { Page, Card, Button, Badge, DataTable, Modal, Alert, Spinner, EmptyState, Select } = useUi();
+  const { Page, Card, Button, Badge, DataTable, Modal, Alert, Spinner, EmptyState, Select, Input } = useUi();
   
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newRole, setNewRole] = useState<string>('');
   const [availableRoles, setAvailableRoles] = useState<string[]>(['admin', 'user']);
   const [profileFields, setProfileFields] = useState<Record<string, unknown>>({});
+  const [permissionsFilter, setPermissionsFilter] = useState<string>('');
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
   const [resetPasswordMethod, setResetPasswordMethod] = useState<'email' | 'direct'>('email');
   const [newPassword, setNewPassword] = useState('');
@@ -56,6 +58,12 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, loading, error, refresh } = useUser(email);
+  const {
+    data: effectivePerms,
+    loading: effectivePermsLoading,
+    error: effectivePermsError,
+    refresh: refreshEffectivePerms,
+  } = useUserEffectivePermissions(email);
   const { config: authConfig } = useAuthAdminConfig();
   const { data: profileFieldMetadata, loading: fieldsLoading } = useProfileFields();
   const profileFieldsList = profileFieldMetadata || [];
@@ -621,6 +629,212 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
             <div className="flex justify-between">
               <span className="text-gray-400">Last Login</span>
               <span className="text-gray-900 dark:text-gray-100">{formatDateOrNever(user.last_login ?? null)}</span>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Security Groups (Permission Sets) + Effective Permissions */}
+      <Card
+        title="Security Groups & Effective Permissions"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => refreshEffectivePerms()}
+              disabled={effectivePermsLoading}
+            >
+              <RefreshCw size={14} className="mr-2" />
+              Refresh
+            </Button>
+          </div>
+        }
+      >
+        {effectivePermsError ? (
+          <Alert variant="error" title="Failed to load security groups / permissions">
+            {(effectivePermsError as any)?.message || 'Unknown error'}
+          </Alert>
+        ) : effectivePermsLoading || !effectivePerms ? (
+          <div className="flex items-center gap-2 text-gray-400">
+            <Spinner size="sm" />
+            <span>Loading security groups and permissions…</span>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-400">User Groups</div>
+                <div className="text-xs text-gray-500">
+                  {effectivePerms.counts?.groups ?? effectivePerms.groups.length} total
+                </div>
+              </div>
+              {!effectivePerms.groups?.length ? (
+                <div className="text-sm text-gray-500 mt-2">No group memberships found.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {effectivePerms.groups.map((g) => (
+                    <Badge key={g.id} variant={g.kind === 'dynamic' ? 'info' : 'default'}>
+                      <Users size={12} className="mr-1" />
+                      {g.name}
+                      {g.kind === 'dynamic' && g.segment_key ? ` (${g.segment_key})` : ''}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-400">Security Groups</div>
+                <div className="text-xs text-gray-500">
+                  {effectivePerms.counts?.permission_sets ?? effectivePerms.permission_sets.length} total
+                  {effectivePerms.has_default_access ? ' • Default Access applies' : ''}
+                  {effectivePerms.is_admin ? ' • Admin (full access)' : ''}
+                </div>
+              </div>
+
+              {!effectivePerms.permission_sets?.length ? (
+                <div className="text-sm text-gray-500 mt-2">No security groups assigned via user/group/role.</div>
+              ) : (
+                <div className="mt-3">
+                  <DataTable
+                    columns={[
+                      {
+                        key: 'name',
+                        label: 'Security Group',
+                        sortable: true,
+                        render: (_: unknown, row: Record<string, unknown>) => (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/admin/security-groups/${row.id as string}`)}
+                          >
+                            {row.name as string}
+                          </Button>
+                        ),
+                      },
+                      {
+                        key: 'assigned_via',
+                        label: 'Assigned Via',
+                        sortable: false,
+                        render: (value: unknown) => {
+                          const via = Array.isArray(value) ? (value as any[]) : [];
+                          if (!via.length) return <span className="text-gray-500">—</span>;
+                          return (
+                            <div className="flex flex-wrap gap-2">
+                              {via.map((v) => (
+                                <Badge key={`${v?.principal_type}:${v?.principal_id}`} variant="default">
+                                  {String(v?.principal_type || 'principal')}: {String(v?.label || v?.principal_id || '')}
+                                </Badge>
+                              ))}
+                            </div>
+                          );
+                        },
+                      },
+                      {
+                        key: 'description',
+                        label: 'Description',
+                        sortable: false,
+                        render: (value: unknown) => (
+                          <span className="text-gray-500">{(value as string) || '—'}</span>
+                        ),
+                      },
+                    ]}
+                    data={(effectivePerms.permission_sets || []).map((ps) => ({
+                      id: ps.id,
+                      name: ps.name,
+                      description: ps.description,
+                      assigned_via: ps.assigned_via,
+                    }))}
+                    emptyMessage="No security groups"
+                    searchable
+                    pageSize={10}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-400">Effective (Unioned) Permissions</div>
+                <div className="text-xs text-gray-500">
+                  Pages: {effectivePerms.effective.pages.length} • Actions: {effectivePerms.effective.actions.length} • Metrics:{' '}
+                  {effectivePerms.effective.metrics.length}
+                </div>
+              </div>
+
+              <Input
+                value={permissionsFilter}
+                onChange={(e: any) => setPermissionsFilter(String(e?.target?.value || ''))}
+                placeholder="Filter pages/actions/metrics (substring match)…"
+              />
+
+              {(() => {
+                const q = permissionsFilter.trim().toLowerCase();
+                const matches = (x: string) => (!q ? true : x.toLowerCase().includes(q));
+                const pages = (effectivePerms.effective.pages || []).filter(matches);
+                const actions = (effectivePerms.effective.actions || []).filter(matches);
+                const metrics = (effectivePerms.effective.metrics || []).filter(matches);
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium">Pages</div>
+                        <Badge variant="default">{pages.length}</Badge>
+                      </div>
+                      <div className="max-h-64 overflow-auto space-y-1">
+                        {pages.length ? (
+                          pages.map((p) => (
+                            <div key={p} className="text-xs font-mono text-gray-700 dark:text-gray-200">
+                              {p}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500">No matches</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium">Actions</div>
+                        <Badge variant="default">{actions.length}</Badge>
+                      </div>
+                      <div className="max-h-64 overflow-auto space-y-1">
+                        {actions.length ? (
+                          actions.map((a) => (
+                            <div key={a} className="text-xs font-mono text-gray-700 dark:text-gray-200">
+                              {a}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500">No matches</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium">Metrics</div>
+                        <Badge variant="default">{metrics.length}</Badge>
+                      </div>
+                      <div className="max-h-64 overflow-auto space-y-1">
+                        {metrics.length ? (
+                          metrics.map((m) => (
+                            <div key={m} className="text-xs font-mono text-gray-700 dark:text-gray-200">
+                              {m}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500">No matches</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
