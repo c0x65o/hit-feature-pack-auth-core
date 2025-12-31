@@ -1218,6 +1218,224 @@ export function useGroupPagePermissionsMutations() {
         error,
     };
 }
+export function usePermissionActions() {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth('/admin/permissions/actions');
+            setData(result.actions);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function useRoleActionPermissions(role) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        if (!role) {
+            setData([]);
+            setLoading(false);
+            return;
+        }
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth(`/admin/permissions/roles/${encodeURIComponent(role)}/actions`);
+            setData(result.permissions);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [role]);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function useUserActionOverrides(email) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        if (!email) {
+            setData([]);
+            setLoading(false);
+            return;
+        }
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth(`/admin/permissions/users/${encodeURIComponent(email)}/actions`);
+            setData(result.overrides);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [email]);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function useGroupActionPermissions(groupId) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const refresh = useCallback(async () => {
+        if (!groupId) {
+            setData([]);
+            setLoading(false);
+            return;
+        }
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWithAuth(`/admin/permissions/groups/${groupId}/actions`);
+            setData(result.permissions);
+        }
+        catch (e) {
+            setError(e);
+            setData(null);
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [groupId]);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+    return { data, loading, error, refresh };
+}
+export function useActionPermissionsMutations() {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const setRoleActionPermission = useCallback(async (role, actionKey, enabled) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/roles/${encodeURIComponent(role)}/actions`, {
+                method: 'POST',
+                body: JSON.stringify({ action_key: actionKey, enabled }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const deleteRoleActionPermission = useCallback(async (role, actionKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/roles/${encodeURIComponent(role)}/actions/${encodeURIComponent(actionKey)}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const setUserActionOverride = useCallback(async (email, actionKey, enabled) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/users/${encodeURIComponent(email)}/actions`, {
+                method: 'POST',
+                body: JSON.stringify({ action_key: actionKey, enabled }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const deleteUserActionOverride = useCallback(async (email, actionKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/users/${encodeURIComponent(email)}/actions/${encodeURIComponent(actionKey)}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const setGroupActionPermission = useCallback(async (groupId, actionKey, enabled) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/groups/${groupId}/actions`, {
+                method: 'POST',
+                body: JSON.stringify({ action_key: actionKey, enabled }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const deleteGroupActionPermission = useCallback(async (groupId, actionKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/groups/${groupId}/actions/${encodeURIComponent(actionKey)}`, { method: 'DELETE' });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    return {
+        setRoleActionPermission,
+        deleteRoleActionPermission,
+        setUserActionOverride,
+        deleteUserActionOverride,
+        setGroupActionPermission,
+        deleteGroupActionPermission,
+        loading,
+        error,
+    };
+}
 export function useSegments(options) {
     const enabled = options?.enabled !== false;
     const entityKind = typeof options?.entityKind === 'string' ? options?.entityKind : '';

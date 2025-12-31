@@ -12,6 +12,11 @@ import {
   useGroups,
   useGroupPagePermissions,
   useGroupPagePermissionsMutations,
+  usePermissionActions,
+  useRoleActionPermissions,
+  useGroupActionPermissions,
+  useUserActionOverrides,
+  useActionPermissionsMutations,
   type User,
   type Group,
 } from '../hooks/useAuthAdmin';
@@ -100,80 +105,84 @@ function buildNavTree(navItems: NavItem[]): TreeNode[] {
   return tree;
 }
 
-// Get all pages from navigation items
+type GeneratedRoute = {
+  path: string;
+  packName: string;
+  componentName: string;
+  roles: string[];
+  shell: boolean;
+};
+
+// Get all pages from generated routes (feature-pack.yaml routes are the source of truth).
 function getAllPages(): Array<{ path: string; label: string }> {
   if (typeof window === 'undefined') return [];
-  
+
   try {
-    const nav = require('@/.hit/generated/nav');
-    const navItems = nav.featurePackNav || [];
-    
-    const pages: Array<{ path: string; label: string }> = [];
-    
-    function extractPages(items: any[], parentPath = '') {
-      for (const item of items) {
-        if (item.path?.startsWith('/admin') || item.path?.startsWith('/auth') || item.path?.startsWith('/login')) {
-          continue;
-        }
-        if (item.roles && item.roles.includes('admin')) {
-          continue;
-        }
-        if (item.path && item.path !== '/') {
-          pages.push({
-            path: item.path,
-            label: item.label || item.path,
-          });
-        }
-        if (item.children && Array.isArray(item.children)) {
-          extractPages(item.children, item.path || '');
-        }
-      }
-    }
-    
-    extractPages(navItems);
-    
-    try {
-      const customNav = require('@/lib/custom-nav');
-      if (customNav.customNavItems) {
-        extractPages(customNav.customNavItems);
-      }
-    } catch {
-      // Custom nav not available
-    }
-    
-    const uniquePages = Array.from(
-      new Map(pages.map((p) => [p.path, p])).values()
-    );
-    
-    return uniquePages.sort((a, b) => a.path.localeCompare(b.path));
+    const routesMod = require('@/.hit/generated/routes');
+    const featurePackRoutes: GeneratedRoute[] = routesMod.featurePackRoutes || [];
+    const authRoutes: string[] = routesMod.authRoutes || [];
+
+    const pages = featurePackRoutes
+      .filter((r) => r && typeof r.path === 'string')
+      // Only shell routes are "app pages" (auth routes are public standalone pages)
+      .filter((r) => Boolean((r as any).shell))
+      // Skip auth/admin pages
+      .filter((r) => !String(r.path).startsWith('/admin'))
+      .filter((r) => !authRoutes.includes(String(r.path)))
+      .filter((r) => String(r.path) !== '/')
+      .map((r) => ({
+        path: r.path,
+        label: `${r.packName}: ${r.componentName}`,
+      }));
+
+    const unique = Array.from(new Map(pages.map((p) => [p.path, p])).values());
+    return unique.sort((a, b) => a.path.localeCompare(b.path));
   } catch (error) {
-    console.warn('Could not load navigation items:', error);
+    console.warn('Could not load generated routes:', error);
     return [];
   }
 }
 
-// Get navigation tree
-function getNavTree(): TreeNode[] {
-  if (typeof window === 'undefined') return [];
-  
-  try {
-    const nav = require('@/.hit/generated/nav');
-    const navItems = nav.featurePackNav || [];
-    
-    try {
-      const customNav = require('@/lib/custom-nav');
-      if (customNav.customNavItems) {
-        navItems.push(...customNav.customNavItems);
+function buildPathTree(pages: Array<{ path: string; label: string }>): TreeNode[] {
+  const root: TreeNode[] = [];
+  const byPath = new Map<string, TreeNode>();
+
+  for (const p of pages) {
+    const path = p.path;
+    const segments = path.split('/').filter(Boolean);
+    let currentPath = '';
+    let parent: TreeNode | null = null;
+
+    segments.forEach((seg, idx) => {
+      currentPath += `/${seg}`;
+      let node = byPath.get(currentPath);
+      if (!node) {
+        const isLeaf = idx === segments.length - 1;
+        node = {
+          path: currentPath,
+          label: isLeaf ? p.label : seg,
+          children: [],
+          level: idx,
+        };
+        byPath.set(currentPath, node);
+        if (parent) parent.children.push(node);
+        else root.push(node);
       }
-    } catch {
-      // Custom nav not available
-    }
-    
-    return buildNavTree(navItems);
-  } catch (error) {
-    console.warn('Could not load navigation items:', error);
-    return [];
+      parent = node;
+    });
   }
+
+  const sortTree = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => a.label.localeCompare(b.label));
+    nodes.forEach((n) => sortTree(n.children));
+  };
+  sortTree(root);
+  return root;
+}
+
+// Get a hierarchical tree for display
+function getNavTree(): TreeNode[] {
+  return buildPathTree(getAllPages());
 }
 
 // Check if a path is a parent of another path
@@ -196,7 +205,9 @@ export function Permissions({ onNavigate }: PermissionsProps) {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'groups' | 'roles' | 'users'>('groups');
+  const [activeTab, setActiveTab] = useState<
+    'groups' | 'roles' | 'users' | 'actions-groups' | 'actions-roles' | 'actions-users'
+  >('groups');
   const [userOverrideModalOpen, setUserOverrideModalOpen] = useState(false);
   const [selectedUserForOverride, setSelectedUserForOverride] = useState<User | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -223,6 +234,24 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     deleteGroupPagePermission,
     loading: mutatingGroupPermissions,
   } = useGroupPagePermissionsMutations();
+
+  // Action permissions
+  const { data: actionDefs, loading: actionDefsLoading, refresh: refreshActionDefs } = usePermissionActions();
+  const { data: roleActionPermissions, loading: roleActionPermissionsLoading, refresh: refreshRoleActionPermissions } =
+    useRoleActionPermissions(selectedRole);
+  const { data: groupActionPermissions, loading: groupActionPermissionsLoading, refresh: refreshGroupActionPermissions } =
+    useGroupActionPermissions(selectedGroup);
+  const { data: userActionOverrides, loading: userActionOverridesLoading, refresh: refreshUserActionOverrides } =
+    useUserActionOverrides(selectedUser);
+  const {
+    setRoleActionPermission,
+    deleteRoleActionPermission,
+    setUserActionOverride,
+    deleteUserActionOverride,
+    setGroupActionPermission,
+    deleteGroupActionPermission,
+    loading: mutatingActionPermissions,
+  } = useActionPermissionsMutations();
 
   // Get available roles
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
@@ -315,6 +344,52 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     }
     return map;
   }, [groupPermissions]);
+
+  // Action definition + override maps
+  const actionDefsByKey = useMemo(() => {
+    const map = new Map<string, { default_enabled: boolean; label: string; pack_name: string | null; description: string | null }>();
+    if (actionDefs) {
+      actionDefs.forEach((a) => {
+        map.set(a.key, {
+          default_enabled: Boolean(a.default_enabled),
+          label: a.label || a.key,
+          pack_name: a.pack_name,
+          description: a.description ?? null,
+        });
+      });
+    }
+    return map;
+  }, [actionDefs]);
+
+  const allActions = useMemo(() => {
+    const xs = Array.isArray(actionDefs) ? [...actionDefs] : [];
+    xs.sort((a, b) => a.key.localeCompare(b.key));
+    return xs;
+  }, [actionDefs]);
+
+  const roleActionMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (roleActionPermissions) {
+      roleActionPermissions.forEach((p) => map.set(p.action_key, p.enabled));
+    }
+    return map;
+  }, [roleActionPermissions]);
+
+  const groupActionMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (groupActionPermissions) {
+      groupActionPermissions.forEach((p) => map.set(p.action_key, p.enabled));
+    }
+    return map;
+  }, [groupActionPermissions]);
+
+  const userActionMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (userActionOverrides) {
+      userActionOverrides.forEach((p) => map.set(p.action_key, p.enabled));
+    }
+    return map;
+  }, [userActionOverrides]);
 
   // Check permission with hierarchical logic
   const getEffectivePermission = (path: string, permissionMap: Map<string, boolean>, allPaths: string[]): boolean | null => {
@@ -419,6 +494,56 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     }
   };
 
+  const handleRoleActionToggle = async (actionKey: string, enabled: boolean) => {
+    if (!selectedRole) return;
+    try {
+      const def = actionDefsByKey.get(actionKey);
+      const defaultEnabled = def ? Boolean(def.default_enabled) : false;
+      if (enabled === defaultEnabled) {
+        await deleteRoleActionPermission(selectedRole, actionKey);
+      } else {
+        await setRoleActionPermission(selectedRole, actionKey, enabled);
+      }
+      refreshRoleActionPermissions();
+    } catch (error) {
+      console.error('Failed to update role action permission:', error);
+    }
+  };
+
+  const handleGroupActionToggle = async (actionKey: string, enabled: boolean) => {
+    if (!selectedGroup) return;
+    try {
+      const def = actionDefsByKey.get(actionKey);
+      const defaultEnabled = def ? Boolean(def.default_enabled) : false;
+      if (enabled === defaultEnabled) {
+        await deleteGroupActionPermission(selectedGroup, actionKey);
+      } else {
+        await setGroupActionPermission(selectedGroup, actionKey, enabled);
+      }
+      refreshGroupActionPermissions();
+    } catch (error) {
+      console.error('Failed to update group action permission:', error);
+    }
+  };
+
+  const handleUserActionToggle = async (email: string, actionKey: string, enabled: boolean) => {
+    try {
+      const def = actionDefsByKey.get(actionKey);
+      const defaultEnabled = def ? Boolean(def.default_enabled) : false;
+      if (enabled === defaultEnabled) {
+        await deleteUserActionOverride(email, actionKey);
+      } else {
+        await setUserActionOverride(email, actionKey, enabled);
+      }
+      await Promise.all([
+        refreshUserActionOverrides(),
+        refreshUsersWithOverrides(),
+      ]);
+    } catch (error) {
+      console.error('Failed to update user action override:', error);
+    }
+  };
+
   // Render tree node
   const renderTreeNode = (node: TreeNode, permissionMap: Map<string, boolean>, onToggle: (path: string, enabled: boolean) => void, disabled: boolean = false) => {
     const hasChildren = node.children.length > 0;
@@ -477,14 +602,68 @@ export function Permissions({ onNavigate }: PermissionsProps) {
     );
   };
 
+  const renderActionList = (
+    permissionMap: Map<string, boolean>,
+    onToggle: (actionKey: string, enabled: boolean) => void,
+    disabled: boolean = false
+  ) => {
+    if (actionDefsLoading) return <Spinner />;
+    if (!allActions.length) {
+      return (
+        <Alert variant="warning">
+          No action definitions found. Feature packs can add `permissions.actions` to their `feature-pack.yaml`.
+        </Alert>
+      );
+    }
+
+    return (
+      <div className="border rounded-lg divide-y bg-white dark:bg-gray-900">
+        {allActions.map((a) => {
+          const def = actionDefsByKey.get(a.key);
+          const defaultEnabled = def ? Boolean(def.default_enabled) : false;
+          const override = permissionMap.get(a.key);
+          const effective = override !== undefined ? override : defaultEnabled;
+          const isExplicit = override !== undefined;
+          return (
+            <div key={a.key} className="flex items-center gap-3 p-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium truncate">{def?.label || a.key}</span>
+                  <span className="text-xs text-gray-500 truncate">{a.key}</span>
+                  {isExplicit ? (
+                    <Badge variant="info" className="text-xs">Explicit</Badge>
+                  ) : (
+                    <Badge variant="default" className="text-xs">
+                      Default: {defaultEnabled ? 'Allow' : 'Deny'}
+                    </Badge>
+                  )}
+                </div>
+                {def?.description ? (
+                  <div className="text-xs text-gray-500 mt-1">{def.description}</div>
+                ) : null}
+              </div>
+              <Checkbox
+                checked={effective}
+                onChange={(checked: boolean) => onToggle(a.key, checked)}
+                disabled={disabled || mutatingActionPermissions}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <Page
       title="Permissions"
-      description="Manage page access permissions using groups (preferred) or roles (fallback)"
+      description="Manage page access and action permissions using groups (preferred) or roles (fallback), with user-level overrides."
     >
       <Tabs
         activeTab={activeTab}
-        onChange={(tabId: string) => setActiveTab(tabId as 'groups' | 'roles' | 'users')}
+        onChange={(tabId: string) =>
+          setActiveTab(tabId as 'groups' | 'roles' | 'users' | 'actions-groups' | 'actions-roles' | 'actions-users')
+        }
         tabs={[
           {
             id: 'groups',
@@ -536,7 +715,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                           <Spinner />
                         ) : navTree.length === 0 ? (
                           <Alert variant="warning">
-                            No pages found. Pages are discovered from navigation items.
+                            No pages found. Pages are discovered from generated route definitions.
                           </Alert>
                         ) : (
                           <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
@@ -601,7 +780,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                               <Spinner />
                             ) : navTree.length === 0 ? (
                               <Alert variant="warning">
-                                No pages found. Pages are discovered from navigation items.
+                            No pages found. Pages are discovered from generated route definitions.
                               </Alert>
                             ) : (
                               <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
@@ -713,7 +892,7 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                         <div className="space-y-2">
                           {allPages.length === 0 ? (
                             <Alert variant="warning">
-                              No pages found. Pages are discovered from navigation items.
+                              No pages found. Pages are discovered from generated route definitions.
                             </Alert>
                           ) : (
                             allPages.map((page) => {
@@ -760,6 +939,214 @@ export function Permissions({ onNavigate }: PermissionsProps) {
                             })
                           )}
                         </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: 'actions-groups',
+            label: 'Group Actions',
+            content: (
+              <div className="space-y-4 mt-4">
+                <Card>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Select Group</label>
+                      {groupsLoading ? (
+                        <Spinner />
+                      ) : groups && groups.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {groups.map((group: Group) => (
+                            <Button
+                              key={group.id}
+                              variant={selectedGroup === group.id ? 'primary' : 'ghost'}
+                              onClick={() => setSelectedGroup(group.id)}
+                            >
+                              <Users size={16} className="mr-2" />
+                              {group.name}
+                              <Badge variant="default" className="ml-2">
+                                {group.user_count}
+                              </Badge>
+                            </Button>
+                          ))}
+                        </div>
+                      ) : (
+                        <Alert variant="warning">
+                          No groups found. Create groups first to manage group-based action permissions.
+                        </Alert>
+                      )}
+                    </div>
+
+                    {selectedGroup && (
+                      <div className="mt-4">
+                        <h3 className="text-lg font-semibold mb-2">
+                          Action Permissions for Group: <Badge>{groups?.find(g => g.id === selectedGroup)?.name}</Badge>
+                        </h3>
+                        <div className="mb-4">
+                          <Alert variant="info">
+                            Group action permissions take precedence over role action permissions. If a user is in a group with an explicit action override, that wins.
+                          </Alert>
+                        </div>
+                        {groupActionPermissionsLoading ? (
+                          <Spinner />
+                        ) : (
+                          renderActionList(groupActionMap, handleGroupActionToggle)
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            ),
+          },
+          {
+            id: 'actions-roles',
+            label: 'Role Actions',
+            content: (
+              <div className="space-y-4 mt-4">
+                <Card>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Select Role</label>
+                      <div className="flex flex-wrap gap-2">
+                        {roles.map((role) => (
+                          <Button
+                            key={role}
+                            variant={selectedRole === role ? 'primary' : 'ghost'}
+                            onClick={() => setSelectedRole(role)}
+                          >
+                            <Shield size={16} className="mr-2" />
+                            {role}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {selectedRole && (
+                      <div className="mt-4">
+                        <h3 className="text-lg font-semibold mb-2">
+                          Action Permissions for Role: <Badge>{selectedRole}</Badge>
+                        </h3>
+                        {selectedRole.toLowerCase() === 'admin' ? (
+                          <div className="mb-4">
+                            <Alert variant="warning">
+                              Admin role action permissions cannot be modified. Admin always has full access.
+                            </Alert>
+                          </div>
+                        ) : (
+                          <div className="mb-4">
+                            <Alert variant="info">
+                              Role action permissions apply when there is no user override and no group override.
+                            </Alert>
+                          </div>
+                        )}
+
+                        {roleActionPermissionsLoading ? (
+                          <Spinner />
+                        ) : (
+                          renderActionList(
+                            roleActionMap,
+                            handleRoleActionToggle,
+                            selectedRole.toLowerCase() === 'admin'
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            ),
+          },
+          {
+            id: 'actions-users',
+            label: 'User Actions',
+            content: (
+              <div className="space-y-4 mt-4">
+                <Card>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold">Select a user</div>
+                        <div className="text-sm text-gray-500">User action overrides take highest precedence.</div>
+                      </div>
+                    </div>
+
+                    {usersLoading ? (
+                      <Spinner />
+                    ) : (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {(usersData?.items || []).map((u) => (
+                          <div
+                            key={u.email}
+                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                            onClick={() => {
+                              setSelectedUser(u.email);
+                              setSelectedUserForOverride(u);
+                            }}
+                          >
+                            <div>
+                              <div className="font-medium">{u.email}</div>
+                              <div className="text-sm text-gray-500">Role: {u.role || 'user'}</div>
+                            </div>
+                            <Button variant="ghost" size="sm">
+                              Select
+                            </Button>
+                          </div>
+                        ))}
+                        {(!usersData?.items || usersData.items.length === 0) && (
+                          <Alert variant="info">No users found</Alert>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {selectedUser && selectedUserForOverride && (
+                  <Card>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold">
+                          Action Overrides for: <Badge>{selectedUserForOverride.email}</Badge>
+                          <span className="ml-2 text-sm text-gray-500">
+                            (Role: {selectedUserForOverride.role || 'user'})
+                          </span>
+                        </h3>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedUser('');
+                            setSelectedUserForOverride(null);
+                          }}
+                        >
+                          Close
+                        </Button>
+                      </div>
+
+                      {selectedUserForOverride.role?.toLowerCase() === 'admin' ? (
+                        <div className="mb-4">
+                          <Alert variant="warning">
+                            Admin user action overrides cannot be modified. Admin users always have full access.
+                          </Alert>
+                        </div>
+                      ) : (
+                        <div className="mb-4">
+                          <Alert variant="info">
+                            User action overrides take precedence over both group and role action permissions.
+                          </Alert>
+                        </div>
+                      )}
+
+                      {userActionOverridesLoading ? (
+                        <Spinner />
+                      ) : (
+                        renderActionList(
+                          userActionMap,
+                          (actionKey, enabled) => handleUserActionToggle(selectedUser, actionKey, enabled),
+                          selectedUserForOverride.role?.toLowerCase() === 'admin'
+                        )
                       )}
                     </div>
                   </Card>

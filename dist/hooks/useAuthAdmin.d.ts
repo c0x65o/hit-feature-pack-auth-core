@@ -339,6 +339,68 @@ export declare function useGroupPagePermissionsMutations(): {
     loading: boolean;
     error: Error | null;
 };
+export interface PermissionActionDefinition {
+    key: string;
+    pack_name: string | null;
+    label: string;
+    description: string | null;
+    default_enabled: boolean;
+}
+export interface RoleActionPermission {
+    id: string;
+    action_key: string;
+    enabled: boolean;
+    created_at: string | null;
+    updated_at: string | null;
+}
+export interface GroupActionPermission {
+    id: string;
+    action_key: string;
+    enabled: boolean;
+    created_at: string | null;
+    updated_at: string | null;
+}
+export interface UserActionOverride {
+    id: string;
+    action_key: string;
+    enabled: boolean;
+    created_at: string | null;
+    updated_at: string | null;
+}
+export declare function usePermissionActions(): {
+    data: PermissionActionDefinition[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function useRoleActionPermissions(role: string): {
+    data: RoleActionPermission[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function useUserActionOverrides(email: string): {
+    data: UserActionOverride[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function useGroupActionPermissions(groupId: string | null): {
+    data: GroupActionPermission[] | null;
+    loading: boolean;
+    error: Error | null;
+    refresh: () => Promise<void>;
+};
+export declare function useActionPermissionsMutations(): {
+    setRoleActionPermission: (role: string, actionKey: string, enabled: boolean) => Promise<void>;
+    deleteRoleActionPermission: (role: string, actionKey: string) => Promise<void>;
+    setUserActionOverride: (email: string, actionKey: string, enabled: boolean) => Promise<void>;
+    deleteUserActionOverride: (email: string, actionKey: string) => Promise<void>;
+    setGroupActionPermission: (groupId: string, actionKey: string, enabled: boolean) => Promise<void>;
+    deleteGroupActionPermission: (groupId: string, actionKey: string) => Promise<void>;
+    loading: boolean;
+    error: Error | null;
+};
 interface Group {
     id: string;
     name: string;
