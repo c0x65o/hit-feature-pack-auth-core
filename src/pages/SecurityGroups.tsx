@@ -260,6 +260,14 @@ function AssignmentManager({
   const { data: users, loading: usersLoading } = useUsers({ page: 1, pageSize: 1000 });
   const { addAssignment, removeAssignment } = usePermissionSetMutations();
 
+  const groupNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of groups || []) {
+      if (g?.id && g?.name) m.set(String(g.id), String(g.name));
+    }
+    return m;
+  }, [groups]);
+
   const roleSuggestions = useMemo(() => {
     const roles = new Set<string>();
     roles.add('admin');
@@ -302,7 +310,16 @@ function AssignmentManager({
                 <Badge variant={a.principal_type === 'role' ? 'info' : a.principal_type === 'group' ? 'warning' : 'success'}>
                   {a.principal_type.toUpperCase()}
                 </Badge>
-                <span className="font-medium truncate">{a.principal_id}</span>
+                {a.principal_type === 'group' ? (
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">
+                      {groupNameById.get(a.principal_id) || 'Unknown group'}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">{a.principal_id}</div>
+                  </div>
+                ) : (
+                  <span className="font-medium truncate">{a.principal_id}</span>
+                )}
               </div>
               <Button
                 variant="ghost"
