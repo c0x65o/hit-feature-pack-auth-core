@@ -225,11 +225,11 @@ export function SecurityGroups({ onNavigate }: SecurityGroupsProps) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name</label>
-            <Input value={newName} onChange={(e: any) => setNewName(e.target.value)} placeholder="e.g. Finance Managers" />
+            <Input value={newName} onChange={setNewName} placeholder="e.g. Finance Managers" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
-            <Input value={newDescription} onChange={(e: any) => setNewDescription(e.target.value)} placeholder="Optional" />
+            <Input value={newDescription} onChange={setNewDescription} placeholder="Optional" />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -343,7 +343,7 @@ function AssignmentManager({
                   </Button>
                 ))}
               </div>
-              <Input value={principalId} onChange={(e: any) => setPrincipalId(e.target.value)} placeholder="Or type a custom role…" />
+              <Input value={principalId} onChange={setPrincipalId} placeholder="Or type a custom role…" />
             </div>
           ) : null}
 
@@ -488,7 +488,7 @@ function GrantsManager({
               <label className="block text-sm font-medium mb-1">{label}</label>
               <Input
                 value={value}
-                onChange={(e: any) => setValue(e.target.value)}
+                onChange={setValue}
                 placeholder={kind === 'page' ? '/crm/companies/[id]' : kind === 'metric' ? 'projects.gross_revenue' : 'crm.company.create_prospect'}
               />
             </div>
