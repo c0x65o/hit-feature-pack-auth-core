@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.95",
+  "version": "1.0.96",
   "description": "Core authentication UI - login, signup, forgot password, email verification",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "src",
     "feature-pack.yaml"
   ],
   "scripts": {
