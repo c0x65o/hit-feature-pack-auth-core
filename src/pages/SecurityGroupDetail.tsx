@@ -30,10 +30,12 @@ import {
   usePermissionActions,
   useUsers,
   useGroups,
+  useMetricsCatalog,
   type PermissionSetAssignment,
   type PermissionSetPageGrant,
   type PermissionSetActionGrant,
   type PermissionSetMetricGrant,
+  type MetricCatalogItem,
 } from '../hooks/useAuthAdmin';
 
 interface SecurityGroupDetailProps {
@@ -136,6 +138,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const { data: actionDefs, loading: actionsLoading } = usePermissionActions();
   const { data: groups } = useGroups();
   const { data: usersData, loading: usersLoading } = useUsers({ page: 1, pageSize: 1000 });
+  const { data: metricsCatalog, loading: metricsLoading } = useMetricsCatalog();
   const mutations = usePermissionSetMutations();
 
   // UI state
@@ -263,7 +266,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       title: string | null;
       pages: Array<{ path: string; label: string; default_enabled: boolean; explicit: boolean; effective: boolean; via?: string }>;
       actions: Array<ActionCatalogItem & { explicit: boolean; effective: boolean }>;
-      metrics: Array<{ key: string; id: string }>;
+      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }>;
     }>();
 
     // Add pages
@@ -287,7 +290,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         if (pageGrantSet.has(c)) {
           effective = true;
           via = c;
-          // explicit if it’s exactly this node (exact or node subtree), not inherited from ancestor
+          // explicit if it's exactly this node (exact or node subtree), not inherited from ancestor
           const norm = normalizePath(p.path);
           explicit = (c === norm) || (c === `${norm}/*`) || (c === '/*' && norm === '/');
           break;
@@ -314,12 +317,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
 
-    // Add metrics (group by first segment of key)
-    for (const g of metricGrants) {
-      const key = String((g as any).metric_key);
-      const pack = key.split('.')[0] || 'app';
-      if (!packs.has(pack)) packs.set(pack, { title: null, pages: [], actions: [], metrics: [] });
-      packs.get(pack)!.metrics.push({ key, id: String((g as any).id) });
+    // Add metrics from catalog (group by owner pack or first segment of key)
+    for (const m of metricsCatalog || []) {
+      const packName = m.owner?.kind === 'feature_pack' && m.owner.id ? m.owner.id : (m.key.split('.')[0] || 'app');
+      if (!packs.has(packName)) packs.set(packName, { title: null, pages: [], actions: [], metrics: [] });
+      const grantId = metricGrantIdByKey.get(m.key);
+      packs.get(packName)!.metrics.push({
+        key: m.key,
+        label: m.label,
+        unit: m.unit,
+        category: m.category,
+        description: m.description,
+        explicit: Boolean(grantId),
+        grantId,
+      });
     }
 
     // Sort packs
@@ -335,8 +346,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         effectiveActions: data.actions.filter((a) => a.effective).length,
         explicitActions: data.actions.filter((a) => a.explicit).length,
         metricCount: data.metrics.length,
+        explicitMetrics: data.metrics.filter((m) => m.explicit).length,
       }));
-  }, [pages, actionCatalog, pageGrantSet, actionGrantSet, metricGrants]);
+  }, [pages, actionCatalog, pageGrantSet, actionGrantSet, metricsCatalog, metricGrantIdByKey]);
 
   // Filter by search
   const filteredPacks = useMemo(() => {
@@ -434,6 +446,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     refresh();
   };
 
+  const toggleMetricGrant = async (metricKey: string) => {
+    const grantId = metricGrantIdByKey.get(metricKey);
+    if (grantId) {
+      await mutations.removeMetricGrant(id, grantId);
+    } else {
+      await mutations.addMetricGrant(id, metricKey);
+    }
+    refresh();
+  };
+
   const handleAddGrant = async () => {
     const val = addGrantValue.trim();
     if (!val) return;
@@ -453,7 +475,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (loading || pagesLoading || actionsLoading) {
+  if (loading || pagesLoading || actionsLoading || metricsLoading) {
     return (
       <Page
         title="Loading..."
@@ -641,7 +663,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.metricCount > 0;
+            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.explicitMetrics > 0;
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -683,7 +705,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {pack.metricCount > 0 && (
                       <div className="flex items-center gap-1">
                         <BarChart3 size={14} className="text-gray-400" />
-                        <span className="text-orange-600 font-medium">{pack.metricCount}</span>
+                        <span className={pack.explicitMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500'}>
+                          {pack.explicitMetrics}/{pack.metricCount}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -807,20 +831,32 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         <div className="flex items-center gap-2 mb-3">
                           <BarChart3 size={16} className="text-orange-500" />
                           <span className="text-sm font-medium text-gray-600">Metrics</span>
+                          <span className="text-xs text-gray-400">
+                            (all default-deny, {pack.explicitMetrics} granted)
+                          </span>
                         </div>
                         <div className="space-y-1 ml-6">
                           {pack.metrics.map((m) => (
                             <div
-                              key={m.id}
-                              className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
+                              key={m.key}
+                              className={`flex items-center justify-between py-1.5 px-2 rounded ${
+                                m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
+                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
                             >
-                              <span className="font-mono text-sm">{m.key}</span>
-                              <button
-                                onClick={() => removeMetricGrant(m.id).catch(() => void 0)}
-                                className="text-red-500 hover:text-red-700 p-1"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="font-medium text-sm truncate">{m.label}</span>
+                                <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
+                                <Badge variant="warning" className="text-xs">default-deny</Badge>
+                                {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">Grant:</span>
+                                <Checkbox
+                                  checked={m.explicit}
+                                  onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
+                                  disabled={mutations.loading}
+                                />
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -950,23 +986,60 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             ))}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              {addGrantType === 'page' ? 'Page Path' : addGrantType === 'action' ? 'Action Key' : 'Metric Key'}
-            </label>
-            <Input
-              value={addGrantValue}
-              onChange={setAddGrantValue}
-              placeholder={
-                addGrantType === 'page' ? '/crm/companies/*' :
-                addGrantType === 'action' ? 'crm.company.create' :
-                'projects.revenue'
-              }
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              {addGrantType === 'page' && 'Use /* for subtree grants'}
+          {addGrantType === 'metric' ? (
+            <div>
+              <label className="block text-sm font-medium mb-2">Select Metric</label>
+              {(metricsCatalog || []).length === 0 ? (
+                <div className="text-sm text-gray-500 py-4 text-center">
+                  No metrics available. Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">hit run</code> to generate the metrics catalog.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {(metricsCatalog || [])
+                    .filter((m) => !metricGrantIdByKey.has(m.key))
+                    .map((m) => (
+                      <button
+                        key={m.key}
+                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                          addGrantValue === m.key
+                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                        onClick={() => setAddGrantValue(m.key)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium">{m.label}</div>
+                          <Badge variant="default" className="text-xs">{m.unit}</Badge>
+                        </div>
+                        <div className="text-xs text-gray-500 font-mono mt-1">{m.key}</div>
+                        {m.description && (
+                          <div className="text-xs text-gray-400 mt-1 truncate">{m.description}</div>
+                        )}
+                      </button>
+                    ))}
+                  {(metricsCatalog || []).filter((m) => !metricGrantIdByKey.has(m.key)).length === 0 && (
+                    <div className="text-sm text-gray-500 py-4 text-center">
+                      All available metrics have already been granted.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                {addGrantType === 'page' ? 'Page Path' : 'Action Key'}
+              </label>
+              <Input
+                value={addGrantValue}
+                onChange={setAddGrantValue}
+                placeholder={addGrantType === 'page' ? '/crm/companies/*' : 'crm.company.create'}
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                {addGrantType === 'page' && 'Use /* for subtree grants'}
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="ghost" onClick={() => setAddGrantOpen(false)}>Cancel</Button>

@@ -2427,6 +2427,78 @@ export function usePermissionSetMutations() {
   };
 }
 
+// =============================================================================
+// METRICS CATALOG HOOK (for security group metric picker)
+// =============================================================================
+
+export interface MetricCatalogItem {
+  key: string;
+  label: string;
+  unit: string;
+  category?: string;
+  description?: string;
+  owner?: { kind: 'feature_pack' | 'app' | 'user'; id: string };
+  pointsCount: number;
+}
+
+/**
+ * Fetch the full metrics catalog for admin purposes (permission configuration).
+ * Uses ?admin=true to bypass ACL filtering - only admins can use this.
+ */
+export function useMetricsCatalog() {
+  const [data, setData] = useState<MetricCatalogItem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Use admin=true to get unfiltered catalog for permission configuration
+      const res = await fetch('/api/metrics/catalog?admin=true', {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+      });
+      if (!res.ok) {
+        // If not allowed (403) or unauthenticated (401), return empty list
+        if (res.status === 401 || res.status === 403) {
+          setData([]);
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        throw new AuthAdminError(res.status, body?.error || body?.message || `Failed to fetch metrics catalog: ${res.status}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      const items = Array.isArray(json?.items) ? json.items : [];
+      setData(
+        items.map((m: any) => ({
+          key: String(m?.key || ''),
+          label: String(m?.label || m?.key || ''),
+          unit: String(m?.unit || 'count'),
+          category: typeof m?.category === 'string' ? m.category : undefined,
+          description: typeof m?.description === 'string' ? m.description : undefined,
+          owner: m?.owner && typeof m.owner === 'object' ? m.owner : undefined,
+          pointsCount: typeof m?.pointsCount === 'number' ? m.pointsCount : 0,
+        }))
+      );
+    } catch (e) {
+      setError(e as Error);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
+}
+
 // Export types and error class
 export { AuthAdminError };
 export type {
