@@ -161,6 +161,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const [activeTab, setActiveTab] = useState<'pages_actions' | 'metrics'>('pages_actions');
   const [metricsSearch, setMetricsSearch] = useState('');
 
+  // Pending metric changes (batch editing)
+  // Map of metricKey -> desired state (true = grant, false = revoke)
+  const [pendingMetricChanges, setPendingMetricChanges] = useState<Map<string, boolean>>(new Map());
+  const [savingMetrics, setSavingMetrics] = useState(false);
+
   const permissionSet = detail?.permission_set ?? null;
   const assignments: PermissionSetAssignment[] = (detail?.assignments ?? []) as PermissionSetAssignment[];
   const pageGrants: PermissionSetPageGrant[] = (detail?.page_grants ?? []) as PermissionSetPageGrant[];
@@ -332,22 +337,26 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   // Metrics organized by owner type (App vs Feature Pack)
   const metricsData = useMemo(() => {
-    const appMetrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }> = [];
+    const appMetrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean }> = [];
     const fpMetrics = new Map<string, {
       packId: string;
-      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }>;
+      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean }>;
     }>();
 
     for (const m of metricsCatalog || []) {
-      const grantId = metricGrantIdByKey.get(m.key);
+      const currentlyGranted = metricGrantIdByKey.has(m.key);
+      const pendingState = pendingMetricChanges.get(m.key);
+      const effectiveState = pendingState !== undefined ? pendingState : currentlyGranted;
+      const hasPendingChange = pendingState !== undefined && pendingState !== currentlyGranted;
+
       const metricEntry = {
         key: m.key,
         label: m.label,
         unit: m.unit,
         category: m.category,
         description: m.description,
-        explicit: Boolean(grantId),
-        grantId,
+        checked: effectiveState,
+        hasPendingChange,
       };
 
       if (m.owner?.kind === 'feature_pack' && m.owner.id) {
@@ -362,20 +371,31 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       }
     }
 
+    // Count based on effective state (including pending)
+    let effectiveGrantedCount = 0;
+    for (const m of metricsCatalog || []) {
+      const currentlyGranted = metricGrantIdByKey.has(m.key);
+      const pendingState = pendingMetricChanges.get(m.key);
+      if (pendingState !== undefined ? pendingState : currentlyGranted) {
+        effectiveGrantedCount++;
+      }
+    }
+
     return {
       appMetrics,
       featurePackMetrics: Array.from(fpMetrics.values()).sort((a, b) => a.packId.localeCompare(b.packId)),
       totalCount: (metricsCatalog || []).length,
-      grantedCount: (metricsCatalog || []).filter((m) => metricGrantIdByKey.has(m.key)).length,
+      grantedCount: effectiveGrantedCount,
     };
-  }, [metricsCatalog, metricGrantIdByKey]);
+  }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges]);
 
   // Filter metrics by search
   const filteredMetricsData = useMemo(() => {
     const q = metricsSearch.trim().toLowerCase();
     if (!q) return metricsData;
 
-    const filterMetrics = (arr: typeof metricsData.appMetrics) =>
+    type MetricEntry = { key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean };
+    const filterMetrics = (arr: MetricEntry[]) =>
       arr.filter((m) =>
         m.key.toLowerCase().includes(q) ||
         m.label.toLowerCase().includes(q) ||
@@ -482,20 +502,97 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     refresh();
   };
 
-  const removeMetricGrant = async (grantId: string) => {
-    await mutations.removeMetricGrant(id, grantId);
-    refresh();
+  // Toggle metric in local state (batch editing - doesn't save immediately)
+  const toggleMetricLocal = (metricKey: string) => {
+    setPendingMetricChanges((prev) => {
+      const next = new Map(prev);
+      const currentlyGranted = metricGrantIdByKey.has(metricKey);
+      const pendingState = next.get(metricKey);
+
+      if (pendingState === undefined) {
+        // No pending change yet - toggle from current state
+        next.set(metricKey, !currentlyGranted);
+      } else if (pendingState === currentlyGranted) {
+        // Pending change matches current state - remove the pending change
+        next.delete(metricKey);
+      } else {
+        // Toggle the pending state
+        next.set(metricKey, !pendingState);
+      }
+      return next;
+    });
   };
 
-  const toggleMetricGrant = async (metricKey: string) => {
-    const grantId = metricGrantIdByKey.get(metricKey);
-    if (grantId) {
-      await mutations.removeMetricGrant(id, grantId);
-    } else {
-      await mutations.addMetricGrant(id, metricKey);
-    }
-    refresh();
+  // Enable/disable all metrics
+  const enableAllMetrics = () => {
+    const allKeys = (metricsCatalog || []).map((m) => m.key);
+    setPendingMetricChanges((prev) => {
+      const next = new Map(prev);
+      for (const key of allKeys) {
+        const currentlyGranted = metricGrantIdByKey.has(key);
+        if (!currentlyGranted) {
+          next.set(key, true);
+        } else {
+          next.delete(key); // Already granted, no change needed
+        }
+      }
+      return next;
+    });
   };
+
+  const disableAllMetrics = () => {
+    const allKeys = (metricsCatalog || []).map((m) => m.key);
+    setPendingMetricChanges((prev) => {
+      const next = new Map(prev);
+      for (const key of allKeys) {
+        const currentlyGranted = metricGrantIdByKey.has(key);
+        if (currentlyGranted) {
+          next.set(key, false);
+        } else {
+          next.delete(key); // Already not granted, no change needed
+        }
+      }
+      return next;
+    });
+  };
+
+  const discardMetricChanges = () => {
+    setPendingMetricChanges(new Map());
+  };
+
+  // Save all pending metric changes
+  const saveMetricChanges = async () => {
+    if (pendingMetricChanges.size === 0) return;
+    setSavingMetrics(true);
+    try {
+      const promises: Promise<void>[] = [];
+      for (const [metricKey, shouldGrant] of pendingMetricChanges) {
+        const grantId = metricGrantIdByKey.get(metricKey);
+        if (shouldGrant && !grantId) {
+          // Need to add grant
+          promises.push(mutations.addMetricGrant(id, metricKey).then(() => void 0));
+        } else if (!shouldGrant && grantId) {
+          // Need to remove grant
+          promises.push(mutations.removeMetricGrant(id, grantId).then(() => void 0));
+        }
+      }
+      await Promise.all(promises);
+      setPendingMetricChanges(new Map());
+      refresh();
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
+
+  // Count of actual pending changes (changes that differ from current state)
+  const pendingMetricChangeCount = useMemo(() => {
+    let count = 0;
+    for (const [key, desiredState] of pendingMetricChanges) {
+      const currentlyGranted = metricGrantIdByKey.has(key);
+      if (desiredState !== currentlyGranted) count++;
+    }
+    return count;
+  }, [pendingMetricChanges, metricGrantIdByKey]);
 
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -886,23 +983,47 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             {/* Metrics Legend */}
             <Alert variant="info" className="mb-4">
               <div className="text-sm">
-                <strong>All metrics are default-deny.</strong> Toggle the checkbox to grant access to specific metrics for this security group.
+                <strong>All metrics are default-deny.</strong> Toggle checkboxes to select which metrics this security group can access, then click Save.
                 <div className="text-gray-500 text-xs mt-1">
                   Note: Admins bypass all permission checks and can see all metrics.
                 </div>
               </div>
             </Alert>
 
-            {/* Metrics Search */}
-            <div className="relative mb-4">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={metricsSearch}
-                onChange={(e) => setMetricsSearch(e.target.value)}
-                placeholder="Search metrics..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+            {/* Metrics Actions Bar */}
+            <div className="flex items-center justify-between mb-4 gap-4">
+              <div className="relative flex-1 max-w-md">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={metricsSearch}
+                  onChange={(e) => setMetricsSearch(e.target.value)}
+                  placeholder="Search metrics..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={enableAllMetrics} disabled={savingMetrics}>
+                  Enable All
+                </Button>
+                <Button variant="ghost" size="sm" onClick={disableAllMetrics} disabled={savingMetrics}>
+                  Disable All
+                </Button>
+                {pendingMetricChangeCount > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+                    <Badge variant="warning" className="text-xs">
+                      {pendingMetricChangeCount} unsaved change{pendingMetricChangeCount !== 1 ? 's' : ''}
+                    </Badge>
+                    <Button variant="ghost" size="sm" onClick={discardMetricChanges} disabled={savingMetrics}>
+                      Discard
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={() => saveMetricChanges().catch(() => void 0)} loading={savingMetrics}>
+                      <Save size={14} className="mr-1" /> Save
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* App Metrics */}
@@ -912,7 +1033,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                   <BarChart3 size={18} className="text-orange-500" />
                   <h4 className="font-semibold">App Metrics</h4>
                   <Badge variant="default" className="text-xs">
-                    {metricsData.appMetrics.filter((m) => m.explicit).length}/{metricsData.appMetrics.length} granted
+                    {metricsData.appMetrics.filter((m) => m.checked).length}/{metricsData.appMetrics.length} selected
                   </Badge>
                 </div>
                 <div className="space-y-1 border rounded-lg p-3">
@@ -920,19 +1041,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     <div
                       key={m.key}
                       className={`flex items-center justify-between py-2 px-3 rounded ${
-                        m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
+                        m.hasPendingChange
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
+                          : m.checked
+                            ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'
+                            : ''
                       } hover:bg-gray-50 dark:hover:bg-gray-800`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span className="font-medium text-sm truncate">{m.label}</span>
                         <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
                         <Badge variant="default" className="text-xs">{m.unit}</Badge>
-                        {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
+                        {m.hasPendingChange && <Badge variant="warning" className="text-xs">unsaved</Badge>}
                       </div>
                       <Checkbox
-                        checked={m.explicit}
-                        onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
-                        disabled={mutations.loading}
+                        checked={m.checked}
+                        onChange={() => toggleMetricLocal(m.key)}
+                        disabled={savingMetrics}
                       />
                     </div>
                   ))}
@@ -949,7 +1074,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 </div>
                 <div className="space-y-4">
                   {filteredMetricsData.featurePackMetrics.map((fp) => {
-                    const grantedInPack = fp.metrics.filter((m) => m.explicit).length;
+                    const selectedInPack = fp.metrics.filter((m) => m.checked).length;
                     return (
                       <div key={fp.packId} className="border rounded-lg overflow-hidden">
                         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800">
@@ -957,8 +1082,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             <Package size={16} className="text-gray-500" />
                             <span className="font-medium">{titleCase(fp.packId)}</span>
                           </div>
-                          <Badge variant={grantedInPack > 0 ? 'info' : 'default'} className="text-xs">
-                            {grantedInPack}/{fp.metrics.length} granted
+                          <Badge variant={selectedInPack > 0 ? 'info' : 'default'} className="text-xs">
+                            {selectedInPack}/{fp.metrics.length} selected
                           </Badge>
                         </div>
                         <div className="p-3 space-y-1">
@@ -966,19 +1091,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             <div
                               key={m.key}
                               className={`flex items-center justify-between py-2 px-3 rounded ${
-                                m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
+                                m.hasPendingChange
+                                  ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
+                                  : m.checked
+                                    ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'
+                                    : ''
                               } hover:bg-gray-50 dark:hover:bg-gray-800`}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <span className="font-medium text-sm truncate">{m.label}</span>
                                 <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
                                 <Badge variant="default" className="text-xs">{m.unit}</Badge>
-                                {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
+                                {m.hasPendingChange && <Badge variant="warning" className="text-xs">unsaved</Badge>}
                               </div>
                               <Checkbox
-                                checked={m.explicit}
-                                onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
-                                disabled={mutations.loading}
+                                checked={m.checked}
+                                onChange={() => toggleMetricLocal(m.key)}
+                                disabled={savingMetrics}
                               />
                             </div>
                           ))}

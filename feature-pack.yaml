@@ -91,20 +91,20 @@ nav:
         path: /admin/groups
         icon: UsersRound
         featureFlag: auth.user_groups_enabled
-      - label: Security Groups
-        path: /admin/security-groups
-        icon: Lock
       - label: Sessions
         path: /admin/sessions
         icon: Key
-      - label: Audit Log
-        path: /admin/audit-log
-        icon: FileText
-        featureFlag: auth.audit_log
+      - label: Security Groups
+        path: /admin/security-groups
+        icon: Lock
       - label: Invites
         path: /admin/invites
         icon: Mail
         featureFlag: auth.allow_invited
+      - label: Audit Log
+        path: /admin/audit-log
+        icon: FileText
+        featureFlag: auth.audit_log
 
 # Dependencies
 requires:
