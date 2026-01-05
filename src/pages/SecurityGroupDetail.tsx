@@ -35,7 +35,6 @@ import {
   type PermissionSetPageGrant,
   type PermissionSetActionGrant,
   type PermissionSetMetricGrant,
-  type MetricCatalogItem,
 } from '../hooks/useAuthAdmin';
 
 interface SecurityGroupDetailProps {
@@ -158,10 +157,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>>([]);
   const [pagesLoading, setPagesLoading] = useState(true);
 
-  // Add grant modal
-  const [addGrantOpen, setAddGrantOpen] = useState(false);
-  const [addGrantType, setAddGrantType] = useState<'page' | 'action' | 'metric'>('page');
-  const [addGrantValue, setAddGrantValue] = useState('');
+  // Tab state for switching between Pages/Actions and Metrics
+  const [activeTab, setActiveTab] = useState<'pages_actions' | 'metrics'>('pages_actions');
+  const [metricsSearch, setMetricsSearch] = useState('');
 
   const permissionSet = detail?.permission_set ?? null;
   const assignments: PermissionSetAssignment[] = (detail?.assignments ?? []) as PermissionSetAssignment[];
@@ -260,19 +258,18 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return m;
   }, [metricGrants]);
 
-  // Group everything by feature pack
+  // Group pages and actions by feature pack (metrics are separate)
   const packData = useMemo(() => {
     const packs = new Map<string, {
       title: string | null;
       pages: Array<{ path: string; label: string; default_enabled: boolean; explicit: boolean; effective: boolean; via?: string }>;
       actions: Array<ActionCatalogItem & { explicit: boolean; effective: boolean }>;
-      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }>;
     }>();
 
     // Add pages
     for (const p of pages) {
       const pack = p.packName || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { title: p.packTitle, pages: [], actions: [], metrics: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: p.packTitle, pages: [], actions: [] });
       else if (!packs.get(pack)!.title && p.packTitle) packs.get(pack)!.title = p.packTitle;
       const candidates = pageGrantCandidates(p.path);
       let explicit = false;
@@ -310,31 +307,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     // Add actions
     for (const a of actionCatalog) {
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [], metrics: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [] });
       else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
       const explicit = actionGrantSet.has(a.key);
       const effective = Boolean(a.default_enabled || explicit);
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
 
-    // Add metrics from catalog (group by owner pack or first segment of key)
-    for (const m of metricsCatalog || []) {
-      const packName = m.owner?.kind === 'feature_pack' && m.owner.id ? m.owner.id : (m.key.split('.')[0] || 'app');
-      if (!packs.has(packName)) packs.set(packName, { title: null, pages: [], actions: [], metrics: [] });
-      const grantId = metricGrantIdByKey.get(m.key);
-      packs.get(packName)!.metrics.push({
-        key: m.key,
-        label: m.label,
-        unit: m.unit,
-        category: m.category,
-        description: m.description,
-        explicit: Boolean(grantId),
-        grantId,
-      });
-    }
-
-    // Sort packs
+    // Sort packs and filter out empty ones
     return Array.from(packs.entries())
+      .filter(([, data]) => data.pages.length > 0 || data.actions.length > 0)
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([name, data]) => ({
         name,
@@ -345,12 +327,72 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         actionCount: data.actions.length,
         effectiveActions: data.actions.filter((a) => a.effective).length,
         explicitActions: data.actions.filter((a) => a.explicit).length,
-        metricCount: data.metrics.length,
-        explicitMetrics: data.metrics.filter((m) => m.explicit).length,
       }));
-  }, [pages, actionCatalog, pageGrantSet, actionGrantSet, metricsCatalog, metricGrantIdByKey]);
+  }, [pages, actionCatalog, pageGrantSet, actionGrantSet]);
 
-  // Filter by search
+  // Metrics organized by owner type (App vs Feature Pack)
+  const metricsData = useMemo(() => {
+    const appMetrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }> = [];
+    const fpMetrics = new Map<string, {
+      packId: string;
+      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; explicit: boolean; grantId?: string }>;
+    }>();
+
+    for (const m of metricsCatalog || []) {
+      const grantId = metricGrantIdByKey.get(m.key);
+      const metricEntry = {
+        key: m.key,
+        label: m.label,
+        unit: m.unit,
+        category: m.category,
+        description: m.description,
+        explicit: Boolean(grantId),
+        grantId,
+      };
+
+      if (m.owner?.kind === 'feature_pack' && m.owner.id) {
+        const packId = m.owner.id;
+        if (!fpMetrics.has(packId)) {
+          fpMetrics.set(packId, { packId, metrics: [] });
+        }
+        fpMetrics.get(packId)!.metrics.push(metricEntry);
+      } else {
+        // App-level or user-defined metrics
+        appMetrics.push(metricEntry);
+      }
+    }
+
+    return {
+      appMetrics,
+      featurePackMetrics: Array.from(fpMetrics.values()).sort((a, b) => a.packId.localeCompare(b.packId)),
+      totalCount: (metricsCatalog || []).length,
+      grantedCount: (metricsCatalog || []).filter((m) => metricGrantIdByKey.has(m.key)).length,
+    };
+  }, [metricsCatalog, metricGrantIdByKey]);
+
+  // Filter metrics by search
+  const filteredMetricsData = useMemo(() => {
+    const q = metricsSearch.trim().toLowerCase();
+    if (!q) return metricsData;
+
+    const filterMetrics = (arr: typeof metricsData.appMetrics) =>
+      arr.filter((m) =>
+        m.key.toLowerCase().includes(q) ||
+        m.label.toLowerCase().includes(q) ||
+        (m.category || '').toLowerCase().includes(q)
+      );
+
+    return {
+      appMetrics: filterMetrics(metricsData.appMetrics),
+      featurePackMetrics: metricsData.featurePackMetrics
+        .map((fp) => ({ ...fp, metrics: filterMetrics(fp.metrics) }))
+        .filter((fp) => fp.metrics.length > 0),
+      totalCount: metricsData.totalCount,
+      grantedCount: metricsData.grantedCount,
+    };
+  }, [metricsData, metricsSearch]);
+
+  // Filter by search (pages and actions only)
   const filteredPacks = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return packData;
@@ -358,7 +400,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       if (pack.name.toLowerCase().includes(q)) return true;
       if (pack.pages.some((p) => p.path.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))) return true;
       if (pack.actions.some((a) => a.key.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))) return true;
-      if (pack.metrics.some((m) => m.key.toLowerCase().includes(q))) return true;
       return false;
     });
   }, [packData, search]);
@@ -456,20 +497,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     refresh();
   };
 
-  const handleAddGrant = async () => {
-    const val = addGrantValue.trim();
-    if (!val) return;
-    if (addGrantType === 'page') {
-      await mutations.addPageGrant(id, val.startsWith('/') ? val : `/${val}`);
-    } else if (addGrantType === 'action') {
-      await mutations.addActionGrant(id, val);
-    } else {
-      await mutations.addMetricGrant(id, val);
-    }
-    setAddGrantValue('');
-    setAddGrantOpen(false);
-    refresh();
-  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -612,58 +639,77 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       </Card>
 
       {/* ─────────────────────────────────────────────────────────────────────
-          GRANTS BY FEATURE PACK
+          TABS: Pages & Actions | Metrics
       ───────────────────────────────────────────────────────────────────── */}
       <Card>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Package size={18} className="text-gray-500" />
-            <h3 className="font-semibold">Grants by Feature Pack</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={expandAll}>Expand All</Button>
-            <Button variant="ghost" size="sm" onClick={collapseAll}>Collapse</Button>
-            <Button size="sm" onClick={() => setAddGrantOpen(true)}>
-              <Plus size={14} className="mr-1" /> Add Grant
-            </Button>
-          </div>
+        {/* Tab Header */}
+        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4">
+          <button
+            className={`flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${
+              activeTab === 'pages_actions' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setActiveTab('pages_actions')}
+          >
+            <Package size={16} />
+            Pages & Actions
+          </button>
+          <button
+            className={`flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${
+              activeTab === 'metrics' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setActiveTab('metrics')}
+          >
+            <BarChart3 size={16} />
+            Metrics
+            {metricsData.grantedCount > 0 && (
+              <Badge variant="info" className="text-xs">{metricsData.grantedCount}/{metricsData.totalCount}</Badge>
+            )}
+          </button>
         </div>
 
-        {/* Legend */}
-        <Alert variant="info" className="mb-4">
-          <div className="text-sm space-y-1">
-            <div><strong>Legend:</strong></div>
-            <div className="flex flex-wrap gap-4 mt-2">
-              <div className="flex items-center gap-1">
-                <span className="text-green-500">●</span> <span>Default Allow</span> <span className="text-gray-500">- everyone has access, no grant needed</span>
+        {activeTab === 'pages_actions' && (
+          <>
+            {/* Legend */}
+            <Alert variant="info" className="mb-4">
+              <div className="text-sm space-y-1">
+                <div><strong>Legend:</strong></div>
+                <div className="flex flex-wrap gap-4 mt-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-green-500">●</span> <span>Default Allow</span> <span className="text-gray-500">- everyone has access, no grant needed</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-orange-500">●</span> <span>Default Deny</span> <span className="text-gray-500">- requires explicit grant</span>
+                  </div>
+                </div>
+                <div className="text-gray-500 text-xs mt-2">
+                  Note: Admins bypass all permission checks. "Effective" is read-only; "Grant" is the explicit toggle from THIS security group.
+                </div>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-orange-500">●</span> <span>Default Deny</span> <span className="text-gray-500">- requires explicit grant</span>
-              </div>
-            </div>
-            <div className="text-gray-500 text-xs mt-2">
-              Note: Admins bypass all permission checks. “Effective” is read-only; “Grant” is the explicit toggle from THIS security group.
-            </div>
-          </div>
-        </Alert>
+            </Alert>
 
-        {/* Search */}
-        <div className="relative mb-4">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search pages, actions, metrics..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+            {/* Actions Bar */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="relative flex-1 max-w-md">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search pages, actions..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2 ml-4">
+                <Button variant="ghost" size="sm" onClick={expandAll}>Expand All</Button>
+                <Button variant="ghost" size="sm" onClick={collapseAll}>Collapse</Button>
+              </div>
+            </div>
 
         {/* Feature Pack List */}
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.explicitMetrics > 0;
+            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0;
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -700,14 +746,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         {pack.explicitActions > 0 ? (
                           <span className="text-gray-400">({pack.explicitActions} explicit)</span>
                         ) : null}
-                      </div>
-                    )}
-                    {pack.metricCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <BarChart3 size={14} className="text-gray-400" />
-                        <span className={pack.explicitMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500'}>
-                          {pack.explicitMetrics}/{pack.metricCount}
-                        </span>
                       </div>
                     )}
                   </div>
@@ -825,45 +863,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                       </div>
                     )}
 
-                    {/* Metrics */}
-                    {pack.metrics.length > 0 && (
-                      <div className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <BarChart3 size={16} className="text-orange-500" />
-                          <span className="text-sm font-medium text-gray-600">Metrics</span>
-                          <span className="text-xs text-gray-400">
-                            (all default-deny, {pack.explicitMetrics} granted)
-                          </span>
-                        </div>
-                        <div className="space-y-1 ml-6">
-                          {pack.metrics.map((m) => (
-                            <div
-                              key={m.key}
-                              className={`flex items-center justify-between py-1.5 px-2 rounded ${
-                                m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
-                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <span className="font-medium text-sm truncate">{m.label}</span>
-                                <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
-                                <Badge variant="warning" className="text-xs">default-deny</Badge>
-                                {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">Grant:</span>
-                                <Checkbox
-                                  checked={m.explicit}
-                                  onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
-                                  disabled={mutations.loading}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {pack.pages.length === 0 && pack.actions.length === 0 && pack.metrics.length === 0 && (
+                    {pack.pages.length === 0 && pack.actions.length === 0 && (
                       <div className="p-4 text-sm text-gray-500">No items in this pack</div>
                     )}
                   </div>
@@ -878,6 +878,131 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             </div>
           )}
         </div>
+          </>
+        )}
+
+        {activeTab === 'metrics' && (
+          <>
+            {/* Metrics Legend */}
+            <Alert variant="info" className="mb-4">
+              <div className="text-sm">
+                <strong>All metrics are default-deny.</strong> Toggle the checkbox to grant access to specific metrics for this security group.
+                <div className="text-gray-500 text-xs mt-1">
+                  Note: Admins bypass all permission checks and can see all metrics.
+                </div>
+              </div>
+            </Alert>
+
+            {/* Metrics Search */}
+            <div className="relative mb-4">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={metricsSearch}
+                onChange={(e) => setMetricsSearch(e.target.value)}
+                placeholder="Search metrics..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* App Metrics */}
+            {filteredMetricsData.appMetrics.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart3 size={18} className="text-orange-500" />
+                  <h4 className="font-semibold">App Metrics</h4>
+                  <Badge variant="default" className="text-xs">
+                    {metricsData.appMetrics.filter((m) => m.explicit).length}/{metricsData.appMetrics.length} granted
+                  </Badge>
+                </div>
+                <div className="space-y-1 border rounded-lg p-3">
+                  {filteredMetricsData.appMetrics.map((m) => (
+                    <div
+                      key={m.key}
+                      className={`flex items-center justify-between py-2 px-3 rounded ${
+                        m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
+                      } hover:bg-gray-50 dark:hover:bg-gray-800`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="font-medium text-sm truncate">{m.label}</span>
+                        <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
+                        <Badge variant="default" className="text-xs">{m.unit}</Badge>
+                        {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
+                      </div>
+                      <Checkbox
+                        checked={m.explicit}
+                        onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
+                        disabled={mutations.loading}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Feature Pack Metrics */}
+            {filteredMetricsData.featurePackMetrics.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Package size={18} className="text-blue-500" />
+                  <h4 className="font-semibold">Feature Pack Metrics</h4>
+                </div>
+                <div className="space-y-4">
+                  {filteredMetricsData.featurePackMetrics.map((fp) => {
+                    const grantedInPack = fp.metrics.filter((m) => m.explicit).length;
+                    return (
+                      <div key={fp.packId} className="border rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800">
+                          <div className="flex items-center gap-2">
+                            <Package size={16} className="text-gray-500" />
+                            <span className="font-medium">{titleCase(fp.packId)}</span>
+                          </div>
+                          <Badge variant={grantedInPack > 0 ? 'info' : 'default'} className="text-xs">
+                            {grantedInPack}/{fp.metrics.length} granted
+                          </Badge>
+                        </div>
+                        <div className="p-3 space-y-1">
+                          {fp.metrics.map((m) => (
+                            <div
+                              key={m.key}
+                              className={`flex items-center justify-between py-2 px-3 rounded ${
+                                m.explicit ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800' : ''
+                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="font-medium text-sm truncate">{m.label}</span>
+                                <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
+                                <Badge variant="default" className="text-xs">{m.unit}</Badge>
+                                {m.explicit && <Badge variant="info" className="text-xs">granted</Badge>}
+                              </div>
+                              <Checkbox
+                                checked={m.explicit}
+                                onChange={() => toggleMetricGrant(m.key).catch(() => void 0)}
+                                disabled={mutations.loading}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {filteredMetricsData.appMetrics.length === 0 && filteredMetricsData.featurePackMetrics.length === 0 && (
+              <div className="py-12 text-center text-gray-500">
+                {metricsSearch ? 'No matching metrics' : (
+                  <div>
+                    <div className="mb-2">No metrics available.</div>
+                    <div className="text-xs">Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">hit run</code> to generate the metrics catalog.</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </Card>
 
       {/* ─────────────────────────────────────────────────────────────────────
@@ -969,86 +1094,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         </div>
       </Modal>
 
-      {/* Add Grant Modal */}
-      <Modal open={addGrantOpen} onClose={() => setAddGrantOpen(false)} title="Add Grant">
-        <div className="space-y-4">
-          <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-            {(['page', 'action', 'metric'] as const).map((t) => (
-              <button
-                key={t}
-                className={`flex-1 py-2 px-3 text-sm rounded-md transition-colors ${
-                  addGrantType === t ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500'
-                }`}
-                onClick={() => { setAddGrantType(t); setAddGrantValue(''); }}
-              >
-                {titleCase(t)}
-              </button>
-            ))}
-          </div>
-
-          {addGrantType === 'metric' ? (
-            <div>
-              <label className="block text-sm font-medium mb-2">Select Metric</label>
-              {(metricsCatalog || []).length === 0 ? (
-                <div className="text-sm text-gray-500 py-4 text-center">
-                  No metrics available. Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">hit run</code> to generate the metrics catalog.
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {(metricsCatalog || [])
-                    .filter((m) => !metricGrantIdByKey.has(m.key))
-                    .map((m) => (
-                      <button
-                        key={m.key}
-                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                          addGrantValue === m.key
-                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-                        }`}
-                        onClick={() => setAddGrantValue(m.key)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="font-medium">{m.label}</div>
-                          <Badge variant="default" className="text-xs">{m.unit}</Badge>
-                        </div>
-                        <div className="text-xs text-gray-500 font-mono mt-1">{m.key}</div>
-                        {m.description && (
-                          <div className="text-xs text-gray-400 mt-1 truncate">{m.description}</div>
-                        )}
-                      </button>
-                    ))}
-                  {(metricsCatalog || []).filter((m) => !metricGrantIdByKey.has(m.key)).length === 0 && (
-                    <div className="text-sm text-gray-500 py-4 text-center">
-                      All available metrics have already been granted.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                {addGrantType === 'page' ? 'Page Path' : 'Action Key'}
-              </label>
-              <Input
-                value={addGrantValue}
-                onChange={setAddGrantValue}
-                placeholder={addGrantType === 'page' ? '/crm/companies/*' : 'crm.company.create'}
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                {addGrantType === 'page' && 'Use /* for subtree grants'}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setAddGrantOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => handleAddGrant().catch(() => void 0)} disabled={!addGrantValue.trim()}>
-              Add Grant
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </Page>
   );
 }
