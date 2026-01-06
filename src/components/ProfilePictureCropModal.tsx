@@ -141,7 +141,7 @@ export function ProfilePictureCropModal({
       onClose={handleCancel}
       title="Crop Profile Picture"
       description="Adjust the image to select the area for your profile picture"
-      size="large"
+      size="lg"
     >
       <div className="space-y-4">
         <div className="relative w-full" style={{ height: '400px' }}>

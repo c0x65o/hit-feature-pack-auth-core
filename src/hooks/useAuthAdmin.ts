@@ -847,9 +847,7 @@ export function useSessionMutations() {
     setLoading(true);
     setError(null);
     try {
-      // Note: Auth module may not have this specific endpoint
-      // May need to fetch all sessions for user and delete individually
-      await fetchWithAuth(`/sessions?user_email=${encodeURIComponent(email)}`, {
+      await fetchWithAuth(`/admin/users/${encodeURIComponent(email)}/sessions`, {
         method: 'DELETE',
       });
     } catch (e) {
