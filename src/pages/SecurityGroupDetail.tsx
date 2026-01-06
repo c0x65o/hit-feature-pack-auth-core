@@ -76,7 +76,7 @@ type ActionCatalogItem = {
   pack_title: string | null;
   label: string;
   description: string | null;
-  default_enabled: boolean;
+  default_enabled: boolean; // seed suggestion only (not effective permission)
 };
 
 function isAdminishPath(path: string): boolean {
@@ -281,12 +281,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       let effective = false;
       let via: string | undefined;
 
-      // Default allow (catalog)
-      if (p.defaultEnabled) {
-        effective = true;
-        via = 'default';
-      }
-
       // Explicit grants in this permission set (exact/subtree + inherited subtrees)
       for (const c of candidates) {
         if (pageGrantSet.has(c)) {
@@ -315,7 +309,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [] });
       else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
       const explicit = actionGrantSet.has(a.key);
-      const effective = Boolean(a.default_enabled || explicit);
+      const effective = Boolean(explicit);
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
 
@@ -772,14 +766,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 <div><strong>Legend:</strong></div>
                 <div className="flex flex-wrap gap-4 mt-2">
                   <div className="flex items-center gap-1">
-                    <span className="text-green-500">●</span> <span>Default Allow</span> <span className="text-gray-500">- everyone has access, no grant needed</span>
+                    <span className="text-green-500">●</span> <span>Seed On</span> <span className="text-gray-500">- suggested for Default Access</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="text-orange-500">●</span> <span>Default Deny</span> <span className="text-gray-500">- requires explicit grant</span>
+                    <span className="text-orange-500">●</span> <span>Seed Off</span> <span className="text-gray-500">- suggested to stay off unless granted</span>
                   </div>
                 </div>
                 <div className="text-gray-500 text-xs mt-2">
-                  Note: Admins bypass all permission checks. "Effective" is read-only; "Grant" is the explicit toggle from THIS security group.
+                  "Effective" is read-only (includes inherited subtree grants like <code>/*</code>). "Grant" toggles the explicit grant from THIS security group.
                 </div>
               </div>
             </Alert>
@@ -858,8 +852,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           <FileText size={16} className="text-blue-500" />
                           <span className="text-sm font-medium text-gray-600">Pages</span>
                           <span className="text-xs text-gray-400">
-                            ({pack.pages.filter(p => p.default_enabled).length} default-allow,{' '}
-                            {pack.pages.filter(p => !p.default_enabled).length} default-deny)
+                            ({pack.pages.filter(p => p.default_enabled).length} seed-on,{' '}
+                            {pack.pages.filter(p => !p.default_enabled).length} seed-off)
                           </span>
                         </div>
                         <div className="space-y-1 ml-6">
@@ -874,9 +868,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 <span className="font-medium text-sm truncate">{p.label}</span>
                                 <span className="text-xs text-gray-500 truncate">{p.path}</span>
                                 {p.default_enabled ? (
-                                  <Badge variant="success" className="text-xs">default-allow</Badge>
+                                  <Badge variant="success" className="text-xs">seed-on</Badge>
                                 ) : (
-                                  <Badge variant="warning" className="text-xs">default-deny</Badge>
+                                  <Badge variant="warning" className="text-xs">seed-off</Badge>
                                 )}
                                 {p.explicit ? (
                                   <Badge variant="info" className="text-xs">explicit</Badge>
@@ -911,8 +905,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           <KeyRound size={16} className="text-green-500" />
                           <span className="text-sm font-medium text-gray-600">Actions</span>
                           <span className="text-xs text-gray-400">
-                            ({pack.actions.filter(a => a.default_enabled).length} default-allow,{' '}
-                            {pack.actions.filter(a => !a.default_enabled).length} default-deny)
+                            ({pack.actions.filter(a => a.default_enabled).length} seed-on,{' '}
+                            {pack.actions.filter(a => !a.default_enabled).length} seed-off)
                           </span>
                         </div>
                         <div className="space-y-1 ml-6">
@@ -932,11 +926,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   <span className="font-medium text-sm truncate">{a.label}</span>
                                   <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
                                   {a.default_enabled ? (
-                                    <Badge variant="success" className="text-xs">default-allow</Badge>
+                                    <Badge variant="success" className="text-xs">seed-on</Badge>
                                   ) : a.explicit ? (
                                     <Badge variant="info" className="text-xs">granted</Badge>
                                   ) : (
-                                    <Badge variant="warning" className="text-xs">default-deny</Badge>
+                                    <Badge variant="warning" className="text-xs">seed-off</Badge>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -985,7 +979,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
               <div className="text-sm">
                 <strong>All metrics are default-deny.</strong> Toggle checkboxes to select which metrics this security group can access, then click Save.
                 <div className="text-gray-500 text-xs mt-1">
-                  Note: Admins bypass all permission checks and can see all metrics.
+                  Tip: the built-in <strong>System Admin</strong> security group is seeded with all metrics.
                 </div>
               </div>
             </Alert>
