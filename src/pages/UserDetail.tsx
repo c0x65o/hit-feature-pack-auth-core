@@ -76,7 +76,15 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   React.useEffect(() => {
     const fetchAvailableRoles = async () => {
       try {
-        const response = await fetch('/features');
+        const authUrl = typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_HIT_AUTH_URL 
+          ? (window as any).NEXT_PUBLIC_HIT_AUTH_URL 
+          : '/api/proxy/auth';
+        const response = await fetch(`${authUrl}/features`, {
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
         const data = await response.json();
         const roles = data.features?.available_roles || ['admin', 'user'];
         setAvailableRoles(roles);
