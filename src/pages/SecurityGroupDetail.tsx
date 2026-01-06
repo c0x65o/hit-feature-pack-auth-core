@@ -68,6 +68,7 @@ type GeneratedRoute = {
   packName: string;
   componentName: string;
   shell: boolean;
+  roles?: string[];
 };
 
 type ActionCatalogItem = {
@@ -82,6 +83,15 @@ type ActionCatalogItem = {
 function isAdminishPath(path: string): boolean {
   const p = String(path || '');
   return p.startsWith('/admin') || p.startsWith('/setup') || p.startsWith('/settings');
+}
+
+function normalizeRoles(x: unknown): string[] | undefined {
+  if (!Array.isArray(x)) return undefined;
+  const roles = x
+    .map((r) => String(r || '').trim())
+    .filter(Boolean)
+    .map((r) => r.toLowerCase());
+  return roles.length ? roles : [];
 }
 
 function pageGrantCandidates(path: string): string[] {
@@ -114,7 +124,11 @@ async function loadShellPages(): Promise<Array<{ path: string; label: string; pa
         packTitle: typeof (r as any)?.packTitle === 'string' ? String((r as any).packTitle) : null,
         // Must mirror `/api/permissions/catalog` policy:
         // 1.0 default policy: non-adminish shell pages default-allow for Default Access.
-        defaultEnabled: Boolean((r as any).shell) && !isAdminishPath(String(r.path)),
+        // IMPORTANT: if a route has explicit role requirements, it is NOT default-enabled.
+        defaultEnabled:
+          Boolean((r as any).shell) &&
+          !isAdminishPath(String(r.path)) &&
+          !(normalizeRoles((r as any).roles)?.length),
       }));
 
     return Array.from(new Map(pages.map((p) => [p.path, p])).values()).sort((a, b) =>
