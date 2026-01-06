@@ -125,54 +125,54 @@ export function Users({ onNavigate }: UsersProps) {
                         },
                       }))
                   : []),
-                {
-                  key: 'email_verified',
-                  label: 'Verified',
-                  render: (value: unknown) => (
-                    <Badge variant={value ? 'success' : 'warning'}>
-                      {value ? 'Verified' : 'Pending'}
-                    </Badge>
-                  ),
-                },
-                ...(adminConfig?.two_factor_auth !== false
-                  ? [
-                      {
-                        key: 'two_factor_enabled',
-                        label: '2FA',
-                        render: (value: unknown) => (
-                          <Badge variant={value ? 'success' : 'default'}>
-                            {value ? 'Enabled' : 'Disabled'}
-                          </Badge>
-                        ),
-                      },
-                    ]
-                  : []),
-                {
-                  key: 'role',
-                  label: 'Role',
-                  render: (value: unknown) => {
-                    // Value is already a string from the API (user.get_role())
-                    const userRole = (typeof value === 'string' ? value : 'user') || 'user';
-                    return (
-                      <Badge variant={userRole === 'admin' ? 'info' : 'default'}>
-                        {userRole}
+            {
+              key: 'email_verified',
+              label: 'Verified',
+              render: (value: unknown) => (
+                <Badge variant={value ? 'success' : 'warning'}>
+                  {value ? 'Verified' : 'Pending'}
+                </Badge>
+              ),
+            },
+            ...(adminConfig?.two_factor_auth !== false
+              ? [
+                  {
+                    key: 'two_factor_enabled',
+                    label: '2FA',
+                    render: (value: unknown) => (
+                      <Badge variant={value ? 'success' : 'default'}>
+                        {value ? 'Enabled' : 'Disabled'}
                       </Badge>
-                    );
+                    ),
                   },
-                },
-                {
-                  key: 'status',
-                  label: 'Status',
-                  render: (_: unknown, row: Record<string, unknown>) => {
-                    const user = row as unknown as User;
-                    const isLocked = user.locked || false;
-                    return (
-                      <Badge variant={isLocked ? 'warning' : 'success'}>
-                        {isLocked ? 'Locked' : 'Active'}
-                      </Badge>
-                    );
-                  },
-                },
+                ]
+              : []),
+            {
+              key: 'role',
+              label: 'Role',
+              render: (value: unknown) => {
+                // Value is already a string from the API (user.get_role())
+                const userRole = (typeof value === 'string' ? value : 'user') || 'user';
+                return (
+                  <Badge variant={userRole === 'admin' ? 'info' : 'default'}>
+                    {userRole}
+                  </Badge>
+                );
+              },
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              render: (_: unknown, row: Record<string, unknown>) => {
+                const user = row as unknown as User;
+                const isLocked = user.locked || false;
+                return (
+                  <Badge variant={isLocked ? 'warning' : 'success'}>
+                    {isLocked ? 'Locked' : 'Active'}
+                  </Badge>
+                );
+              },
+            },
             {
               key: 'created_at',
               label: 'Created',

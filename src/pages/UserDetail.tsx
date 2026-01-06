@@ -22,7 +22,7 @@ import {
   Link2,
   Users,
 } from 'lucide-react';
-import { useUi, type BreadcrumbItem } from '@hit/ui-kit';
+import { useUi, useAlertDialog, type BreadcrumbItem } from '@hit/ui-kit';
 import { formatDateTime } from '@hit/sdk';
 import {
   useUser,
@@ -33,6 +33,7 @@ import {
   useProfileFields,
   useUserEffectivePermissions,
 } from '../hooks/useAuthAdmin';
+import { ProfilePictureCropModal } from '../components/ProfilePictureCropModal';
 
 interface UserDetailProps {
   email: string;
@@ -40,7 +41,8 @@ interface UserDetailProps {
 }
 
 export function UserDetail({ email, onNavigate }: UserDetailProps) {
-  const { Page, Card, Button, Badge, DataTable, Modal, Alert, Spinner, EmptyState, Select, Input } = useUi();
+  const { Page, Card, Button, Badge, DataTable, Modal, Alert, Spinner, EmptyState, Select, Input, AlertDialog } = useUi();
+  const alertDialog = useAlertDialog();
   
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -55,6 +57,8 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const [resetPasswordSuccess, setResetPasswordSuccess] = useState<string | null>(null);
   const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
   const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, loading, error, refresh } = useUser(email);
@@ -92,6 +96,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     updateRoles,
     updateUser,
     uploadProfilePicture,
+    uploadProfilePictureBase64,
     deleteProfilePicture,
     lockUser,
     unlockUser,
@@ -170,10 +175,13 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   };
 
   const handleResendVerification = async () => {
-    if (confirm(`Resend verification email to ${email}?`)) {
+    const confirmed = await alertDialog.showConfirm(`Resend verification email to ${email}?`, {
+      title: 'Resend Verification',
+    });
+    if (confirmed) {
       try {
         await resendVerification(email);
-        alert('Verification email sent!');
+        await alertDialog.showAlert('Verification email sent!', { variant: 'success', title: 'Success' });
       } catch {
         // Error handled by hook
       }
@@ -181,11 +189,14 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   };
 
   const handleVerifyEmail = async () => {
-    if (confirm(`Mark email as verified for ${email}?`)) {
+    const confirmed = await alertDialog.showConfirm(`Mark email as verified for ${email}?`, {
+      title: 'Verify Email',
+    });
+    if (confirmed) {
       try {
         await verifyEmail(email);
         refresh();
-        alert('Email verified successfully!');
+        await alertDialog.showAlert('Email verified successfully!', { variant: 'success', title: 'Success' });
       } catch {
         // Error handled by hook
       }
@@ -195,7 +206,11 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const handleToggleLock = async () => {
     const action = user?.locked ? unlockUser : lockUser;
     const actionName = user?.locked ? 'unlock' : 'lock';
-    if (confirm(`Are you sure you want to ${actionName} this user?`)) {
+    const confirmed = await alertDialog.showConfirm(`Are you sure you want to ${actionName} this user?`, {
+      title: user?.locked ? 'Unlock User' : 'Lock User',
+      ...(user?.locked ? {} : { variant: 'warning' }),
+    });
+    if (confirmed) {
       try {
         await action(email);
         refresh();
@@ -234,7 +249,11 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   }, [user?.profile_fields]);
 
   const handleRevokeSession = async (sessionId: string) => {
-    if (confirm('Revoke this session?')) {
+    const confirmed = await alertDialog.showConfirm('Revoke this session?', {
+      title: 'Revoke Session',
+      variant: 'warning',
+    });
+    if (confirmed) {
       try {
         await revokeSession(sessionId);
         refreshSessions();
@@ -245,7 +264,11 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   };
 
   const handleRevokeAllSessions = async () => {
-    if (confirm('Revoke all sessions for this user?')) {
+    const confirmed = await alertDialog.showConfirm('Revoke all sessions for this user?', {
+      title: 'Revoke All Sessions',
+      variant: 'error',
+    });
+    if (confirmed) {
       try {
         await revokeAllUserSessions(email);
         refreshSessions();
@@ -278,23 +301,75 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      await alertDialog.showAlert('File must be an image', {
+        variant: 'error',
+        title: 'Invalid File',
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      await alertDialog.showAlert('File size must be less than 5MB', {
+        variant: 'error',
+        title: 'File Too Large',
+      });
+      return;
+    }
+
+    // Convert file to data URL and show crop modal
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImageToCrop(reader.result as string);
+      setCropModalOpen(true);
+    };
+    reader.onerror = () => {
+      alertDialog.showAlert('Failed to read image file', {
+        variant: 'error',
+        title: 'Error',
+      });
+    };
+    reader.readAsDataURL(file);
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleCropComplete = async (croppedImageBase64: string) => {
     try {
       setUploadingPicture(true);
-      await uploadProfilePicture(email, file);
+      // Upload the cropped image (base64 string)
+      await uploadProfilePictureBase64(email, croppedImageBase64);
       refresh();
+      
+      // Dispatch event to update top header avatar
+      if (typeof window !== 'undefined') {
+        const updateEvent = new CustomEvent('user-profile-updated', {
+          detail: { profile_picture_url: croppedImageBase64, email },
+        });
+        window.dispatchEvent(updateEvent);
+      }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to upload profile picture');
+      await alertDialog.showAlert(err instanceof Error ? err.message : 'Failed to upload profile picture', {
+        variant: 'error',
+        title: 'Upload Failed',
+      });
     } finally {
       setUploadingPicture(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setImageToCrop(null);
     }
   };
 
   const handlePictureDelete = async () => {
-    if (!confirm('Are you sure you want to delete this profile picture?')) {
+    const confirmed = await alertDialog.showConfirm('Are you sure you want to delete this profile picture?', {
+      title: 'Delete Profile Picture',
+      variant: 'error',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -302,8 +377,19 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
       setUploadingPicture(true);
       await deleteProfilePicture(email);
       refresh();
+      
+      // Dispatch event to update top header avatar
+      if (typeof window !== 'undefined') {
+        const updateEvent = new CustomEvent('user-profile-updated', {
+          detail: { profile_picture_url: null, email },
+        });
+        window.dispatchEvent(updateEvent);
+      }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete profile picture');
+      await alertDialog.showAlert(err instanceof Error ? err.message : 'Failed to delete profile picture', {
+        variant: 'error',
+        title: 'Delete Failed',
+      });
     } finally {
       setUploadingPicture(false);
     }
@@ -1050,6 +1136,22 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
           </div>
         </div>
       </Modal>
+
+      {/* Profile Picture Crop Modal */}
+      {imageToCrop && (
+        <ProfilePictureCropModal
+          open={cropModalOpen}
+          onClose={() => {
+            setCropModalOpen(false);
+            setImageToCrop(null);
+          }}
+          imageSrc={imageToCrop}
+          onCropComplete={handleCropComplete}
+        />
+      )}
+
+      {/* Alert Dialog */}
+      <AlertDialog {...alertDialog.props} />
     </Page>
   );
 }

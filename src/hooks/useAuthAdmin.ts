@@ -738,6 +738,25 @@ export function useUserMutations() {
     }
   };
 
+  const uploadProfilePictureBase64 = async (email: string, base64DataUrl: string): Promise<string> => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Update user with the base64 data URL
+      await fetchWithAuth(`/users/${encodeURIComponent(email)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ profile_picture_url: base64DataUrl }),
+      });
+
+      return base64DataUrl;
+    } catch (e) {
+      setError(e as Error);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const deleteProfilePicture = async (email: string) => {
     setLoading(true);
     setError(null);
@@ -796,6 +815,7 @@ export function useUserMutations() {
     updateRoles,
     updateUser,
     uploadProfilePicture,
+    uploadProfilePictureBase64,
     deleteProfilePicture,
     lockUser,
     unlockUser,

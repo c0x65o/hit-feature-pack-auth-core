@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Trash2, RefreshCw, Monitor, Smartphone, Globe } from 'lucide-react';
-import { useUi } from '@hit/ui-kit';
+import { useUi, useAlertDialog } from '@hit/ui-kit';
 import { formatDateTime, formatRelativeTime } from '@hit/sdk';
 import { useSessions, useSessionMutations, type Session } from '../hooks/useAuthAdmin';
 
@@ -11,7 +11,8 @@ interface SessionsProps {
 }
 
 export function Sessions({ onNavigate }: SessionsProps) {
-  const { Page, Card, Button, Badge, DataTable, Alert, Spinner } = useUi();
+  const { Page, Card, Button, Badge, DataTable, Alert, Spinner, AlertDialog } = useUi();
+  const alertDialog = useAlertDialog();
   
   const [page, setPage] = useState(1);
 
@@ -31,7 +32,11 @@ export function Sessions({ onNavigate }: SessionsProps) {
   };
 
   const handleRevokeSession = async (sessionId: string) => {
-    if (confirm('Are you sure you want to revoke this session?')) {
+    const confirmed = await alertDialog.showConfirm('Are you sure you want to revoke this session?', {
+      title: 'Revoke Session',
+      variant: 'warning',
+    });
+    if (confirmed) {
       try {
         await revokeSession(sessionId);
         refresh();
@@ -198,6 +203,9 @@ export function Sessions({ onNavigate }: SessionsProps) {
           tableId="admin.sessions"
         />
       </Card>
+
+      {/* Alert Dialog */}
+      <AlertDialog {...alertDialog.props} />
     </Page>
   );
 }

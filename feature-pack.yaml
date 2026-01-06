@@ -81,30 +81,37 @@ nav:
     showWhen: authenticated
     weight: 1000  # Admin at bottom of nav (higher weight = lower position)
     children:
-      - label: Dashboard
-        path: /admin
-        icon: LayoutDashboard
       - label: Users
         path: /admin/users
         icon: Users
+        weight: 100  # First - user management is primary admin function
+      - label: Dashboard
+        path: /admin
+        icon: LayoutDashboard
+        weight: 110
       - label: Groups
         path: /admin/groups
         icon: UsersRound
         featureFlag: auth.user_groups_enabled
+        weight: 120
       - label: Sessions
         path: /admin/sessions
         icon: Key
+        weight: 130
       - label: Security Groups
         path: /admin/security-groups
         icon: Lock
+        weight: 140
       - label: Invites
         path: /admin/invites
         icon: Mail
         featureFlag: auth.allow_invited
+        weight: 150
       - label: Audit Log
         path: /admin/audit-log
         icon: FileText
         featureFlag: auth.audit_log
+        weight: 160  # Last - audit/logging is typically at the end
 
 # Dependencies
 requires:
