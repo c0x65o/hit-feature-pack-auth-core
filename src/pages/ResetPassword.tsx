@@ -229,7 +229,7 @@ function ResetPasswordContent({
             label="New Password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             placeholder="••••••••"
             error={fieldErrors.password}
             autoComplete="new-password"
@@ -239,7 +239,7 @@ function ResetPasswordContent({
             label="Confirm Password"
             type="password"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
             placeholder="••••••••"
             error={fieldErrors.confirmPassword}
             autoComplete="new-password"

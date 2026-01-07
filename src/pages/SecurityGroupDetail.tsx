@@ -799,7 +799,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 <input
                   type="text"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
                   placeholder="Search pages, actions..."
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -1005,7 +1005,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 <input
                   type="text"
                   value={metricsSearch}
-                  onChange={(e) => setMetricsSearch(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMetricsSearch(e.target.value)}
                   placeholder="Search metrics..."
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

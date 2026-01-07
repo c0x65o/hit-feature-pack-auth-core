@@ -192,7 +192,7 @@ function SignupContent({
             label="Name (optional)"
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
             placeholder="John Doe"
             autoComplete="name"
           />
@@ -201,7 +201,7 @@ function SignupContent({
             label="Email address"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             placeholder="you@example.com"
             error={fieldErrors.email}
             autoComplete="email"
@@ -211,7 +211,7 @@ function SignupContent({
             label="Password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             placeholder="••••••••"
             error={fieldErrors.password}
             autoComplete="new-password"
@@ -221,7 +221,7 @@ function SignupContent({
             label="Confirm Password"
             type="password"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
             placeholder="••••••••"
             error={fieldErrors.confirmPassword}
             autoComplete="new-password"

@@ -170,7 +170,7 @@ function LoginContent({
               label="Email address"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               placeholder="you@example.com"
               error={fieldErrors.email}
               autoComplete="email"
@@ -180,7 +180,7 @@ function LoginContent({
               label="Password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               placeholder="••••••••"
               error={fieldErrors.password}
               autoComplete="current-password"
@@ -203,7 +203,7 @@ function LoginContent({
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRememberMe(e.target.checked)}
                     style={{ width: '0.75rem', height: '0.75rem' }}
                   />
                   <span style={styles({

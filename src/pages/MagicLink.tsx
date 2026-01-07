@@ -244,7 +244,7 @@ function MagicLinkContent({
         )}
 
         <form onSubmit={handleSubmit}>
-          <FormInput label="Email address" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" error={fieldErrors.email} autoComplete="email" />
+          <FormInput label="Email address" type="email" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} placeholder="you@example.com" error={fieldErrors.email} autoComplete="email" />
 
           <button type="submit" disabled={submitting} style={styles({ width: '100%', height: '2.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary.default, color: colors.text.inverse, fontSize: ts.body.fontSize, fontWeight: ts.label.fontWeight, borderRadius: radius.md, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.5 : 1, marginTop: spacing.xs })}>
             {submitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}

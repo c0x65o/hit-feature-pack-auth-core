@@ -537,7 +537,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                       <input
                         type="number"
                         value={fieldValue || ''}
-                        onChange={(e) =>
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           setProfileFields({
                             ...profileFields,
                             [fieldMeta.field_key]: e.target.value ? parseInt(e.target.value, 10) : undefined,
@@ -551,7 +551,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                       <input
                         type={isEmail ? 'email' : 'text'}
                         value={fieldValue || ''}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           if (!isEmail) {
                             setProfileFields({
                               ...profileFields,
@@ -1106,7 +1106,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 <input
                   type="password"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter new password"
                 />
@@ -1118,7 +1118,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Confirm new password"
                 />

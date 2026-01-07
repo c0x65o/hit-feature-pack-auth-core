@@ -218,7 +218,7 @@ function InviteAcceptContent({
               label="Password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               placeholder="••••••••"
               error={fieldErrors.password}
               autoComplete="new-password"
@@ -228,7 +228,7 @@ function InviteAcceptContent({
               label="Confirm Password"
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
               error={fieldErrors.confirmPassword}
               autoComplete="new-password"

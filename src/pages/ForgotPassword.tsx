@@ -188,7 +188,7 @@ function ForgotPasswordContent({
             label="Email address"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             placeholder="you@example.com"
             error={fieldErrors.email}
             autoComplete="email"
