@@ -844,6 +844,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                     emptyMessage="No security groups"
                     searchable
                     pageSize={10}
+                    tableId="admin.user-detail.security-groups"
                   />
                 </div>
               )}
@@ -1007,6 +1008,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
             exportable
             showColumnVisibility
             pageSize={25}
+            tableId="admin.user-detail.sessions"
           />
         )}
       </Card>

@@ -120,6 +120,7 @@ export function SecurityGroupsList({ onNavigate }: SecurityGroupsListProps) {
           exportable
           showColumnVisibility
           pageSize={25}
+          tableId="admin.security-groups"
         />
       </Card>
 
