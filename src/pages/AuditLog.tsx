@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Eye } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { formatDateTime } from '@hit/sdk';
 import { useAuditLog, useAuthAdminConfig, type AuditLogEntry } from '../hooks/useAuthAdmin';
 
@@ -13,12 +14,19 @@ interface AuditLogProps {
 export function AuditLog({ onNavigate }: AuditLogProps) {
   const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, Spinner } = useUi();
   
-  const [page, setPage] = useState(1);
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
 
-  const { data, loading, error, refresh } = useAuditLog({
-    page,
+  const serverTable = useServerDataTableState({
+    tableId: 'admin.audit-log',
     pageSize: 50,
+    initialSort: { sortBy: 'created_at', sortOrder: 'desc' },
+    sortWhitelist: ['created_at', 'user_email', 'event_type', 'ip_address'],
+  });
+
+  const { data, loading, error, refresh } = useAuditLog({
+    page: serverTable.query.page,
+    pageSize: serverTable.query.pageSize,
+    search: serverTable.query.search,
   });
 
   const { config: adminConfig, loading: configLoading } = useAuthAdminConfig();
@@ -189,7 +197,9 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
           searchable
           exportable
           showColumnVisibility
-          pageSize={50}
+          total={data?.total}
+          {...serverTable.dataTable}
+          searchDebounceMs={400}
           onRefresh={refresh}
           refreshing={loading}
           tableId="admin.audit-log"

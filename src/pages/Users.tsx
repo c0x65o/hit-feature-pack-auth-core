@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Trash2, UserPlus, Lock } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
 import { useUsers, useUserMutations, useAuthAdminConfig, useProfileFields, type User } from '../hooks/useAuthAdmin';
 
@@ -13,8 +14,13 @@ interface UsersProps {
 export function Users({ onNavigate }: UsersProps) {
   const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, Spinner } = useUi();
   
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  const serverTable = useServerDataTableState({
+    tableId: 'admin.users',
+    pageSize: 25,
+    initialSort: { sortBy: 'created_at', sortOrder: 'desc' },
+    sortWhitelist: ['email', 'created_at', 'last_login'],
+  });
+
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -24,11 +30,11 @@ export function Users({ onNavigate }: UsersProps) {
   const [newPassword, setNewPassword] = useState('');
 
   const { data, loading, error, refresh } = useUsers({
-    page,
-    pageSize: 25,
-    search,
-    sortBy: 'created_at',
-    sortOrder: 'desc',
+    page: serverTable.query.page,
+    pageSize: serverTable.query.pageSize,
+    search: serverTable.query.search,
+    sortBy: serverTable.query.sortBy,
+    sortOrder: serverTable.query.sortOrder,
   });
 
   const { createUser, deleteUser, loading: mutating } = useUserMutations();
@@ -229,11 +235,9 @@ export function Users({ onNavigate }: UsersProps) {
           searchable
           exportable
           showColumnVisibility
-          pageSize={25}
-          manualPagination={true}
           total={data?.total}
-          page={page}
-          onPageChange={setPage}
+          {...serverTable.dataTable}
+          searchDebounceMs={400}
           onRefresh={refresh}
           refreshing={loading}
           tableId="admin.users"

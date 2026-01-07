@@ -304,7 +304,7 @@ export function useUsers(options: UseQueryOptions = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const { page = 1, pageSize = 25, search } = options;
+  const { page = 1, pageSize = 25, search, sortBy = 'created_at', sortOrder = 'desc' } = options;
 
   const refresh = useCallback(async () => {
     try {
@@ -319,10 +319,27 @@ export function useUsers(options: UseQueryOptions = {}) {
         filtered = users.filter(u => u.email.toLowerCase().includes(searchLower));
       }
 
+      // Sort client-side (auth module /users does not support server sorting)
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      const sorted = [...filtered].sort((a, b) => {
+        if (sortBy === 'email') {
+          return a.email.localeCompare(b.email) * dir;
+        }
+        if (sortBy === 'last_login') {
+          const av = a.last_login ? new Date(a.last_login).getTime() : -Infinity;
+          const bv = b.last_login ? new Date(b.last_login).getTime() : -Infinity;
+          return (av - bv) * dir;
+        }
+        // created_at (default)
+        const av = a.created_at ? new Date(a.created_at).getTime() : -Infinity;
+        const bv = b.created_at ? new Date(b.created_at).getTime() : -Infinity;
+        return (av - bv) * dir;
+      });
+
       // Client-side pagination
-      const total = filtered.length;
+      const total = sorted.length;
       const startIdx = (page - 1) * pageSize;
-      const items = filtered.slice(startIdx, startIdx + pageSize);
+      const items = sorted.slice(startIdx, startIdx + pageSize);
 
       setData({
         items,
@@ -337,7 +354,7 @@ export function useUsers(options: UseQueryOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, sortBy, sortOrder]);
 
   useEffect(() => {
     refresh();

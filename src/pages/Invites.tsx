@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { RefreshCw, Trash2, Send, UserPlus, Clock } from 'lucide-react';
 import { useUi, useAlertDialog } from '@hit/ui-kit';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { formatDateShort } from '@hit/sdk';
 import { useInvites, useInviteMutations } from '../hooks/useAuthAdmin';
 
@@ -13,13 +14,21 @@ interface InvitesProps {
 export function Invites({ onNavigate }: InvitesProps) {
   const { Page, Card, Button, Badge, DataTable, Modal, Input, Select, Alert, Spinner, EmptyState, AlertDialog } = useUi();
   const alertDialog = useAlertDialog();
-  
-  const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('user');
 
-  const { data, loading, error, refresh } = useInvites({ page, pageSize: 25 });
+  const serverTable = useServerDataTableState({
+    tableId: 'admin.invites',
+    pageSize: 25,
+    initialSort: { sortBy: 'expires_at', sortOrder: 'asc' },
+    sortWhitelist: ['email', 'expires_at'],
+  });
+
+  const { data, loading, error, refresh } = useInvites({
+    page: serverTable.query.page,
+    pageSize: serverTable.query.pageSize,
+  });
   const { createInvite, resendInvite, revokeInvite, loading: mutating, error: mutationError } = useInviteMutations();
 
   const handleCreateInvite = async () => {
@@ -113,11 +122,7 @@ export function Invites({ onNavigate }: InvitesProps) {
       )}
 
       <Card>
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size="lg" />
-          </div>
-        ) : !data?.items?.length ? (
+        {!data?.items?.length && !loading ? (
           <EmptyState
             icon={<Clock size={48} />}
             title="No pending invitations"
@@ -213,7 +218,9 @@ export function Invites({ onNavigate }: InvitesProps) {
             searchable
             exportable
             showColumnVisibility
-            pageSize={25}
+            total={data?.total}
+            {...serverTable.dataTable}
+            searchDebounceMs={400}
             onRefresh={refresh}
             refreshing={loading}
             tableId="admin.invites"

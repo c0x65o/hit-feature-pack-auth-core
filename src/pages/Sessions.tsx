@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Trash2, RefreshCw, Monitor, Smartphone, Globe } from 'lucide-react';
 import { useUi, useAlertDialog } from '@hit/ui-kit';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { formatDateTime, formatRelativeTime } from '@hit/sdk';
 import { useSessions, useSessionMutations, type Session } from '../hooks/useAuthAdmin';
 
@@ -13,12 +14,18 @@ interface SessionsProps {
 export function Sessions({ onNavigate }: SessionsProps) {
   const { Page, Card, Button, Badge, DataTable, Alert, Spinner, AlertDialog } = useUi();
   const alertDialog = useAlertDialog();
-  
-  const [page, setPage] = useState(1);
+
+  const serverTable = useServerDataTableState({
+    tableId: 'admin.sessions',
+    pageSize: 50,
+    initialSort: { sortBy: 'created_at', sortOrder: 'desc' },
+    sortWhitelist: ['user_email', 'ip_address', 'created_at', 'expires_at'],
+  });
 
   const { data, loading, error, refresh } = useSessions({
-    page,
-    pageSize: 50,
+    page: serverTable.query.page,
+    pageSize: serverTable.query.pageSize,
+    search: serverTable.query.search,
   });
 
   const { revokeSession, loading: mutating } = useSessionMutations();
@@ -197,7 +204,9 @@ export function Sessions({ onNavigate }: SessionsProps) {
           searchable
           exportable
           showColumnVisibility
-          pageSize={50}
+          total={data?.total}
+          {...serverTable.dataTable}
+          searchDebounceMs={400}
           onRefresh={refresh}
           refreshing={loading}
           tableId="admin.sessions"
