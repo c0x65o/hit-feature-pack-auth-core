@@ -41,6 +41,145 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
+/**
+ * Creates a fetchPrincipals function for use with AclPicker.
+ * 
+ * @param options.isAdmin Whether the current user is an admin (allows seeing all groups/roles)
+ * @param options.extraPrincipals Optional callback to provide additional principals (e.g. from local pack db)
+ */
+export function createFetchPrincipals(options: {
+  isAdmin?: boolean;
+  extraPrincipals?: (type: PrincipalType, search?: string) => Promise<Principal[]>;
+} = {}) {
+  const { isAdmin = false, extraPrincipals } = options;
+
+  return async (type: PrincipalType, search?: string): Promise<Principal[]> => {
+    const principals: Principal[] = [];
+    const authUrl = getAuthUrl();
+    const headers = getAuthHeaders();
+    const searchLower = search?.toLowerCase();
+
+    if (type === 'user') {
+      try {
+        const response = await fetch(`${authUrl}/directory/users`, {
+          credentials: 'include',
+          headers,
+        });
+
+        if (response.ok) {
+          const authUsers = await response.json();
+          if (Array.isArray(authUsers)) {
+            authUsers.forEach((user: any) => {
+              const firstName = user.profile_fields?.first_name || null;
+              const lastName = user.profile_fields?.last_name || null;
+              const displayName = [firstName, lastName].filter(Boolean).join(' ') || user.email;
+
+              if (!searchLower || displayName.toLowerCase().includes(searchLower) || user.email.toLowerCase().includes(searchLower)) {
+                principals.push({
+                  type: 'user',
+                  id: user.email,
+                  displayName,
+                  metadata: { email: user.email, profile_fields: user.profile_fields },
+                });
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load users:', err);
+      }
+    } else if (type === 'group') {
+      if (isAdmin) {
+        // Admin: can pick any auth group (including dynamic groups)
+        try {
+          const authResponse = await fetch(`${authUrl}/admin/groups`, { headers, credentials: 'include' });
+          if (authResponse.ok) {
+            const authGroups = await authResponse.json();
+            if (Array.isArray(authGroups)) {
+              authGroups.forEach((group: any) => {
+                const displayName = group.description ? `${group.name} - ${group.description}` : group.name;
+                if (!searchLower || displayName.toLowerCase().includes(searchLower) || group.name.toLowerCase().includes(searchLower)) {
+                  principals.push({
+                    type: 'group',
+                    id: group.id,
+                    displayName,
+                    metadata: { name: group.name, description: group.description },
+                  });
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load groups (admin):', err);
+        }
+      } else {
+        // Non-admin: can pick only groups they are in.
+        try {
+          const res = await fetch(`${authUrl}/me/groups`, { headers, credentials: 'include' });
+          if (res.ok) {
+            const myGroups = await res.json();
+            if (Array.isArray(myGroups)) {
+              myGroups.forEach((g: any) => {
+                const id = String(g.group_id ?? g.groupId ?? '').trim();
+                const name = String(g.group_name ?? g.groupName ?? id).trim();
+                if (!id) return;
+                if (!searchLower || name.toLowerCase().includes(searchLower) || id.toLowerCase().includes(searchLower)) {
+                  principals.push({
+                    type: 'group',
+                    id,
+                    displayName: name,
+                    metadata: { name, source: 'me/groups' },
+                  });
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load my groups:', err);
+        }
+      }
+    } else if (type === 'role') {
+      // Non-admins cannot share to roles.
+      if (isAdmin) {
+        try {
+          const response = await fetch(`${authUrl}/features`, { headers, credentials: 'include' });
+          if (response.ok) {
+            const data = await response.json();
+            const availableRoles = data.features?.available_roles || ['admin', 'user'];
+            availableRoles.forEach((role: string) => {
+              const displayName = role.charAt(0).toUpperCase() + role.slice(1);
+              if (!searchLower || displayName.toLowerCase().includes(searchLower) || role.toLowerCase().includes(searchLower)) {
+                principals.push({
+                  type: 'role',
+                  id: role,
+                  displayName,
+                });
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to load roles:', err);
+          // Fallback
+          ['admin', 'user'].forEach(role => {
+            const displayName = role.charAt(0).toUpperCase() + role.slice(1);
+            if (!searchLower || displayName.toLowerCase().includes(searchLower) || role.toLowerCase().includes(searchLower)) {
+              principals.push({ type: 'role', id: role, displayName });
+            }
+          });
+        }
+      }
+    }
+
+    // Add extra principals if provided
+    if (extraPrincipals) {
+      const extra = await extraPrincipals(type, search);
+      principals.push(...extra);
+    }
+
+    return principals;
+  };
+}
+
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const authUrl = getAuthUrl();
   const url = `${authUrl}${endpoint}`;
