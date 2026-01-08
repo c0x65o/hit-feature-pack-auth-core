@@ -11,7 +11,7 @@ export { useStats, useUsers, useUser, useSessions, useUserSessions, useAuditLog,
 /**
  * ACL Hooks
  */
-export { usePrincipals, type UsePrincipalsOptions, type UsePrincipalsResult, } from './usePrincipals';
+export { usePrincipals, createFetchPrincipals, type UsePrincipalsOptions, type UsePrincipalsResult, } from './usePrincipals';
 /**
  * ACL Resolution Utilities
  */

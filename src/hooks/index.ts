@@ -71,6 +71,7 @@ export {
  */
 export {
   usePrincipals,
+  createFetchPrincipals,
   type UsePrincipalsOptions,
   type UsePrincipalsResult,
 } from './usePrincipals';
