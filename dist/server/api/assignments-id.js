@@ -1,7 +1,7 @@
 // src/server/api/assignments-id.ts
 import { NextResponse } from "next/server";
-import { getDb } from "../../lib-stubs/db";
-import { userOrgAssignments, divisions, departments } from "../../lib-stubs/feature-pack-schemas";
+import { getDb } from "@/lib/db";
+import { userOrgAssignments, divisions, departments } from "@/lib/feature-pack-schemas";
 import { eq, and } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 export const dynamic = "force-dynamic";

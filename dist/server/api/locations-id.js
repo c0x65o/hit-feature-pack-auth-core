@@ -1,7 +1,7 @@
 // src/server/api/locations-id.ts
 import { NextResponse } from "next/server";
-import { getDb } from "../../lib-stubs/db";
-import { locations, locationTypes } from "../../lib-stubs/feature-pack-schemas";
+import { getDb } from "@/lib/db";
+import { locations, locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 export const dynamic = "force-dynamic";

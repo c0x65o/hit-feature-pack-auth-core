@@ -1,7 +1,7 @@
 // src/server/api/me-scope.ts
 import { NextResponse } from "next/server";
-import { getDb } from "../../lib-stubs/db";
-import { userOrgAssignments } from "../../lib-stubs/feature-pack-schemas";
+import { getDb } from "@/lib/db";
+import { userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { eq } from "drizzle-orm";
 import { getUserId } from "../auth";
 export const dynamic = "force-dynamic";

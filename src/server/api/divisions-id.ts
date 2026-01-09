@@ -1,7 +1,7 @@
 // src/server/api/divisions-id.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "../../lib-stubs/db";
-import { divisions } from "../../lib-stubs/feature-pack-schemas";
+import { getDb } from "@/lib/db";
+import { divisions } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 

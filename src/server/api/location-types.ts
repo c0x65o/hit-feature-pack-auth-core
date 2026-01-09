@@ -1,7 +1,7 @@
 // src/server/api/location-types.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "../../lib-stubs/db";
-import { locationTypes } from "../../lib-stubs/feature-pack-schemas";
+import { getDb } from "@/lib/db";
+import { locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 
