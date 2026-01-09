@@ -161,7 +161,7 @@ export function OrgAssignments({ onNavigate }) {
                     resetForm();
                 }, title: "Create Org Assignment", description: "Assign a user to organizational units", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Select, { label: "User", value: userKey, onChange: setUserKey, options: userOptions, required: true }), _jsx(Select, { label: "Division", value: divisionId, onChange: setDivisionId, options: divisionOptions }), _jsx(Select, { label: "Department", value: departmentId, onChange: setDepartmentId, options: departmentOptions }), _jsx(Select, { label: "Location", value: locationId, onChange: setLocationId, options: locationOptions }), _jsx(Select, { label: "Role", value: role, onChange: setRole, options: roleOptions }), _jsx(Select, { label: "Primary Assignment", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
                                 { value: 'false', label: 'No' },
-                                { value: 'true', label: 'Yes (make this the primary assignment)' },
+                                { value: 'true', label: 'Yes (replaces existing primary if any)' },
                             ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !userKey || (!divisionId && !departmentId && !locationId) || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {
                     setDeleteModalOpen(false);
                     setSelectedAssignment(null);

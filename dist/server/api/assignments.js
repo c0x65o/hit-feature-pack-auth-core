@@ -125,8 +125,16 @@ export async function POST(request) {
                 return NextResponse.json({ error: "Department not found" }, { status: 400 });
             }
         }
+        // Check if user has any existing assignments
+        const existingAssignments = await db
+            .select({ id: userOrgAssignments.id })
+            .from(userOrgAssignments)
+            .where(eq(userOrgAssignments.userKey, body.userKey))
+            .limit(1);
+        // Auto-set primary if this is the user's first assignment
+        const shouldBePrimary = body.isPrimary || existingAssignments.length === 0;
         // If setting as primary, clear other primary assignments for this user
-        if (body.isPrimary) {
+        if (shouldBePrimary) {
             await db
                 .update(userOrgAssignments)
                 .set({ isPrimary: false })
@@ -139,7 +147,7 @@ export async function POST(request) {
             divisionId: body.divisionId || null,
             departmentId: body.departmentId || null,
             locationId: body.locationId || null,
-            isPrimary: body.isPrimary || false,
+            isPrimary: shouldBePrimary,
             role: body.role || null,
             createdByUserKey: currentUserId,
         })

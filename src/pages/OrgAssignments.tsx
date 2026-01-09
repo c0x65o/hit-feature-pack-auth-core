@@ -306,7 +306,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             onChange={(v) => setIsPrimary(v === 'true')}
             options={[
               { value: 'false', label: 'No' },
-              { value: 'true', label: 'Yes (make this the primary assignment)' },
+              { value: 'true', label: 'Yes (replaces existing primary if any)' },
             ]}
           />
           <div className="flex justify-end gap-3 pt-4">
