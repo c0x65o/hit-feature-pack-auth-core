@@ -755,6 +755,17 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                             return 'LDD';
                                                                         return v;
                                                                     }
+                                                                    function shortLabelForValue(v) {
+                                                                        if (!v)
+                                                                            return '—';
+                                                                        if (v === 'any')
+                                                                            return 'Any';
+                                                                        if (v === 'own')
+                                                                            return 'Own';
+                                                                        if (v === 'ldd')
+                                                                            return 'LDD';
+                                                                        return String(v);
+                                                                    }
                                                                     const nodeById = new Map();
                                                                     function getOrCreateNode(id, kind = 'base', verb) {
                                                                         const existing = nodeById.get(id);
@@ -872,7 +883,19 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                     function renderBaseNode(node, depth, inherited) {
                                                                         const isExpanded = depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
                                                                         const canExpand = node.children.length > 0;
-                                                                        const row = (_jsxs("div", { className: "flex items-center justify-between gap-4 px-2 py-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/20 dark:bg-gray-900/10", style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: "w-1 self-stretch rounded bg-gray-200 dark:bg-gray-800" }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { style: { width: 16 } })), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: node.id })] })] }), _jsx("div", { className: "flex items-center gap-2", children: _jsx(Badge, { variant: "default", className: "text-xs", children: "defaults + overrides" }) })] }, node.id));
+                                                                        // Compute effective summary (R/W/D) for this node, using:
+                                                                        // - explicit selections on this node's verb children
+                                                                        // - otherwise inherited from parent
+                                                                        const effectiveByVerb = { ...inherited };
+                                                                        for (const c of node.children) {
+                                                                            if (c.kind !== 'verb' || !c.group || !c.verb)
+                                                                                continue;
+                                                                            const explicitKey = getExplicitSelectedKey(c.group);
+                                                                            const explicitValue = explicitKey ? optionValueForKey(c.group, explicitKey) : null;
+                                                                            if (explicitValue)
+                                                                                effectiveByVerb[c.verb] = explicitValue;
+                                                                        }
+                                                                        const row = (_jsxs("div", { className: "flex items-center justify-between gap-4 px-2 py-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/20 dark:bg-gray-900/10", style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: "w-1 self-stretch rounded bg-gray-200 dark:bg-gray-800" }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { style: { width: 16 } })), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: node.id })] })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Badge, { variant: "default", className: "text-xs", children: ["R: ", shortLabelForValue(effectiveByVerb.read), " \u00B7 W: ", shortLabelForValue(effectiveByVerb.write), " \u00B7 D: ", shortLabelForValue(effectiveByVerb.delete)] }), _jsx(Badge, { variant: "default", className: "text-xs", children: "defaults + overrides" })] })] }, node.id));
                                                                         if (!isExpanded)
                                                                             return row;
                                                                         // Update inherited modes for children based on this base's verb nodes.

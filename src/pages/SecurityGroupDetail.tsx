@@ -1166,6 +1166,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             return v;
                           }
 
+                          function shortLabelForValue(v: ScopeModeValue | null): string {
+                            if (!v) return '—';
+                            if (v === 'any') return 'Any';
+                            if (v === 'own') return 'Own';
+                            if (v === 'ldd') return 'LDD';
+                            return String(v);
+                          }
+
                           // Build a tree from groupKey:
                           // groupKey patterns:
                           //   - crm.{read|write|delete}.scope
@@ -1355,6 +1363,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
                             const canExpand = node.children.length > 0;
 
+                            // Compute effective summary (R/W/D) for this node, using:
+                            // - explicit selections on this node's verb children
+                            // - otherwise inherited from parent
+                            const effectiveByVerb: InheritedByVerb = { ...inherited };
+                            for (const c of node.children) {
+                              if (c.kind !== 'verb' || !c.group || !c.verb) continue;
+                              const explicitKey = getExplicitSelectedKey(c.group);
+                              const explicitValue = explicitKey ? (optionValueForKey(c.group, explicitKey) as ScopeModeValue) : null;
+                              if (explicitValue) effectiveByVerb[c.verb] = explicitValue;
+                            }
+
                             const row = (
                               <div
                                 key={node.id}
@@ -1385,6 +1404,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  <Badge variant="default" className="text-xs">
+                                    R: {shortLabelForValue(effectiveByVerb.read)} · W: {shortLabelForValue(effectiveByVerb.write)} · D: {shortLabelForValue(effectiveByVerb.delete)}
+                                  </Badge>
                                   <Badge variant="default" className="text-xs">defaults + overrides</Badge>
                                 </div>
                               </div>
