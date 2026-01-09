@@ -2,7 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
-import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
+import { styles } from '@hit/ui-kit/components/utils';
 import { AlertDialog } from '@hit/ui-kit/components/AlertDialog';
 import { AuthCard } from '@hit/ui-kit/components/AuthCard';
 import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';

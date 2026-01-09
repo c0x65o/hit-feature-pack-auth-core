@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
+import { styles } from '@hit/ui-kit/components/utils';
 import { AuthCard } from '@hit/ui-kit/components/AuthCard';
 import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
 import { FormInput } from '@hit/ui-kit/components/FormInput';

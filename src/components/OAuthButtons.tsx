@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useThemeTokens, styles } from '@hit/ui-kit';
+import { useThemeTokens } from '@hit/ui-kit/theme';
+import { styles } from '@hit/ui-kit/components/utils';
 import { useOAuth } from '../hooks/useAuth';
 
 interface OAuthProvider {

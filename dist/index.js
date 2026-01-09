@@ -16,21 +16,45 @@
  * ```
  */
 // Pages - exported individually for tree-shaking
-export { Login, LoginPage, Signup, SignupPage, ForgotPassword, ForgotPasswordPage, ResetPassword, ResetPasswordPage, VerifyEmail, VerifyEmailPage, EmailNotVerified, EmailNotVerifiedPage, MagicLink, MagicLinkPage, InviteAccept, InviteAcceptPage, 
+export { Login, default as LoginPage } from './pages/Login';
+export { Signup, default as SignupPage } from './pages/Signup';
+export { ForgotPassword, default as ForgotPasswordPage } from './pages/ForgotPassword';
+export { ResetPassword, default as ResetPasswordPage } from './pages/ResetPassword';
+export { VerifyEmail, default as VerifyEmailPage } from './pages/VerifyEmail';
+export { EmailNotVerified, default as EmailNotVerifiedPage } from './pages/EmailNotVerified';
+export { MagicLink, default as MagicLinkPage } from './pages/MagicLink';
+export { InviteAccept, default as InviteAcceptPage } from './pages/InviteAccept';
 // Admin pages (merged into auth-core)
-Dashboard, DashboardPage, Users, UsersPage, UserDetail, UserDetailPage, Sessions, SessionsPage, AuditLog, AuditLogPage, Invites, InvitesPage, Groups, GroupsPage, 
+export { Dashboard, default as DashboardPage } from './pages/Dashboard';
+export { Users, default as UsersPage } from './pages/Users';
+export { UserDetail, default as UserDetailPage } from './pages/UserDetail';
+export { Sessions, default as SessionsPage } from './pages/Sessions';
+export { AuditLog, default as AuditLogPage } from './pages/AuditLog';
+export { Invites, default as InvitesPage } from './pages/Invites';
+export { Groups, default as GroupsPage } from './pages/Groups';
 // Security Groups
-SecurityGroupsList, SecurityGroupsListPage, SecurityGroupDetail, SecurityGroupDetailPage, 
+export { SecurityGroupsList, default as SecurityGroupsListPage } from './pages/SecurityGroupsList';
+export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './pages/SecurityGroupDetail';
 // Org Dimensions
-Locations, LocationsPage, Divisions, DivisionsPage, Departments, DepartmentsPage, OrgAssignments, OrgAssignmentsPage, } from './pages/index';
+export { Locations, default as LocationsPage } from './pages/Locations';
+export { Divisions, default as DivisionsPage } from './pages/Divisions';
+export { Departments, default as DepartmentsPage } from './pages/Departments';
+export { OrgAssignments, default as OrgAssignmentsPage } from './pages/OrgAssignments';
 // Components - exported individually for tree-shaking
-export * from './components/index';
+export { AuthLayout, AuthCard } from './components/AuthCard';
+export { FormInput } from './components/FormInput';
+export { OAuthButtons } from './components/OAuthButtons';
+export { ProfilePictureCropModal } from './components/ProfilePictureCropModal';
 // Hooks - exported individually for tree-shaking
-export * from './hooks/index';
+export { useAuthConfig, useLogin, useSignup, useForgotPassword, useResetPassword, useVerifyEmail, useOAuth, clearAuthToken, } from './hooks/useAuth';
+export { useStats, useUsers, useUser, useSessions, useUserSessions, useAuditLog, useInvites, useUsersWithOverrides, useRolePagePermissions, useUserPageOverrides, useGroupPagePermissions, useGroups, useGroup, useGroupUsers, useUserGroups, useUserMutations, useSessionMutations, useInviteMutations, useAuthAdminConfig, useProfileFields, useProfileFieldMutations, usePagePermissionsMutations, useGroupPagePermissionsMutations, useGroupMutations, AuthAdminError, } from './hooks/useAuthAdmin';
+export { usePrincipals, createFetchPrincipals, } from './hooks/usePrincipals';
+export { resolveEffectivePermissions, hasPermission, getEffectiveLevel, principalMatches, } from './utils/acl-resolution';
+export { useLocationTypes, useLocationTypeMutations, useLocations, useLocation, useLocationMutations, useDivisions, useDivision, useDivisionMutations, useDepartments, useDepartment, useDepartmentMutations, useUserOrgAssignments, useUserOrgAssignmentMutations, useMyOrgScope, useUserOrgScope, } from './hooks/useOrgDimensions';
 // Navigation config
 export { nav } from './nav';
 // Schema (for projects that need to import the tables directly)
-export * from './schema/index';
+export { locationTypes, locations, divisions, departments, userOrgAssignments, orgEntityScopes, DEFAULT_LOCATION_TYPES, } from './schema/org-dimensions';
 // Note: Server utilities (org-utils, ldd-scoping) are NOT exported here to
 // avoid bundling Node.js-only dependencies (like pg/dns) into client code.
 // Import them directly:

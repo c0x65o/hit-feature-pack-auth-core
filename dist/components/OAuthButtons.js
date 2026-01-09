@@ -1,6 +1,7 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useThemeTokens, styles } from '@hit/ui-kit';
+import { useThemeTokens } from '@hit/ui-kit/theme';
+import { styles } from '@hit/ui-kit/components/utils';
 import { useOAuth } from '../hooks/useAuth';
 const PROVIDERS = {
     google: {

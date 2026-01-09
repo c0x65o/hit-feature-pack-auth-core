@@ -6,4 +6,4 @@
  * This provides backward compatibility for existing imports.
  */
 
-export { FormInput } from '@hit/ui-kit';
+export { FormInput } from '@hit/ui-kit/components/FormInput';
