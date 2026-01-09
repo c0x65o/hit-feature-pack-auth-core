@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Lock,
   Shield,
@@ -107,21 +107,28 @@ function pageGrantCandidates(path: string): string[] {
 }
 
 type ExclusiveActionModeGroup = {
-  groupKey: string; // e.g. "crm.contacts.ldd.read"
+  groupKey: string; // e.g. "crm.read.scope" or "crm.contacts.read.scope"
   label: string; // UI label
   options: Array<{ key: string; value: string; label: string }>;
   precedenceKeys: string[]; // most restrictive -> least restrictive
 };
 
 function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; value: string } | null {
-  const m = String(actionKey || '').match(/^(.*)\.ldd\.read\.(any|members|lead|managers|own)$/);
+  const m = String(actionKey || '').match(
+    /^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(any|own|ldd)$/
+  );
   if (!m) return null;
-  return { groupKey: `${m[1]}.ldd.read`, value: m[2] };
+  return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
 }
 
 function titleFromGroupKey(groupKey: string): string {
   // Keep it simple and readable; prefer explicit known names.
-  if (groupKey === 'crm.contacts.ldd.read') return 'CRM Contacts: LDD Read';
+  if (groupKey === 'crm.read.scope') return 'CRM Read Scope';
+  if (groupKey === 'crm.write.scope') return 'CRM Write Scope';
+  if (groupKey === 'crm.delete.scope') return 'CRM Delete Scope';
+  if (groupKey === 'crm.contacts.read.scope') return 'CRM Contacts Read Scope';
+  if (groupKey === 'crm.contacts.write.scope') return 'CRM Contacts Write Scope';
+  if (groupKey === 'crm.contacts.delete.scope') return 'CRM Contacts Delete Scope';
   return groupKey;
 }
 
@@ -193,6 +200,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Tab state for switching between Pages/Actions and Metrics
   const [activeTab, setActiveTab] = useState<'pages_actions' | 'metrics'>('pages_actions');
   const [metricsSearch, setMetricsSearch] = useState('');
+
+  // Scope tree UI state (Actions)
+  const [expandedScopeNodes, setExpandedScopeNodes] = useState<Set<string>>(new Set());
+
+  // Pending page/action changes (batch editing like Metrics)
+  // Map of key -> desired explicit grant (true=grant, false=revoke)
+  const [pendingPageChanges, setPendingPageChanges] = useState<Map<string, boolean>>(new Map());
+  const [pendingActionChanges, setPendingActionChanges] = useState<Map<string, boolean>>(new Map());
+  const [savingPagesActions, setSavingPagesActions] = useState(false);
 
   // Pending metric changes (batch editing)
   // Map of metricKey -> desired state (true = grant, false = revoke)
@@ -296,6 +312,54 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return m;
   }, [metricGrants]);
 
+  const pendingPageChangeCount = useMemo(() => {
+    let n = 0;
+    for (const [path, desired] of pendingPageChanges.entries()) {
+      const cur = pageGrantSet.has(path);
+      if (cur !== desired) n++;
+    }
+    return n;
+  }, [pendingPageChanges, pageGrantSet]);
+
+  const pendingActionChangeCount = useMemo(() => {
+    let n = 0;
+    for (const [key, desired] of pendingActionChanges.entries()) {
+      const cur = actionGrantSet.has(key);
+      if (cur !== desired) n++;
+    }
+    return n;
+  }, [pendingActionChanges, actionGrantSet]);
+
+  const pendingPagesActionsChangeCount = pendingPageChangeCount + pendingActionChangeCount;
+
+  const isPageExplicitEffective = useCallback((pagePath: string): boolean => {
+    const normalized = normalizePath(pagePath);
+    const pending = pendingPageChanges.get(normalized);
+    if (pending !== undefined) return pending;
+    return pageGrantSet.has(normalized);
+  }, [pendingPageChanges, pageGrantSet]);
+
+  const isActionExplicitEffective = useCallback((actionKey: string): boolean => {
+    const key = String(actionKey || '').trim();
+    const pending = pendingActionChanges.get(key);
+    if (pending !== undefined) return pending;
+    return actionGrantSet.has(key);
+  }, [pendingActionChanges, actionGrantSet]);
+
+  const hasPendingPageChange = useCallback((pagePath: string): boolean => {
+    const normalized = normalizePath(pagePath);
+    const pending = pendingPageChanges.get(normalized);
+    if (pending === undefined) return false;
+    return pageGrantSet.has(normalized) !== pending;
+  }, [pendingPageChanges, pageGrantSet]);
+
+  const hasPendingActionChange = useCallback((actionKey: string): boolean => {
+    const key = String(actionKey || '').trim();
+    const pending = pendingActionChanges.get(key);
+    if (pending === undefined) return false;
+    return actionGrantSet.has(key) !== pending;
+  }, [pendingActionChanges, actionGrantSet]);
+
   // Group pages and actions by feature pack (metrics are separate)
   const packData = useMemo(() => {
     const packs = new Map<string, {
@@ -316,7 +380,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
       // Explicit grants in this permission set (exact/subtree + inherited subtrees)
       for (const c of candidates) {
-        if (pageGrantSet.has(c)) {
+        if (isPageExplicitEffective(c)) {
           effective = true;
           via = c;
           // explicit if it's exactly this node (exact or node subtree), not inherited from ancestor
@@ -341,7 +405,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
       if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [] });
       else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
-      const explicit = actionGrantSet.has(a.key);
+      const explicit = isActionExplicitEffective(a.key);
       const effective = Boolean(explicit);
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
@@ -360,7 +424,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         effectiveActions: data.actions.filter((a) => a.effective).length,
         explicitActions: data.actions.filter((a) => a.explicit).length,
       }));
-  }, [pages, actionCatalog, pageGrantSet, actionGrantSet]);
+  }, [pages, actionCatalog, isPageExplicitEffective, isActionExplicitEffective]);
 
   // Metrics organized by owner type (App vs Feature Pack)
   const metricsData = useMemo(() => {
@@ -508,41 +572,96 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     setExpandedPacks(new Set());
   };
 
-  const togglePageGrant = async (path: string) => {
+  const togglePageGrantLocal = (path: string) => {
     const normalized = normalizePath(path);
-    if (pageGrantSet.has(normalized)) {
-      const gid = pageGrantIdByPath.get(normalized);
-      if (gid) await mutations.removePageGrant(id, gid);
-    } else {
-      await mutations.addPageGrant(id, normalized);
-    }
-    refresh();
+    setPendingPageChanges((prev) => {
+      const next = new Map(prev);
+      const current = pageGrantSet.has(normalized);
+      const pending = next.get(normalized);
+      const effective = pending !== undefined ? pending : current;
+      const desired = !effective;
+      if (desired === current) next.delete(normalized);
+      else next.set(normalized, desired);
+      return next;
+    });
   };
 
-  const toggleActionGrant = async (actionKey: string) => {
-    if (actionGrantSet.has(actionKey)) {
-      const gid = actionGrantIdByKey.get(actionKey);
-      if (gid) await mutations.removeActionGrant(id, gid);
-    } else {
-      await mutations.addActionGrant(id, actionKey);
-    }
-    refresh();
+  const toggleActionGrantLocal = (actionKey: string) => {
+    const key = String(actionKey || '').trim();
+    if (!key) return;
+    setPendingActionChanges((prev) => {
+      const next = new Map(prev);
+      const current = actionGrantSet.has(key);
+      const pending = next.get(key);
+      const effective = pending !== undefined ? pending : current;
+      const desired = !effective;
+      if (desired === current) next.delete(key);
+      else next.set(key, desired);
+      return next;
+    });
   };
 
-  const setExclusiveActionMode = async (group: ExclusiveActionModeGroup, selectedKey: string | null) => {
-    // Remove all other explicit grants in the group. If selectedKey is provided,
-    // ensure it is explicitly granted.
-    for (const k of group.precedenceKeys) {
-      if (k === selectedKey) continue;
-      if (actionGrantSet.has(k)) {
-        const gid = actionGrantIdByKey.get(k);
-        if (gid) await mutations.removeActionGrant(id, gid);
+  const setExclusiveActionModeLocal = (group: ExclusiveActionModeGroup, selectedKey: string | null) => {
+    setPendingActionChanges((prev) => {
+      const next = new Map(prev);
+      for (const k of group.precedenceKeys) {
+        const current = actionGrantSet.has(k);
+        const desired = k === selectedKey;
+        if (desired === current) next.delete(k);
+        else next.set(k, desired);
       }
+      return next;
+    });
+  };
+
+  const discardPagesActionsChanges = () => {
+    setPendingPageChanges(new Map());
+    setPendingActionChanges(new Map());
+  };
+
+  const savePagesActionsChanges = async () => {
+    if (savingPagesActions) return;
+    setSavingPagesActions(true);
+    try {
+      // Pages
+      for (const [path, desired] of pendingPageChanges.entries()) {
+        const current = pageGrantSet.has(path);
+        if (current === desired) continue;
+        if (desired) {
+          await mutations.addPageGrant(id, path);
+        } else {
+          const gid = pageGrantIdByPath.get(path);
+          if (gid) await mutations.removePageGrant(id, gid);
+        }
+      }
+
+      // Actions
+      for (const [key, desired] of pendingActionChanges.entries()) {
+        const current = actionGrantSet.has(key);
+        if (current === desired) continue;
+        if (desired) {
+          await mutations.addActionGrant(id, key);
+        } else {
+          const gid = actionGrantIdByKey.get(key);
+          if (gid) await mutations.removeActionGrant(id, gid);
+        }
+      }
+
+      setPendingPageChanges(new Map());
+      setPendingActionChanges(new Map());
+      refresh();
+    } finally {
+      setSavingPagesActions(false);
     }
-    if (selectedKey && !actionGrantSet.has(selectedKey)) {
-      await mutations.addActionGrant(id, selectedKey);
-    }
-    refresh();
+  };
+
+  const toggleScopeNode = (nodeId: string) => {
+    setExpandedScopeNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
   };
 
   // Toggle metric in local state (batch editing - doesn't save immediately)
@@ -828,7 +947,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             </Alert>
 
             {/* Actions Bar */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
@@ -839,9 +958,28 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <div className="flex items-center gap-2 ml-4">
-                <Button variant="ghost" size="sm" onClick={expandAll}>Expand All</Button>
-                <Button variant="ghost" size="sm" onClick={collapseAll}>Collapse</Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={expandAll} disabled={savingPagesActions || mutations.loading}>Expand All</Button>
+                <Button variant="ghost" size="sm" onClick={collapseAll} disabled={savingPagesActions || mutations.loading}>Collapse</Button>
+                {pendingPagesActionsChangeCount > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+                    <Badge variant="warning" className="text-xs">
+                      {pendingPagesActionsChangeCount} unsaved change{pendingPagesActionsChangeCount !== 1 ? 's' : ''}
+                    </Badge>
+                    <Button variant="ghost" size="sm" onClick={discardPagesActionsChanges} disabled={savingPagesActions}>
+                      Discard
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => savePagesActionsChanges().catch(() => void 0)}
+                      loading={savingPagesActions}
+                    >
+                      <Save size={14} className="mr-1" /> Save
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -936,10 +1074,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   <span className="text-xs text-gray-400">Grant:</span>
                                 <Checkbox
                                   checked={p.explicit}
-                                  onChange={() => togglePageGrant(p.path).catch(() => void 0)}
-                                  disabled={mutations.loading}
+                                  onChange={() => togglePageGrantLocal(p.path)}
+                                  disabled={savingPagesActions || mutations.loading}
                                 />
                                 </div>
+                                {hasPendingPageChange(p.path) ? (
+                                  <Badge variant="warning" className="text-xs">unsaved</Badge>
+                                ) : null}
                               </div>
                             </div>
                           ))}
@@ -959,12 +1100,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           </span>
                         </div>
                         {(() => {
-                          // Build "dropdown" groups for exclusive mode-style action keys like:
-                          //   crm.contacts.ldd.read.{own,managers,lead,members,any}
-                          const grouped = new Map<string, { actions: typeof pack.actions; values: Map<string, ActionCatalogItem & { explicit: boolean; effective: boolean }> }>();
-                          const other: typeof pack.actions = [];
+                          // Build "dropdown" groups for exclusive scope-mode action keys like:
+                          //   crm.read.scope.{own,ldd_manager,ldd_lead,ldd_member,any}
+                          //   crm.contacts.read.scope.{own,ldd_manager,ldd_lead,ldd_member,any}
+                          type ActionRow = ActionCatalogItem & { explicit: boolean; effective: boolean };
+                          type GroupBuild = { actions: ActionRow[]; values: Map<string, ActionRow> };
+                          const grouped = new Map<string, GroupBuild>();
+                          const other: ActionRow[] = [];
 
-                          for (const a of pack.actions) {
+                          for (const a of pack.actions as ActionRow[]) {
                             const parsed = parseExclusiveActionModeGroup(a.key);
                             if (!parsed) {
                               other.push(a);
@@ -979,7 +1123,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
                             // Fixed precedence (most restrictive -> least restrictive)
-                            const precedenceValues = ['own', 'managers', 'lead', 'members', 'any'] as const;
+                            const precedenceValues = ['own', 'ldd', 'any'] as const;
                             const options = precedenceValues
                               .map((v) => {
                                 const item = g.values.get(v);
@@ -1000,61 +1144,211 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             };
                           });
 
-                          // Determine selected key: first explicitly granted in precedence order; otherwise none ("default").
-                          const selectedKeyByGroup = new Map<string, string | null>();
-                          for (const g of groups) {
-                            let selected: string | null = null;
+                          // Determine explicit selection for a group (first explicit in precedence order; otherwise null).
+                          function getExplicitSelectedKey(g: ExclusiveActionModeGroup): string | null {
                             for (const k of g.precedenceKeys) {
-                              if (actionGrantSet.has(k)) {
-                                selected = k;
-                                break;
-                              }
+                              if (actionGrantSet.has(k)) return k;
                             }
-                            selectedKeyByGroup.set(g.groupKey, selected);
+                            return null;
+                          }
+
+                          function optionValueForKey(g: ExclusiveActionModeGroup, key: string | null): string {
+                            if (!key) return '';
+                            const opt = g.options.find((o) => o.key === key);
+                            return opt?.value ?? '';
+                          }
+
+                          function labelForValue(v: string): string {
+                            if (v === 'any') return 'Any';
+                            if (v === 'own') return 'Own';
+                            if (v === 'ldd') return 'LDD';
+                            return v;
+                          }
+
+                          // Build a tree from groupKey:
+                          // groupKey = "<base>.read.scope" where base can be:
+                          // - crm
+                          // - crm.contacts
+                          // - crm.prospects
+                          // Node id will be base (e.g. "crm", "crm.contacts").
+                          type ScopeNode = {
+                            id: string; // base
+                            label: string;
+                            group?: ExclusiveActionModeGroup;
+                            children: ScopeNode[];
+                          };
+
+                          const nodeById = new Map<string, ScopeNode>();
+                          function getOrCreateNode(id: string): ScopeNode {
+                            const existing = nodeById.get(id);
+                            if (existing) return existing;
+                            const seg = id.split('.').slice(-1)[0] || id;
+                            const label = id === 'crm' ? 'CRM' : titleCase(seg);
+                            const node: ScopeNode = { id, label, children: [] };
+                            nodeById.set(id, node);
+                            return node;
+                          }
+
+                          // Attach groups to nodes
+                          for (const g of groups) {
+                            const base = g.groupKey.replace(/\.read\.scope$/, '');
+                            const node = getOrCreateNode(base);
+                            node.group = g;
+                          }
+
+                          // Ensure ancestors exist, and wire parent->child
+                          for (const id of Array.from(nodeById.keys())) {
+                            const parts = id.split('.');
+                            if (parts.length <= 1) continue;
+                            const parentId = parts.slice(0, -1).join('.');
+                            const parent = getOrCreateNode(parentId);
+                            const child = getOrCreateNode(id);
+                            if (!parent.children.some((c) => c.id === child.id)) {
+                              parent.children.push(child);
+                            }
+                          }
+
+                          // Roots are nodes without parents in the node map.
+                          const roots: ScopeNode[] = Array.from(nodeById.values()).filter((n) => {
+                            const parts = n.id.split('.');
+                            if (parts.length <= 1) return true;
+                            const parentId = parts.slice(0, -1).join('.');
+                            return !nodeById.has(parentId);
+                          });
+                          // Sort children for stable UI
+                          for (const n of nodeById.values()) {
+                            n.children.sort((a, b) => a.label.localeCompare(b.label));
+                          }
+                          roots.sort((a, b) => a.label.localeCompare(b.label));
+
+                          // Compute if a node has any explicit override (itself or descendants)
+                          const explicitOverrideCache = new Map<string, boolean>();
+                          function nodeHasExplicitOverride(node: ScopeNode): boolean {
+                            const cached = explicitOverrideCache.get(node.id);
+                            if (cached !== undefined) return cached;
+                            const selfExplicit = node.group ? Boolean(getExplicitSelectedKey(node.group)) : false;
+                            const childExplicit = node.children.some(nodeHasExplicitOverride);
+                            const v = selfExplicit || childExplicit;
+                            explicitOverrideCache.set(node.id, v);
+                            return v;
+                          }
+
+                          // Render
+                          function renderScopeNode(node: ScopeNode, depth: number, inheritedKey: string | null): React.ReactNode {
+                            const group = node.group;
+                            const explicitKey = group ? getExplicitSelectedKey(group) : null;
+                            const effectiveKey = explicitKey || inheritedKey || null;
+                            const effectiveValue = group ? optionValueForKey(group, effectiveKey) : '';
+                            const isExpanded =
+                              depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
+                            const canExpand = node.children.length > 0;
+                            const status: 'override' | 'inherited' | 'default' =
+                              explicitKey ? 'override' : inheritedKey ? 'inherited' : 'default';
+
+                            const rowStyle =
+                              status === 'override'
+                                ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
+                                : status === 'inherited'
+                                ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-900/10'
+                                : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
+
+                            const stripeStyle =
+                              status === 'override'
+                                ? 'bg-blue-500'
+                                : status === 'inherited'
+                                ? 'bg-amber-500'
+                                : 'bg-gray-300 dark:bg-gray-700';
+
+                            const row = (
+                              <div
+                                key={node.id}
+                                className={`flex items-center justify-between gap-4 px-2 py-2 rounded border ${rowStyle}`}
+                                style={{ marginLeft: depth * 16 }}
+                              >
+                                <div className={`w-1 self-stretch rounded ${stripeStyle}`} />
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {canExpand ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleScopeNode(node.id)}
+                                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                                    >
+                                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                    </button>
+                                  ) : (
+                                    <div style={{ width: 16 }} />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
+                                      {group?.label || node.label}
+                                    </div>
+                                    <div className="text-xs text-gray-500 font-mono truncate">
+                                      {group?.groupKey || node.id}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {group ? (
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
+                                      value={explicitKey ? optionValueForKey(group, explicitKey) : ''}
+                                      disabled={savingPagesActions || mutations.loading}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
+                                        setExclusiveActionModeLocal(group, nextKey);
+                                      }}
+                                    >
+                                      <option value="">
+                                        {inheritedKey ? `Inherit (${labelForValue(optionValueForKey(group, inheritedKey))})` : 'Default (server fallback)'}
+                                      </option>
+                                      {group.options.map((o) => (
+                                        <option key={o.key} value={o.value}>
+                                          {labelForValue(o.value)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {explicitKey ? (
+                                      <Badge variant="info" className="text-xs">override</Badge>
+                                    ) : inheritedKey ? (
+                                      <Badge variant="warning" className="text-xs">inherited</Badge>
+                                    ) : (
+                                      <Badge variant="default" className="text-xs">default</Badge>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    {effectiveValue ? (
+                                      <Badge variant="default" className="text-xs">effective: {labelForValue(effectiveValue)}</Badge>
+                                    ) : (
+                                      <Badge variant="default" className="text-xs">no policy</Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+
+                            if (!isExpanded) return row;
+
+                            const nextInheritedKey = group ? (explicitKey || inheritedKey) : inheritedKey;
+                            return (
+                              <React.Fragment key={node.id}>
+                                {row}
+                                {node.children.map((c) => renderScopeNode(c, depth + 1, nextInheritedKey))}
+                              </React.Fragment>
+                            );
                           }
 
                           return (
                             <>
                               {groups.length > 0 && (
                                 <div className="ml-6 mb-3 space-y-2">
-                                  {groups.map((g) => {
-                                    const selectedKey = selectedKeyByGroup.get(g.groupKey) ?? null;
-                                    const selectedValue =
-                                      (selectedKey && g.options.find((o) => o.key === selectedKey)?.value) || '';
-
-                                    return (
-                                      <div key={g.groupKey} className="flex items-center justify-between gap-4 p-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20">
-                                        <div className="min-w-0">
-                                          <div className="text-sm font-medium text-gray-700 dark:text-gray-200">{g.label}</div>
-                                          <div className="text-xs text-gray-500 font-mono truncate">{g.groupKey}</div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <select
-                                            className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
-                                            value={selectedValue}
-                                            disabled={mutations.loading}
-                                            onChange={(e) => {
-                                              const v = e.target.value;
-                                              const nextKey = v ? (g.options.find((o) => o.value === v)?.key ?? null) : null;
-                                              setExclusiveActionMode(g, nextKey).catch(() => void 0);
-                                            }}
-                                          >
-                                            <option value="">Default (server fallback)</option>
-                                            {g.options.map((o) => (
-                                              <option key={o.key} value={o.value}>
-                                                {o.value}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          {selectedKey ? (
-                                            <Badge variant="info" className="text-xs">explicit</Badge>
-                                          ) : (
-                                            <Badge variant="default" className="text-xs">default</Badge>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                  <div className="text-xs text-gray-500">
+                                    Scope Policy Tree (override any branch; collapsed branches inherit from parents)
+                                  </div>
+                                  {roots.map((r) => renderScopeNode(r, 0, null))}
                                 </div>
                               )}
 
@@ -1091,10 +1385,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                     <span className="text-xs text-gray-400">Grant:</span>
                                   <Checkbox
                                     checked={a.explicit}
-                                    onChange={() => toggleActionGrant(a.key).catch(() => void 0)}
-                                    disabled={mutations.loading}
+                                    onChange={() => toggleActionGrantLocal(a.key)}
+                                    disabled={savingPagesActions || mutations.loading}
                                   />
                                   </div>
+                                  {hasPendingActionChange(a.key) ? (
+                                    <Badge variant="warning" className="text-xs">unsaved</Badge>
+                                  ) : null}
                                 </div>
                               </div>
                             );

@@ -1,6 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Lock, Shield, Users, ChevronRight, ChevronDown, Trash2, Edit2, Save, X, Plus, Search, Package, FileText, KeyRound, BarChart3, Crown, UsersRound, UserCheck, } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { usePermissionSet, usePermissionSetMutations, usePermissionActions, useUsers, useGroups, useMetricsCatalog, } from '../hooks/useAuthAdmin';
@@ -49,15 +49,25 @@ function pageGrantCandidates(path) {
     return Array.from(new Set(out));
 }
 function parseExclusiveActionModeGroup(actionKey) {
-    const m = String(actionKey || '').match(/^(.*)\.ldd\.read\.(any|members|lead|managers|own)$/);
+    const m = String(actionKey || '').match(/^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(any|own|ldd)$/);
     if (!m)
         return null;
-    return { groupKey: `${m[1]}.ldd.read`, value: m[2] };
+    return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
 }
 function titleFromGroupKey(groupKey) {
     // Keep it simple and readable; prefer explicit known names.
-    if (groupKey === 'crm.contacts.ldd.read')
-        return 'CRM Contacts: LDD Read';
+    if (groupKey === 'crm.read.scope')
+        return 'CRM Read Scope';
+    if (groupKey === 'crm.write.scope')
+        return 'CRM Write Scope';
+    if (groupKey === 'crm.delete.scope')
+        return 'CRM Delete Scope';
+    if (groupKey === 'crm.contacts.read.scope')
+        return 'CRM Contacts Read Scope';
+    if (groupKey === 'crm.contacts.write.scope')
+        return 'CRM Contacts Write Scope';
+    if (groupKey === 'crm.contacts.delete.scope')
+        return 'CRM Contacts Delete Scope';
     return groupKey;
 }
 async function loadShellPages() {
@@ -117,6 +127,13 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     // Tab state for switching between Pages/Actions and Metrics
     const [activeTab, setActiveTab] = useState('pages_actions');
     const [metricsSearch, setMetricsSearch] = useState('');
+    // Scope tree UI state (Actions)
+    const [expandedScopeNodes, setExpandedScopeNodes] = useState(new Set());
+    // Pending page/action changes (batch editing like Metrics)
+    // Map of key -> desired explicit grant (true=grant, false=revoke)
+    const [pendingPageChanges, setPendingPageChanges] = useState(new Map());
+    const [pendingActionChanges, setPendingActionChanges] = useState(new Map());
+    const [savingPagesActions, setSavingPagesActions] = useState(false);
     // Pending metric changes (batch editing)
     // Map of metricKey -> desired state (true = grant, false = revoke)
     const [pendingMetricChanges, setPendingMetricChanges] = useState(new Map());
@@ -217,6 +234,53 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             m.set(String(g.metric_key), String(g.id));
         return m;
     }, [metricGrants]);
+    const pendingPageChangeCount = useMemo(() => {
+        let n = 0;
+        for (const [path, desired] of pendingPageChanges.entries()) {
+            const cur = pageGrantSet.has(path);
+            if (cur !== desired)
+                n++;
+        }
+        return n;
+    }, [pendingPageChanges, pageGrantSet]);
+    const pendingActionChangeCount = useMemo(() => {
+        let n = 0;
+        for (const [key, desired] of pendingActionChanges.entries()) {
+            const cur = actionGrantSet.has(key);
+            if (cur !== desired)
+                n++;
+        }
+        return n;
+    }, [pendingActionChanges, actionGrantSet]);
+    const pendingPagesActionsChangeCount = pendingPageChangeCount + pendingActionChangeCount;
+    const isPageExplicitEffective = useCallback((pagePath) => {
+        const normalized = normalizePath(pagePath);
+        const pending = pendingPageChanges.get(normalized);
+        if (pending !== undefined)
+            return pending;
+        return pageGrantSet.has(normalized);
+    }, [pendingPageChanges, pageGrantSet]);
+    const isActionExplicitEffective = useCallback((actionKey) => {
+        const key = String(actionKey || '').trim();
+        const pending = pendingActionChanges.get(key);
+        if (pending !== undefined)
+            return pending;
+        return actionGrantSet.has(key);
+    }, [pendingActionChanges, actionGrantSet]);
+    const hasPendingPageChange = useCallback((pagePath) => {
+        const normalized = normalizePath(pagePath);
+        const pending = pendingPageChanges.get(normalized);
+        if (pending === undefined)
+            return false;
+        return pageGrantSet.has(normalized) !== pending;
+    }, [pendingPageChanges, pageGrantSet]);
+    const hasPendingActionChange = useCallback((actionKey) => {
+        const key = String(actionKey || '').trim();
+        const pending = pendingActionChanges.get(key);
+        if (pending === undefined)
+            return false;
+        return actionGrantSet.has(key) !== pending;
+    }, [pendingActionChanges, actionGrantSet]);
     // Group pages and actions by feature pack (metrics are separate)
     const packData = useMemo(() => {
         const packs = new Map();
@@ -233,7 +297,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             let via;
             // Explicit grants in this permission set (exact/subtree + inherited subtrees)
             for (const c of candidates) {
-                if (pageGrantSet.has(c)) {
+                if (isPageExplicitEffective(c)) {
                     effective = true;
                     via = c;
                     // explicit if it's exactly this node (exact or node subtree), not inherited from ancestor
@@ -258,7 +322,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 packs.set(pack, { title: a.pack_title, pages: [], actions: [] });
             else if (!packs.get(pack).title && a.pack_title)
                 packs.get(pack).title = a.pack_title;
-            const explicit = actionGrantSet.has(a.key);
+            const explicit = isActionExplicitEffective(a.key);
             const effective = Boolean(explicit);
             packs.get(pack).actions.push({ ...a, explicit, effective });
         }
@@ -276,7 +340,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             effectiveActions: data.actions.filter((a) => a.effective).length,
             explicitActions: data.actions.filter((a) => a.explicit).length,
         }));
-    }, [pages, actionCatalog, pageGrantSet, actionGrantSet]);
+    }, [pages, actionCatalog, isPageExplicitEffective, isActionExplicitEffective]);
     // Metrics organized by owner type (App vs Feature Pack)
     const metricsData = useMemo(() => {
         const appMetrics = [];
@@ -408,45 +472,106 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     const collapseAll = () => {
         setExpandedPacks(new Set());
     };
-    const togglePageGrant = async (path) => {
+    const togglePageGrantLocal = (path) => {
         const normalized = normalizePath(path);
-        if (pageGrantSet.has(normalized)) {
-            const gid = pageGrantIdByPath.get(normalized);
-            if (gid)
-                await mutations.removePageGrant(id, gid);
-        }
-        else {
-            await mutations.addPageGrant(id, normalized);
-        }
-        refresh();
+        setPendingPageChanges((prev) => {
+            const next = new Map(prev);
+            const current = pageGrantSet.has(normalized);
+            const pending = next.get(normalized);
+            const effective = pending !== undefined ? pending : current;
+            const desired = !effective;
+            if (desired === current)
+                next.delete(normalized);
+            else
+                next.set(normalized, desired);
+            return next;
+        });
     };
-    const toggleActionGrant = async (actionKey) => {
-        if (actionGrantSet.has(actionKey)) {
-            const gid = actionGrantIdByKey.get(actionKey);
-            if (gid)
-                await mutations.removeActionGrant(id, gid);
-        }
-        else {
-            await mutations.addActionGrant(id, actionKey);
-        }
-        refresh();
+    const toggleActionGrantLocal = (actionKey) => {
+        const key = String(actionKey || '').trim();
+        if (!key)
+            return;
+        setPendingActionChanges((prev) => {
+            const next = new Map(prev);
+            const current = actionGrantSet.has(key);
+            const pending = next.get(key);
+            const effective = pending !== undefined ? pending : current;
+            const desired = !effective;
+            if (desired === current)
+                next.delete(key);
+            else
+                next.set(key, desired);
+            return next;
+        });
     };
-    const setExclusiveActionMode = async (group, selectedKey) => {
-        // Remove all other explicit grants in the group. If selectedKey is provided,
-        // ensure it is explicitly granted.
-        for (const k of group.precedenceKeys) {
-            if (k === selectedKey)
-                continue;
-            if (actionGrantSet.has(k)) {
-                const gid = actionGrantIdByKey.get(k);
-                if (gid)
-                    await mutations.removeActionGrant(id, gid);
+    const setExclusiveActionModeLocal = (group, selectedKey) => {
+        setPendingActionChanges((prev) => {
+            const next = new Map(prev);
+            for (const k of group.precedenceKeys) {
+                const current = actionGrantSet.has(k);
+                const desired = k === selectedKey;
+                if (desired === current)
+                    next.delete(k);
+                else
+                    next.set(k, desired);
             }
+            return next;
+        });
+    };
+    const discardPagesActionsChanges = () => {
+        setPendingPageChanges(new Map());
+        setPendingActionChanges(new Map());
+    };
+    const savePagesActionsChanges = async () => {
+        if (savingPagesActions)
+            return;
+        setSavingPagesActions(true);
+        try {
+            // Pages
+            for (const [path, desired] of pendingPageChanges.entries()) {
+                const current = pageGrantSet.has(path);
+                if (current === desired)
+                    continue;
+                if (desired) {
+                    await mutations.addPageGrant(id, path);
+                }
+                else {
+                    const gid = pageGrantIdByPath.get(path);
+                    if (gid)
+                        await mutations.removePageGrant(id, gid);
+                }
+            }
+            // Actions
+            for (const [key, desired] of pendingActionChanges.entries()) {
+                const current = actionGrantSet.has(key);
+                if (current === desired)
+                    continue;
+                if (desired) {
+                    await mutations.addActionGrant(id, key);
+                }
+                else {
+                    const gid = actionGrantIdByKey.get(key);
+                    if (gid)
+                        await mutations.removeActionGrant(id, gid);
+                }
+            }
+            setPendingPageChanges(new Map());
+            setPendingActionChanges(new Map());
+            refresh();
         }
-        if (selectedKey && !actionGrantSet.has(selectedKey)) {
-            await mutations.addActionGrant(id, selectedKey);
+        finally {
+            setSavingPagesActions(false);
         }
-        refresh();
+    };
+    const toggleScopeNode = (nodeId) => {
+        setExpandedScopeNodes((prev) => {
+            const next = new Set(prev);
+            if (next.has(nodeId))
+                next.delete(nodeId);
+            else
+                next.add(nodeId);
+            return next;
+        });
     };
     // Toggle metric in local state (batch editing - doesn't save immediately)
     const toggleMetricLocal = (metricKey) => {
@@ -568,12 +693,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                             const Icon = a.principal_type === 'role' ? Crown : a.principal_type === 'group' ? UsersRound : UserCheck;
                             const variant = a.principal_type === 'role' ? 'info' : a.principal_type === 'group' ? 'warning' : 'success';
                             return (_jsxs("div", { className: "flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border rounded-lg text-sm group", children: [_jsx(Icon, { size: 14, className: "text-gray-500" }), _jsx(Badge, { variant: variant, className: "text-xs", children: a.principal_type }), _jsx("span", { className: "font-medium", children: displayName }), _jsx("button", { onClick: () => handleRemoveAssignment(a.id).catch(() => void 0), className: "opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity", children: _jsx(X, { size: 14 }) })] }, a.id));
-                        }) }))] }), _jsxs(Card, { children: [_jsxs("div", { className: "flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4", children: [_jsxs("button", { className: `flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${activeTab === 'pages_actions' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`, onClick: () => setActiveTab('pages_actions'), children: [_jsx(Package, { size: 16 }), "Pages & Actions"] }), _jsxs("button", { className: `flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${activeTab === 'metrics' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`, onClick: () => setActiveTab('metrics'), children: [_jsx(BarChart3, { size: 16 }), "Metrics", metricsData.grantedCount > 0 && (_jsxs(Badge, { variant: "info", className: "text-xs", children: [metricsData.grantedCount, "/", metricsData.totalCount] }))] })] }), activeTab === 'pages_actions' && (_jsxs(_Fragment, { children: [_jsx(Alert, { variant: "info", className: "mb-4", children: _jsxs("div", { className: "text-sm space-y-1", children: [_jsx("div", { children: _jsx("strong", { children: "Legend:" }) }), _jsxs("div", { className: "flex flex-wrap gap-4 mt-2", children: [_jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-green-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default On" }), " ", _jsx("span", { className: "text-gray-500", children: "- enabled for all users by default" })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-orange-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default Off" }), " ", _jsx("span", { className: "text-gray-500", children: "- requires explicit grant" })] })] }), _jsxs("div", { className: "text-gray-500 text-xs mt-2", children: ["\"Effective\" is read-only (includes inherited subtree grants like ", _jsx("code", { children: "/*" }), "). \"Grant\" toggles the explicit grant from THIS security group."] })] }) }), _jsxs("div", { className: "flex items-center justify-between mb-4", children: [_jsxs("div", { className: "relative flex-1 max-w-md", children: [_jsx(Search, { size: 18, className: "absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" }), _jsx("input", { type: "text", value: search, onChange: (e) => setSearch(e.target.value), placeholder: "Search pages, actions...", className: "w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" })] }), _jsxs("div", { className: "flex items-center gap-2 ml-4", children: [_jsx(Button, { variant: "ghost", size: "sm", onClick: expandAll, children: "Expand All" }), _jsx(Button, { variant: "ghost", size: "sm", onClick: collapseAll, children: "Collapse" })] })] }), _jsxs("div", { className: "space-y-2", children: [filteredPacks.map((pack) => {
+                        }) }))] }), _jsxs(Card, { children: [_jsxs("div", { className: "flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4", children: [_jsxs("button", { className: `flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${activeTab === 'pages_actions' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`, onClick: () => setActiveTab('pages_actions'), children: [_jsx(Package, { size: 16 }), "Pages & Actions"] }), _jsxs("button", { className: `flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${activeTab === 'metrics' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`, onClick: () => setActiveTab('metrics'), children: [_jsx(BarChart3, { size: 16 }), "Metrics", metricsData.grantedCount > 0 && (_jsxs(Badge, { variant: "info", className: "text-xs", children: [metricsData.grantedCount, "/", metricsData.totalCount] }))] })] }), activeTab === 'pages_actions' && (_jsxs(_Fragment, { children: [_jsx(Alert, { variant: "info", className: "mb-4", children: _jsxs("div", { className: "text-sm space-y-1", children: [_jsx("div", { children: _jsx("strong", { children: "Legend:" }) }), _jsxs("div", { className: "flex flex-wrap gap-4 mt-2", children: [_jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-green-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default On" }), " ", _jsx("span", { className: "text-gray-500", children: "- enabled for all users by default" })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-orange-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default Off" }), " ", _jsx("span", { className: "text-gray-500", children: "- requires explicit grant" })] })] }), _jsxs("div", { className: "text-gray-500 text-xs mt-2", children: ["\"Effective\" is read-only (includes inherited subtree grants like ", _jsx("code", { children: "/*" }), "). \"Grant\" toggles the explicit grant from THIS security group."] })] }) }), _jsxs("div", { className: "flex items-center justify-between mb-4 gap-4", children: [_jsxs("div", { className: "relative flex-1 max-w-md", children: [_jsx(Search, { size: 18, className: "absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" }), _jsx("input", { type: "text", value: search, onChange: (e) => setSearch(e.target.value), placeholder: "Search pages, actions...", className: "w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Button, { variant: "ghost", size: "sm", onClick: expandAll, disabled: savingPagesActions || mutations.loading, children: "Expand All" }), _jsx(Button, { variant: "ghost", size: "sm", onClick: collapseAll, disabled: savingPagesActions || mutations.loading, children: "Collapse" }), pendingPagesActionsChangeCount > 0 && (_jsxs(_Fragment, { children: [_jsx("div", { className: "h-4 w-px bg-gray-300 dark:bg-gray-600" }), _jsxs(Badge, { variant: "warning", className: "text-xs", children: [pendingPagesActionsChangeCount, " unsaved change", pendingPagesActionsChangeCount !== 1 ? 's' : ''] }), _jsx(Button, { variant: "ghost", size: "sm", onClick: discardPagesActionsChanges, disabled: savingPagesActions, children: "Discard" }), _jsxs(Button, { variant: "primary", size: "sm", onClick: () => savePagesActionsChanges().catch(() => void 0), loading: savingPagesActions, children: [_jsx(Save, { size: 14, className: "mr-1" }), " Save"] })] }))] })] }), _jsxs("div", { className: "space-y-2", children: [filteredPacks.map((pack) => {
                                         const isExpanded = expandedPacks.has(pack.name);
                                         const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0;
-                                        return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [pack.pageCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(FileText, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectivePages > 0 ? 'text-blue-600 font-medium' : 'text-gray-500', children: [pack.effectivePages, "/", pack.pageCount] }), pack.explicitPages > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitPages, " explicit)"] })) : null] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500', children: [pack.effectiveActions, "/", pack.actionCount] }), pack.explicitActions > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitActions, " explicit)"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.pages.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(FileText, { size: 16, className: "text-blue-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Pages" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.pages.filter(p => p.default_enabled).length, " default-on,", ' ', pack.pages.filter(p => !p.default_enabled).length, " default-off)"] })] }), _jsx("div", { className: "space-y-1 ml-6", children: pack.pages.map((p) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [_jsx("span", { className: "font-medium text-sm truncate", children: p.label }), _jsx("span", { className: "text-xs text-gray-500 truncate", children: p.path }), p.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" })), p.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "explicit" })) : (p.effective && p.via && p.via !== 'default') ? (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["via ", p.via] })) : null] }), _jsxs("div", { className: "flex items-center gap-4", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Effective:" }), _jsx(Checkbox, { checked: Boolean(p.effective), disabled: true, onChange: () => void 0 })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Grant:" }), _jsx(Checkbox, { checked: p.explicit, onChange: () => togglePageGrant(p.path).catch(() => void 0), disabled: mutations.loading })] })] })] }, p.path))) })] })), pack.actions.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(KeyRound, { size: 16, className: "text-green-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Actions" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.actions.filter(a => a.default_enabled).length, " default-on,", ' ', pack.actions.filter(a => !a.default_enabled).length, " default-off)"] })] }), (() => {
-                                                                    // Build "dropdown" groups for exclusive mode-style action keys like:
-                                                                    //   crm.contacts.ldd.read.{own,managers,lead,members,any}
+                                        return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [pack.pageCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(FileText, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectivePages > 0 ? 'text-blue-600 font-medium' : 'text-gray-500', children: [pack.effectivePages, "/", pack.pageCount] }), pack.explicitPages > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitPages, " explicit)"] })) : null] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500', children: [pack.effectiveActions, "/", pack.actionCount] }), pack.explicitActions > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitActions, " explicit)"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.pages.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(FileText, { size: 16, className: "text-blue-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Pages" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.pages.filter(p => p.default_enabled).length, " default-on,", ' ', pack.pages.filter(p => !p.default_enabled).length, " default-off)"] })] }), _jsx("div", { className: "space-y-1 ml-6", children: pack.pages.map((p) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [_jsx("span", { className: "font-medium text-sm truncate", children: p.label }), _jsx("span", { className: "text-xs text-gray-500 truncate", children: p.path }), p.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" })), p.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "explicit" })) : (p.effective && p.via && p.via !== 'default') ? (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["via ", p.via] })) : null] }), _jsxs("div", { className: "flex items-center gap-4", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Effective:" }), _jsx(Checkbox, { checked: Boolean(p.effective), disabled: true, onChange: () => void 0 })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Grant:" }), _jsx(Checkbox, { checked: p.explicit, onChange: () => togglePageGrantLocal(p.path), disabled: savingPagesActions || mutations.loading })] }), hasPendingPageChange(p.path) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, p.path))) })] })), pack.actions.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(KeyRound, { size: 16, className: "text-green-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Actions" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.actions.filter(a => a.default_enabled).length, " default-on,", ' ', pack.actions.filter(a => !a.default_enabled).length, " default-off)"] })] }), (() => {
                                                                     const grouped = new Map();
                                                                     const other = [];
                                                                     for (const a of pack.actions) {
@@ -590,7 +713,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                     }
                                                                     const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
                                                                         // Fixed precedence (most restrictive -> least restrictive)
-                                                                        const precedenceValues = ['own', 'managers', 'lead', 'members', 'any'];
+                                                                        const precedenceValues = ['own', 'ldd', 'any'];
                                                                         const options = precedenceValues
                                                                             .map((v) => {
                                                                             const item = g.values.get(v);
@@ -609,32 +732,118 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                             precedenceKeys,
                                                                         };
                                                                     });
-                                                                    // Determine selected key: first explicitly granted in precedence order; otherwise none ("default").
-                                                                    const selectedKeyByGroup = new Map();
-                                                                    for (const g of groups) {
-                                                                        let selected = null;
+                                                                    // Determine explicit selection for a group (first explicit in precedence order; otherwise null).
+                                                                    function getExplicitSelectedKey(g) {
                                                                         for (const k of g.precedenceKeys) {
-                                                                            if (actionGrantSet.has(k)) {
-                                                                                selected = k;
-                                                                                break;
-                                                                            }
+                                                                            if (actionGrantSet.has(k))
+                                                                                return k;
                                                                         }
-                                                                        selectedKeyByGroup.set(g.groupKey, selected);
+                                                                        return null;
                                                                     }
-                                                                    return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsx("div", { className: "ml-6 mb-3 space-y-2", children: groups.map((g) => {
-                                                                                    const selectedKey = selectedKeyByGroup.get(g.groupKey) ?? null;
-                                                                                    const selectedValue = (selectedKey && g.options.find((o) => o.key === selectedKey)?.value) || '';
-                                                                                    return (_jsxs("div", { className: "flex items-center justify-between gap-4 p-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-medium text-gray-700 dark:text-gray-200", children: g.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: g.groupKey })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900", value: selectedValue, disabled: mutations.loading, onChange: (e) => {
-                                                                                                            const v = e.target.value;
-                                                                                                            const nextKey = v ? (g.options.find((o) => o.value === v)?.key ?? null) : null;
-                                                                                                            setExclusiveActionMode(g, nextKey).catch(() => void 0);
-                                                                                                        }, children: [_jsx("option", { value: "", children: "Default (server fallback)" }), g.options.map((o) => (_jsx("option", { value: o.value, children: o.value }, o.key)))] }), selectedKey ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "explicit" })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "default" }))] })] }, g.groupKey));
-                                                                                }) })), _jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
+                                                                    function optionValueForKey(g, key) {
+                                                                        if (!key)
+                                                                            return '';
+                                                                        const opt = g.options.find((o) => o.key === key);
+                                                                        return opt?.value ?? '';
+                                                                    }
+                                                                    function labelForValue(v) {
+                                                                        if (v === 'any')
+                                                                            return 'Any';
+                                                                        if (v === 'own')
+                                                                            return 'Own';
+                                                                        if (v === 'ldd')
+                                                                            return 'LDD';
+                                                                        return v;
+                                                                    }
+                                                                    const nodeById = new Map();
+                                                                    function getOrCreateNode(id) {
+                                                                        const existing = nodeById.get(id);
+                                                                        if (existing)
+                                                                            return existing;
+                                                                        const seg = id.split('.').slice(-1)[0] || id;
+                                                                        const label = id === 'crm' ? 'CRM' : titleCase(seg);
+                                                                        const node = { id, label, children: [] };
+                                                                        nodeById.set(id, node);
+                                                                        return node;
+                                                                    }
+                                                                    // Attach groups to nodes
+                                                                    for (const g of groups) {
+                                                                        const base = g.groupKey.replace(/\.read\.scope$/, '');
+                                                                        const node = getOrCreateNode(base);
+                                                                        node.group = g;
+                                                                    }
+                                                                    // Ensure ancestors exist, and wire parent->child
+                                                                    for (const id of Array.from(nodeById.keys())) {
+                                                                        const parts = id.split('.');
+                                                                        if (parts.length <= 1)
+                                                                            continue;
+                                                                        const parentId = parts.slice(0, -1).join('.');
+                                                                        const parent = getOrCreateNode(parentId);
+                                                                        const child = getOrCreateNode(id);
+                                                                        if (!parent.children.some((c) => c.id === child.id)) {
+                                                                            parent.children.push(child);
+                                                                        }
+                                                                    }
+                                                                    // Roots are nodes without parents in the node map.
+                                                                    const roots = Array.from(nodeById.values()).filter((n) => {
+                                                                        const parts = n.id.split('.');
+                                                                        if (parts.length <= 1)
+                                                                            return true;
+                                                                        const parentId = parts.slice(0, -1).join('.');
+                                                                        return !nodeById.has(parentId);
+                                                                    });
+                                                                    // Sort children for stable UI
+                                                                    for (const n of nodeById.values()) {
+                                                                        n.children.sort((a, b) => a.label.localeCompare(b.label));
+                                                                    }
+                                                                    roots.sort((a, b) => a.label.localeCompare(b.label));
+                                                                    // Compute if a node has any explicit override (itself or descendants)
+                                                                    const explicitOverrideCache = new Map();
+                                                                    function nodeHasExplicitOverride(node) {
+                                                                        const cached = explicitOverrideCache.get(node.id);
+                                                                        if (cached !== undefined)
+                                                                            return cached;
+                                                                        const selfExplicit = node.group ? Boolean(getExplicitSelectedKey(node.group)) : false;
+                                                                        const childExplicit = node.children.some(nodeHasExplicitOverride);
+                                                                        const v = selfExplicit || childExplicit;
+                                                                        explicitOverrideCache.set(node.id, v);
+                                                                        return v;
+                                                                    }
+                                                                    // Render
+                                                                    function renderScopeNode(node, depth, inheritedKey) {
+                                                                        const group = node.group;
+                                                                        const explicitKey = group ? getExplicitSelectedKey(group) : null;
+                                                                        const effectiveKey = explicitKey || inheritedKey || null;
+                                                                        const effectiveValue = group ? optionValueForKey(group, effectiveKey) : '';
+                                                                        const isExpanded = depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
+                                                                        const canExpand = node.children.length > 0;
+                                                                        const status = explicitKey ? 'override' : inheritedKey ? 'inherited' : 'default';
+                                                                        const rowStyle = status === 'override'
+                                                                            ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
+                                                                            : status === 'inherited'
+                                                                                ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-900/10'
+                                                                                : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
+                                                                        const stripeStyle = status === 'override'
+                                                                            ? 'bg-blue-500'
+                                                                            : status === 'inherited'
+                                                                                ? 'bg-amber-500'
+                                                                                : 'bg-gray-300 dark:bg-gray-700';
+                                                                        const row = (_jsxs("div", { className: `flex items-center justify-between gap-4 px-2 py-2 rounded border ${rowStyle}`, style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: `w-1 self-stretch rounded ${stripeStyle}` }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { style: { width: 16 } })), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-medium text-gray-700 dark:text-gray-200 truncate", children: group?.label || node.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: group?.groupKey || node.id })] })] }), group ? (_jsxs("div", { className: "flex items-center gap-2", children: [_jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900", value: explicitKey ? optionValueForKey(group, explicitKey) : '', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
+                                                                                                const v = e.target.value;
+                                                                                                const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
+                                                                                                setExclusiveActionModeLocal(group, nextKey);
+                                                                                            }, children: [_jsx("option", { value: "", children: inheritedKey ? `Inherit (${labelForValue(optionValueForKey(group, inheritedKey))})` : 'Default (server fallback)' }), group.options.map((o) => (_jsx("option", { value: o.value, children: labelForValue(o.value) }, o.key)))] }), explicitKey ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : inheritedKey ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "default" }))] })) : (_jsx("div", { className: "flex items-center gap-2", children: effectiveValue ? (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["effective: ", labelForValue(effectiveValue)] })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "no policy" })) }))] }, node.id));
+                                                                        if (!isExpanded)
+                                                                            return row;
+                                                                        const nextInheritedKey = group ? (explicitKey || inheritedKey) : inheritedKey;
+                                                                        return (_jsxs(React.Fragment, { children: [row, node.children.map((c) => renderScopeNode(c, depth + 1, nextInheritedKey))] }, node.id));
+                                                                    }
+                                                                    return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-3 space-y-2", children: [_jsx("div", { className: "text-xs text-gray-500", children: "Scope Policy Tree (override any branch; collapsed branches inherit from parents)" }), roots.map((r) => renderScopeNode(r, 0, null))] })), _jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
                                                                                     return (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
                                                                                             ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
                                                                                             : a.default_enabled
                                                                                                 ? 'bg-green-50/30 dark:bg-green-900/5'
-                                                                                                : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : a.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "granted" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" }))] }), _jsxs("div", { className: "flex items-center gap-4", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Effective:" }), _jsx(Checkbox, { checked: Boolean(a.effective), disabled: true, onChange: () => void 0 })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Grant:" }), _jsx(Checkbox, { checked: a.explicit, onChange: () => toggleActionGrant(a.key).catch(() => void 0), disabled: mutations.loading })] })] })] }, a.key));
+                                                                                                : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : a.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "granted" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" }))] }), _jsxs("div", { className: "flex items-center gap-4", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Effective:" }), _jsx(Checkbox, { checked: Boolean(a.effective), disabled: true, onChange: () => void 0 })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Grant:" }), _jsx(Checkbox, { checked: a.explicit, onChange: () => toggleActionGrantLocal(a.key), disabled: savingPagesActions || mutations.loading })] }), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key));
                                                                                 }) })] }));
                                                                 })()] })), pack.pages.length === 0 && pack.actions.length === 0 && (_jsx("div", { className: "p-4 text-sm text-gray-500", children: "No items in this pack" }))] }))] }, pack.name));
                                     }), filteredPacks.length === 0 && (_jsx("div", { className: "py-12 text-center text-gray-500", children: search ? 'No matching items' : 'No feature packs found' }))] })] })), activeTab === 'metrics' && (_jsxs(_Fragment, { children: [_jsx(Alert, { variant: "info", className: "mb-4", children: _jsxs("div", { className: "text-sm", children: [_jsx("strong", { children: "All metrics are default-deny." }), " Toggle checkboxes to select which metrics this security group can access, then click Save.", _jsxs("div", { className: "text-gray-500 text-xs mt-1", children: ["Tip: the built-in ", _jsx("strong", { children: "System Admin" }), " security group has access to all metrics by default."] })] }) }), _jsxs("div", { className: "flex items-center justify-between mb-4 gap-4", children: [_jsxs("div", { className: "relative flex-1 max-w-md", children: [_jsx(Search, { size: 18, className: "absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" }), _jsx("input", { type: "text", value: metricsSearch, onChange: (e) => setMetricsSearch(e.target.value), placeholder: "Search metrics...", className: "w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Button, { variant: "ghost", size: "sm", onClick: enableAllMetrics, disabled: savingMetrics, children: "Enable All" }), _jsx(Button, { variant: "ghost", size: "sm", onClick: disableAllMetrics, disabled: savingMetrics, children: "Disable All" }), pendingMetricChangeCount > 0 && (_jsxs(_Fragment, { children: [_jsx("div", { className: "h-4 w-px bg-gray-300 dark:bg-gray-600" }), _jsxs(Badge, { variant: "warning", className: "text-xs", children: [pendingMetricChangeCount, " unsaved change", pendingMetricChangeCount !== 1 ? 's' : ''] }), _jsx(Button, { variant: "ghost", size: "sm", onClick: discardMetricChanges, disabled: savingMetrics, children: "Discard" }), _jsxs(Button, { variant: "primary", size: "sm", onClick: () => saveMetricChanges().catch(() => void 0), loading: savingMetrics, children: [_jsx(Save, { size: 14, className: "mr-1" }), " Save"] })] }))] })] }), filteredMetricsData.appMetrics.length > 0 && (_jsxs("div", { className: "mb-6", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(BarChart3, { size: 18, className: "text-orange-500" }), _jsx("h4", { className: "font-semibold", children: "App Metrics" }), _jsxs(Badge, { variant: "default", className: "text-xs", children: [metricsData.appMetrics.filter((m) => m.checked).length, "/", metricsData.appMetrics.length, " selected"] })] }), _jsx("div", { className: "space-y-1 border rounded-lg p-3", children: filteredMetricsData.appMetrics.map((m) => (_jsxs("div", { className: `flex items-center justify-between py-2 px-3 rounded ${m.hasPendingChange
