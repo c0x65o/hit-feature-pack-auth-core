@@ -1167,50 +1167,82 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
 
                           // Build a tree from groupKey:
-                          // groupKey = "<base>.read.scope" where base can be:
-                          // - crm
-                          // - crm.contacts
-                          // - crm.prospects
-                          // Node id will be base (e.g. "crm", "crm.contacts").
+                          // groupKey patterns:
+                          //   - crm.{read|write|delete}.scope
+                          //   - crm.<entity>.{read|write|delete}.scope
+                          //
+                          // UI tree layout:
+                          //   CRM
+                          //     Read/Write/Delete Scope            (global defaults)
+                          //     Contacts / Prospects / ...         (entity nodes)
+                          //       Read/Write/Delete Scope          (overrides, inherit from parent verb)
+                          type ScopeVerb = 'read' | 'write' | 'delete';
+                          type ScopeModeValue = 'own' | 'ldd' | 'any';
+                          type InheritedByVerb = Record<ScopeVerb, ScopeModeValue | null>;
+
                           type ScopeNode = {
-                            id: string; // base
+                            id: string; // stable node id
+                            kind: 'base' | 'verb';
+                            verb?: ScopeVerb;
                             label: string;
-                            group?: ExclusiveActionModeGroup;
+                            group?: ExclusiveActionModeGroup; // only for verb nodes (dropdown)
                             children: ScopeNode[];
                           };
 
                           const nodeById = new Map<string, ScopeNode>();
-                          function getOrCreateNode(id: string): ScopeNode {
+                          function getOrCreateNode(id: string, kind: 'base' | 'verb' = 'base', verb?: ScopeVerb): ScopeNode {
                             const existing = nodeById.get(id);
                             if (existing) return existing;
                             const seg = id.split('.').slice(-1)[0] || id;
                             const label = id === 'crm' ? 'CRM' : titleCase(seg);
-                            const node: ScopeNode = { id, label, children: [] };
+                            const node: ScopeNode = { id, kind, verb, label, children: [] };
                             nodeById.set(id, node);
                             return node;
                           }
 
-                          // Attach groups to nodes
-                          for (const g of groups) {
-                            const base = g.groupKey.replace(/\.read\.scope$/, '');
-                            const node = getOrCreateNode(base);
-                            node.group = g;
+                          function splitGroupKey(groupKey: string): { base: string; verb: 'read' | 'write' | 'delete' } | null {
+                            const m = groupKey.match(/^(.*)\.(read|write|delete)\.scope$/);
+                            if (!m) return null;
+                            return { base: m[1], verb: m[2] as any };
                           }
 
-                          // Ensure ancestors exist, and wire parent->child
+                          function verbLabel(v: ScopeVerb): string {
+                            if (v === 'read') return 'Read Scope';
+                            if (v === 'write') return 'Write Scope';
+                            return 'Delete Scope';
+                          }
+
+                          // Attach groups to nodes (verb becomes a child node under its base)
+                          for (const g of groups) {
+                            const parts = splitGroupKey(g.groupKey);
+                            if (!parts) continue;
+                            const baseNode = getOrCreateNode(parts.base, 'base');
+                            const verbNodeId = `${parts.base}.${parts.verb}`;
+                            const verbNode = getOrCreateNode(verbNodeId, 'verb', parts.verb);
+                            verbNode.label = verbLabel(parts.verb);
+                            verbNode.group = g;
+                            if (!baseNode.children.some((c) => c.id === verbNode.id)) {
+                              baseNode.children.push(verbNode);
+                            }
+                          }
+
+                          // Ensure ancestors exist, and wire parent->child for base nodes only.
+                          // Skip verb nodes (they were already attached under their base).
                           for (const id of Array.from(nodeById.keys())) {
+                            if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete')) continue;
                             const parts = id.split('.');
                             if (parts.length <= 1) continue;
                             const parentId = parts.slice(0, -1).join('.');
-                            const parent = getOrCreateNode(parentId);
-                            const child = getOrCreateNode(id);
+                            const parent = getOrCreateNode(parentId, 'base');
+                            const child = getOrCreateNode(id, 'base');
                             if (!parent.children.some((c) => c.id === child.id)) {
                               parent.children.push(child);
                             }
                           }
 
-                          // Roots are nodes without parents in the node map.
+                          // Roots are base nodes without parents in the node map.
                           const roots: ScopeNode[] = Array.from(nodeById.values()).filter((n) => {
+                            if (n.kind !== 'base') return false;
                             const parts = n.id.split('.');
                             if (parts.length <= 1) return true;
                             const parentId = parts.slice(0, -1).join('.');
@@ -1218,7 +1250,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           });
                           // Sort children for stable UI
                           for (const n of nodeById.values()) {
-                            n.children.sort((a, b) => a.label.localeCompare(b.label));
+                            n.children.sort((a, b) => {
+                              // Verb nodes first (read/write/delete), then base nodes alpha.
+                              if (a.kind === 'verb' && b.kind === 'verb') {
+                                const order: Record<ScopeVerb, number> = { read: 0, write: 1, delete: 2 };
+                                return order[a.verb as ScopeVerb] - order[b.verb as ScopeVerb];
+                              }
+                              if (a.kind === 'verb') return -1;
+                              if (b.kind === 'verb') return 1;
+                              return a.label.localeCompare(b.label);
+                            });
                           }
                           roots.sort((a, b) => a.label.localeCompare(b.label));
 
@@ -1235,16 +1276,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
 
                           // Render
-                          function renderScopeNode(node: ScopeNode, depth: number, inheritedKey: string | null): React.ReactNode {
-                            const group = node.group;
-                            const explicitKey = group ? getExplicitSelectedKey(group) : null;
-                            const effectiveKey = explicitKey || inheritedKey || null;
-                            const effectiveValue = group ? optionValueForKey(group, effectiveKey) : '';
-                            const isExpanded =
-                              depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
-                            const canExpand = node.children.length > 0;
+                          function renderVerbNode(node: ScopeNode, depth: number, inheritedMode: ScopeModeValue | null): React.ReactNode {
+                            const group = node.group!;
+                            const explicitKey = getExplicitSelectedKey(group);
+                            const explicitValue = explicitKey ? (optionValueForKey(group, explicitKey) as ScopeModeValue) : null;
                             const status: 'override' | 'inherited' | 'default' =
-                              explicitKey ? 'override' : inheritedKey ? 'inherited' : 'default';
+                              explicitValue ? 'override' : inheritedMode ? 'inherited' : 'default';
 
                             const rowStyle =
                               status === 'override'
@@ -1268,6 +1305,64 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               >
                                 <div className={`w-1 self-stretch rounded ${stripeStyle}`} />
                                 <div className="flex items-center gap-2 min-w-0">
+                                  <div style={{ width: 16 }} />
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
+                                      {group.label}
+                                    </div>
+                                    <div className="text-xs text-gray-500 font-mono truncate">
+                                      {group.groupKey}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
+                                    value={explicitValue ?? ''}
+                                    disabled={savingPagesActions || mutations.loading}
+                                    onChange={(e) => {
+                                      const v = e.target.value as ScopeModeValue | '';
+                                      const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
+                                      setExclusiveActionModeLocal(group, nextKey);
+                                    }}
+                                  >
+                                    <option value="">
+                                      {inheritedMode ? `Inherit (${labelForValue(inheritedMode)})` : 'Default (server fallback)'}
+                                    </option>
+                                    {group.options.map((o) => (
+                                      <option key={o.key} value={o.value}>
+                                        {labelForValue(o.value)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {explicitValue ? (
+                                    <Badge variant="info" className="text-xs">override</Badge>
+                                  ) : inheritedMode ? (
+                                    <Badge variant="warning" className="text-xs">inherited</Badge>
+                                  ) : (
+                                    <Badge variant="default" className="text-xs">default</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            );
+
+                            return row;
+                          }
+
+                          function renderBaseNode(node: ScopeNode, depth: number, inherited: InheritedByVerb): React.ReactNode {
+                            const isExpanded =
+                              depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
+                            const canExpand = node.children.length > 0;
+
+                            const row = (
+                              <div
+                                key={node.id}
+                                className="flex items-center justify-between gap-4 px-2 py-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/20 dark:bg-gray-900/10"
+                                style={{ marginLeft: depth * 16 }}
+                              >
+                                <div className="w-1 self-stretch rounded bg-gray-200 dark:bg-gray-800" />
+                                <div className="flex items-center gap-2 min-w-0">
                                   {canExpand ? (
                                     <button
                                       type="button"
@@ -1281,63 +1376,39 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                     <div style={{ width: 16 }} />
                                   )}
                                   <div className="min-w-0">
-                                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
-                                      {group?.label || node.label}
+                                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">
+                                      {node.label}
                                     </div>
                                     <div className="text-xs text-gray-500 font-mono truncate">
-                                      {group?.groupKey || node.id}
+                                      {node.id}
                                     </div>
                                   </div>
                                 </div>
-
-                                {group ? (
-                                  <div className="flex items-center gap-2">
-                                    <select
-                                      className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
-                                      value={explicitKey ? optionValueForKey(group, explicitKey) : ''}
-                                      disabled={savingPagesActions || mutations.loading}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
-                                        setExclusiveActionModeLocal(group, nextKey);
-                                      }}
-                                    >
-                                      <option value="">
-                                        {inheritedKey ? `Inherit (${labelForValue(optionValueForKey(group, inheritedKey))})` : 'Default (server fallback)'}
-                                      </option>
-                                      {group.options.map((o) => (
-                                        <option key={o.key} value={o.value}>
-                                          {labelForValue(o.value)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    {explicitKey ? (
-                                      <Badge variant="info" className="text-xs">override</Badge>
-                                    ) : inheritedKey ? (
-                                      <Badge variant="warning" className="text-xs">inherited</Badge>
-                                    ) : (
-                                      <Badge variant="default" className="text-xs">default</Badge>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-2">
-                                    {effectiveValue ? (
-                                      <Badge variant="default" className="text-xs">effective: {labelForValue(effectiveValue)}</Badge>
-                                    ) : (
-                                      <Badge variant="default" className="text-xs">no policy</Badge>
-                                    )}
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="default" className="text-xs">defaults + overrides</Badge>
+                                </div>
                               </div>
                             );
 
                             if (!isExpanded) return row;
 
-                            const nextInheritedKey = group ? (explicitKey || inheritedKey) : inheritedKey;
+                            // Update inherited modes for children based on this base's verb nodes.
+                            const nextInherited: InheritedByVerb = { ...inherited };
+                            for (const c of node.children) {
+                              if (c.kind !== 'verb' || !c.group || !c.verb) continue;
+                              const explicitKey = getExplicitSelectedKey(c.group);
+                              const explicitValue = explicitKey ? (optionValueForKey(c.group, explicitKey) as ScopeModeValue) : null;
+                              nextInherited[c.verb] = explicitValue ?? inherited[c.verb] ?? null;
+                            }
+
+                            const verbChildren = node.children.filter((c) => c.kind === 'verb');
+                            const baseChildren = node.children.filter((c) => c.kind === 'base');
+
                             return (
                               <React.Fragment key={node.id}>
                                 {row}
-                                {node.children.map((c) => renderScopeNode(c, depth + 1, nextInheritedKey))}
+                                {verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb as ScopeVerb] ?? null))}
+                                {baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))}
                               </React.Fragment>
                             );
                           }
@@ -1349,7 +1420,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   <div className="text-xs text-gray-500">
                                     Scope Policy Tree (override any branch; collapsed branches inherit from parents)
                                   </div>
-                                  {roots.map((r) => renderScopeNode(r, 0, null))}
+                                  {roots.map((r) =>
+                                    renderBaseNode(r, 0, { read: null, write: null, delete: null })
+                                  )}
                                 </div>
                               )}
 

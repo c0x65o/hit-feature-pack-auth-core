@@ -756,36 +756,62 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                         return v;
                                                                     }
                                                                     const nodeById = new Map();
-                                                                    function getOrCreateNode(id) {
+                                                                    function getOrCreateNode(id, kind = 'base', verb) {
                                                                         const existing = nodeById.get(id);
                                                                         if (existing)
                                                                             return existing;
                                                                         const seg = id.split('.').slice(-1)[0] || id;
                                                                         const label = id === 'crm' ? 'CRM' : titleCase(seg);
-                                                                        const node = { id, label, children: [] };
+                                                                        const node = { id, kind, verb, label, children: [] };
                                                                         nodeById.set(id, node);
                                                                         return node;
                                                                     }
-                                                                    // Attach groups to nodes
-                                                                    for (const g of groups) {
-                                                                        const base = g.groupKey.replace(/\.read\.scope$/, '');
-                                                                        const node = getOrCreateNode(base);
-                                                                        node.group = g;
+                                                                    function splitGroupKey(groupKey) {
+                                                                        const m = groupKey.match(/^(.*)\.(read|write|delete)\.scope$/);
+                                                                        if (!m)
+                                                                            return null;
+                                                                        return { base: m[1], verb: m[2] };
                                                                     }
-                                                                    // Ensure ancestors exist, and wire parent->child
+                                                                    function verbLabel(v) {
+                                                                        if (v === 'read')
+                                                                            return 'Read Scope';
+                                                                        if (v === 'write')
+                                                                            return 'Write Scope';
+                                                                        return 'Delete Scope';
+                                                                    }
+                                                                    // Attach groups to nodes (verb becomes a child node under its base)
+                                                                    for (const g of groups) {
+                                                                        const parts = splitGroupKey(g.groupKey);
+                                                                        if (!parts)
+                                                                            continue;
+                                                                        const baseNode = getOrCreateNode(parts.base, 'base');
+                                                                        const verbNodeId = `${parts.base}.${parts.verb}`;
+                                                                        const verbNode = getOrCreateNode(verbNodeId, 'verb', parts.verb);
+                                                                        verbNode.label = verbLabel(parts.verb);
+                                                                        verbNode.group = g;
+                                                                        if (!baseNode.children.some((c) => c.id === verbNode.id)) {
+                                                                            baseNode.children.push(verbNode);
+                                                                        }
+                                                                    }
+                                                                    // Ensure ancestors exist, and wire parent->child for base nodes only.
+                                                                    // Skip verb nodes (they were already attached under their base).
                                                                     for (const id of Array.from(nodeById.keys())) {
+                                                                        if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete'))
+                                                                            continue;
                                                                         const parts = id.split('.');
                                                                         if (parts.length <= 1)
                                                                             continue;
                                                                         const parentId = parts.slice(0, -1).join('.');
-                                                                        const parent = getOrCreateNode(parentId);
-                                                                        const child = getOrCreateNode(id);
+                                                                        const parent = getOrCreateNode(parentId, 'base');
+                                                                        const child = getOrCreateNode(id, 'base');
                                                                         if (!parent.children.some((c) => c.id === child.id)) {
                                                                             parent.children.push(child);
                                                                         }
                                                                     }
-                                                                    // Roots are nodes without parents in the node map.
+                                                                    // Roots are base nodes without parents in the node map.
                                                                     const roots = Array.from(nodeById.values()).filter((n) => {
+                                                                        if (n.kind !== 'base')
+                                                                            return false;
                                                                         const parts = n.id.split('.');
                                                                         if (parts.length <= 1)
                                                                             return true;
@@ -794,7 +820,18 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                     });
                                                                     // Sort children for stable UI
                                                                     for (const n of nodeById.values()) {
-                                                                        n.children.sort((a, b) => a.label.localeCompare(b.label));
+                                                                        n.children.sort((a, b) => {
+                                                                            // Verb nodes first (read/write/delete), then base nodes alpha.
+                                                                            if (a.kind === 'verb' && b.kind === 'verb') {
+                                                                                const order = { read: 0, write: 1, delete: 2 };
+                                                                                return order[a.verb] - order[b.verb];
+                                                                            }
+                                                                            if (a.kind === 'verb')
+                                                                                return -1;
+                                                                            if (b.kind === 'verb')
+                                                                                return 1;
+                                                                            return a.label.localeCompare(b.label);
+                                                                        });
                                                                     }
                                                                     roots.sort((a, b) => a.label.localeCompare(b.label));
                                                                     // Compute if a node has any explicit override (itself or descendants)
@@ -810,14 +847,11 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                         return v;
                                                                     }
                                                                     // Render
-                                                                    function renderScopeNode(node, depth, inheritedKey) {
+                                                                    function renderVerbNode(node, depth, inheritedMode) {
                                                                         const group = node.group;
-                                                                        const explicitKey = group ? getExplicitSelectedKey(group) : null;
-                                                                        const effectiveKey = explicitKey || inheritedKey || null;
-                                                                        const effectiveValue = group ? optionValueForKey(group, effectiveKey) : '';
-                                                                        const isExpanded = depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
-                                                                        const canExpand = node.children.length > 0;
-                                                                        const status = explicitKey ? 'override' : inheritedKey ? 'inherited' : 'default';
+                                                                        const explicitKey = getExplicitSelectedKey(group);
+                                                                        const explicitValue = explicitKey ? optionValueForKey(group, explicitKey) : null;
+                                                                        const status = explicitValue ? 'override' : inheritedMode ? 'inherited' : 'default';
                                                                         const rowStyle = status === 'override'
                                                                             ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
                                                                             : status === 'inherited'
@@ -828,17 +862,33 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                             : status === 'inherited'
                                                                                 ? 'bg-amber-500'
                                                                                 : 'bg-gray-300 dark:bg-gray-700';
-                                                                        const row = (_jsxs("div", { className: `flex items-center justify-between gap-4 px-2 py-2 rounded border ${rowStyle}`, style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: `w-1 self-stretch rounded ${stripeStyle}` }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { style: { width: 16 } })), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-medium text-gray-700 dark:text-gray-200 truncate", children: group?.label || node.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: group?.groupKey || node.id })] })] }), group ? (_jsxs("div", { className: "flex items-center gap-2", children: [_jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900", value: explicitKey ? optionValueForKey(group, explicitKey) : '', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
+                                                                        const row = (_jsxs("div", { className: `flex items-center justify-between gap-4 px-2 py-2 rounded border ${rowStyle}`, style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: `w-1 self-stretch rounded ${stripeStyle}` }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [_jsx("div", { style: { width: 16 } }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-medium text-gray-700 dark:text-gray-200 truncate", children: group.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: group.groupKey })] })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900", value: explicitValue ?? '', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
                                                                                                 const v = e.target.value;
                                                                                                 const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
                                                                                                 setExclusiveActionModeLocal(group, nextKey);
-                                                                                            }, children: [_jsx("option", { value: "", children: inheritedKey ? `Inherit (${labelForValue(optionValueForKey(group, inheritedKey))})` : 'Default (server fallback)' }), group.options.map((o) => (_jsx("option", { value: o.value, children: labelForValue(o.value) }, o.key)))] }), explicitKey ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : inheritedKey ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "default" }))] })) : (_jsx("div", { className: "flex items-center gap-2", children: effectiveValue ? (_jsxs(Badge, { variant: "default", className: "text-xs", children: ["effective: ", labelForValue(effectiveValue)] })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "no policy" })) }))] }, node.id));
+                                                                                            }, children: [_jsx("option", { value: "", children: inheritedMode ? `Inherit (${labelForValue(inheritedMode)})` : 'Default (server fallback)' }), group.options.map((o) => (_jsx("option", { value: o.value, children: labelForValue(o.value) }, o.key)))] }), explicitValue ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : inheritedMode ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : (_jsx(Badge, { variant: "default", className: "text-xs", children: "default" }))] })] }, node.id));
+                                                                        return row;
+                                                                    }
+                                                                    function renderBaseNode(node, depth, inherited) {
+                                                                        const isExpanded = depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
+                                                                        const canExpand = node.children.length > 0;
+                                                                        const row = (_jsxs("div", { className: "flex items-center justify-between gap-4 px-2 py-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/20 dark:bg-gray-900/10", style: { marginLeft: depth * 16 }, children: [_jsx("div", { className: "w-1 self-stretch rounded bg-gray-200 dark:bg-gray-800" }), _jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { style: { width: 16 } })), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label }), _jsx("div", { className: "text-xs text-gray-500 font-mono truncate", children: node.id })] })] }), _jsx("div", { className: "flex items-center gap-2", children: _jsx(Badge, { variant: "default", className: "text-xs", children: "defaults + overrides" }) })] }, node.id));
                                                                         if (!isExpanded)
                                                                             return row;
-                                                                        const nextInheritedKey = group ? (explicitKey || inheritedKey) : inheritedKey;
-                                                                        return (_jsxs(React.Fragment, { children: [row, node.children.map((c) => renderScopeNode(c, depth + 1, nextInheritedKey))] }, node.id));
+                                                                        // Update inherited modes for children based on this base's verb nodes.
+                                                                        const nextInherited = { ...inherited };
+                                                                        for (const c of node.children) {
+                                                                            if (c.kind !== 'verb' || !c.group || !c.verb)
+                                                                                continue;
+                                                                            const explicitKey = getExplicitSelectedKey(c.group);
+                                                                            const explicitValue = explicitKey ? optionValueForKey(c.group, explicitKey) : null;
+                                                                            nextInherited[c.verb] = explicitValue ?? inherited[c.verb] ?? null;
+                                                                        }
+                                                                        const verbChildren = node.children.filter((c) => c.kind === 'verb');
+                                                                        const baseChildren = node.children.filter((c) => c.kind === 'base');
+                                                                        return (_jsxs(React.Fragment, { children: [row, verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb] ?? null)), baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))] }, node.id));
                                                                     }
-                                                                    return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-3 space-y-2", children: [_jsx("div", { className: "text-xs text-gray-500", children: "Scope Policy Tree (override any branch; collapsed branches inherit from parents)" }), roots.map((r) => renderScopeNode(r, 0, null))] })), _jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
+                                                                    return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-3 space-y-2", children: [_jsx("div", { className: "text-xs text-gray-500", children: "Scope Policy Tree (override any branch; collapsed branches inherit from parents)" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), _jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
                                                                                     return (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
                                                                                             ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
                                                                                             : a.default_enabled
