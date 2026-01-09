@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments, divisions, departments } from "@/lib/feature-pack-schemas";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 
 export const dynamic = "force-dynamic";
@@ -185,7 +185,28 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
     }
 
+    const wasPrimary = existing.isPrimary;
+    const userKey = existing.userKey;
+
     await db.delete(userOrgAssignments).where(eq(userOrgAssignments.id, id));
+
+    // If we deleted the primary, promote another assignment to primary
+    // (the oldest remaining one becomes the new primary)
+    if (wasPrimary) {
+      const remainingAssignments = await db
+        .select({ id: userOrgAssignments.id })
+        .from(userOrgAssignments)
+        .where(eq(userOrgAssignments.userKey, userKey))
+        .orderBy(asc(userOrgAssignments.createdAt))
+        .limit(1);
+
+      if (remainingAssignments.length > 0) {
+        await db
+          .update(userOrgAssignments)
+          .set({ isPrimary: true })
+          .where(eq(userOrgAssignments.id, remainingAssignments[0].id));
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
