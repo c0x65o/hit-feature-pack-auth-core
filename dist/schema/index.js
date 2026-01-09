@@ -5,7 +5,7 @@
  */
 export { 
 // Tables
-locationTypes, locations, divisions, departments, userOrgAssignments, 
+locationTypes, locations, divisions, departments, userOrgAssignments, orgEntityScopes, 
 // Default data
 DEFAULT_LOCATION_TYPES, } from "./org-dimensions";
 //# sourceMappingURL=index.js.map

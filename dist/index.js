@@ -31,6 +31,9 @@ export * from './hooks/index';
 export { nav } from './nav';
 // Schema (for projects that need to import the tables directly)
 export * from './schema/index';
-// Server utilities
-export * from './server/lib/org-utils';
+// Note: Server utilities (org-utils, ldd-scoping) are NOT exported here to
+// avoid bundling Node.js-only dependencies (like pg/dns) into client code.
+// Import them directly:
+//   import { ... } from '@hit/feature-pack-auth-core/server/lib/org-utils';
+//   import { ... } from '@hit/feature-pack-auth-core/server/lib/ldd-scoping';
 //# sourceMappingURL=index.js.map

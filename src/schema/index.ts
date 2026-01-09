@@ -11,6 +11,7 @@ export {
   divisions,
   departments,
   userOrgAssignments,
+  orgEntityScopes,
 
   // Location Type types
   type LocationType,
@@ -36,6 +37,11 @@ export {
   type UserOrgAssignment,
   type InsertUserOrgAssignment,
   type UpdateUserOrgAssignment,
+
+  // Entity Scope types
+  type OrgEntityScope,
+  type InsertOrgEntityScope,
+  type UpdateOrgEntityScope,
 
   // Org scope types
   type OrgDimensionKind,

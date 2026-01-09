@@ -20,5 +20,4 @@ export * from './components/index';
 export * from './hooks/index';
 export { nav } from './nav';
 export * from './schema/index';
-export * from './server/lib/org-utils';
 //# sourceMappingURL=index.d.ts.map

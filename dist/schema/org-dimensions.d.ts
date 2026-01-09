@@ -1098,6 +1098,185 @@ export declare const userOrgAssignments: import("drizzle-orm/pg-core").PgTableWi
     };
     dialect: "pg";
 }>;
+/**
+ * Entity Scopes table - attaches one or more org scopes (L/D/D) to any entity.
+ *
+ * This is the system-wide building block for "an entity can belong to multiple
+ * org scopes", without forcing every feature pack to invent a different schema.
+ *
+ * Design notes:
+ * - Polymorphic link via (entityType, entityId). We intentionally do not FK to
+ *   feature-pack tables, because cross-pack FK constraints aren't feasible.
+ * - scopeKind is kept for future use (e.g. "primary" vs "extra") but most packs
+ *   will keep primary scope on the entity row itself for fast filtering.
+ * - At least one of divisionId / departmentId / locationId should be set.
+ */
+export declare const orgEntityScopes: import("drizzle-orm/pg-core").PgTableWithColumns<{
+    name: "org_entity_scopes";
+    schema: undefined;
+    columns: {
+        id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "id";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgUUID";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: true;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        entityType: import("drizzle-orm/pg-core").PgColumn<{
+            name: "entity_type";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 100;
+        }>;
+        entityId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "entity_id";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgUUID";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        scopeKind: import("drizzle-orm/pg-core").PgColumn<{
+            name: "scope_kind";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 20;
+        }>;
+        divisionId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "division_id";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgUUID";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        departmentId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "department_id";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgUUID";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        locationId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "location_id";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgUUID";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        createdAt: import("drizzle-orm/pg-core").PgColumn<{
+            name: "created_at";
+            tableName: "org_entity_scopes";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        createdByUserKey: import("drizzle-orm/pg-core").PgColumn<{
+            name: "created_by_user_key";
+            tableName: "org_entity_scopes";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 255;
+        }>;
+    };
+    dialect: "pg";
+}>;
 export type LocationType = typeof locationTypes.$inferSelect;
 export type InsertLocationType = typeof locationTypes.$inferInsert;
 export type UpdateLocationType = Partial<Omit<InsertLocationType, "id" | "createdAt">>;
@@ -1113,6 +1292,9 @@ export type UpdateDepartment = Partial<Omit<InsertDepartment, "id" | "createdAt"
 export type UserOrgAssignment = typeof userOrgAssignments.$inferSelect;
 export type InsertUserOrgAssignment = typeof userOrgAssignments.$inferInsert;
 export type UpdateUserOrgAssignment = Partial<Omit<InsertUserOrgAssignment, "id" | "createdAt">>;
+export type OrgEntityScope = typeof orgEntityScopes.$inferSelect;
+export type InsertOrgEntityScope = typeof orgEntityScopes.$inferInsert;
+export type UpdateOrgEntityScope = Partial<Omit<InsertOrgEntityScope, "id" | "createdAt">>;
 /**
  * Default location types to be seeded
  */

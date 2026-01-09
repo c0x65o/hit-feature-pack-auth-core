@@ -287,6 +287,54 @@ export const userOrgAssignments = pgTable("org_user_assignments", {
     uniqueAssignment: uniqueIndex("org_user_assignments_unique").on(table.userKey, table.divisionId, table.departmentId, table.locationId),
 }));
 // ─────────────────────────────────────────────────────────────────────────────
+// ENTITY SCOPES (MULTI-LDD)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Entity Scopes table - attaches one or more org scopes (L/D/D) to any entity.
+ *
+ * This is the system-wide building block for "an entity can belong to multiple
+ * org scopes", without forcing every feature pack to invent a different schema.
+ *
+ * Design notes:
+ * - Polymorphic link via (entityType, entityId). We intentionally do not FK to
+ *   feature-pack tables, because cross-pack FK constraints aren't feasible.
+ * - scopeKind is kept for future use (e.g. "primary" vs "extra") but most packs
+ *   will keep primary scope on the entity row itself for fast filtering.
+ * - At least one of divisionId / departmentId / locationId should be set.
+ */
+export const orgEntityScopes = pgTable("org_entity_scopes", {
+    /** Unique identifier */
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Entity type key (e.g. "crm.contact", "projects.project") */
+    entityType: varchar("entity_type", { length: 100 }).notNull(),
+    /** Entity ID (uuid from the owning table) */
+    entityId: uuid("entity_id").notNull(),
+    /** Scope kind (e.g. "primary" | "extra") */
+    scopeKind: varchar("scope_kind", { length: 20 }).notNull().default("extra"),
+    /** Division scope */
+    divisionId: uuid("division_id").references(() => divisions.id, {
+        onDelete: "set null",
+    }),
+    /** Department scope */
+    departmentId: uuid("department_id").references(() => departments.id, {
+        onDelete: "set null",
+    }),
+    /** Location scope */
+    locationId: uuid("location_id").references(() => locations.id, {
+        onDelete: "set null",
+    }),
+    /** When created */
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    /** Who created this scope row (for audit) */
+    createdByUserKey: varchar("created_by_user_key", { length: 255 }),
+}, (table) => ({
+    entityIdx: index("org_entity_scopes_entity_idx").on(table.entityType, table.entityId),
+    divisionIdx: index("org_entity_scopes_division_idx").on(table.divisionId),
+    departmentIdx: index("org_entity_scopes_department_idx").on(table.departmentId),
+    locationIdx: index("org_entity_scopes_location_idx").on(table.locationId),
+    uniqueScope: uniqueIndex("org_entity_scopes_unique").on(table.entityType, table.entityId, table.scopeKind, table.divisionId, table.departmentId, table.locationId),
+}));
+// ─────────────────────────────────────────────────────────────────────────────
 // DEFAULT LOCATION TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 /**

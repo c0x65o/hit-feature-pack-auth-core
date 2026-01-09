@@ -36,6 +36,11 @@ schema:
     - UserOrgAssignment
     - InsertUserOrgAssignment
     - UpdateUserOrgAssignment
+    # Entity Scopes (multi-LDD)
+    - orgEntityScopes
+    - OrgEntityScope
+    - InsertOrgEntityScope
+    - UpdateOrgEntityScope
     # Utility types
     - OrgDimensionKind
     - OrgScope
@@ -133,13 +138,13 @@ nav:
     showWhen: authenticated
     weight: 1000  # Admin at bottom of nav (higher weight = lower position)
     children:
-      - label: Users
-        path: /admin/users
-        icon: Users
-        weight: 100  # First - user management is primary admin function
       - label: Dashboard
         path: /admin
         icon: LayoutDashboard
+        weight: 100  # First - admin landing page
+      - label: Users
+        path: /admin/users
+        icon: Users
         weight: 110
       - label: Groups
         path: /admin/groups
@@ -164,22 +169,26 @@ nav:
         icon: FileText
         featureFlag: auth.audit_log
         weight: 160
-      - label: Locations
-        path: /admin/org/locations
-        icon: MapPin
+      - label: LDD
+        icon: Building
         weight: 170
-      - label: Divisions
-        path: /admin/org/divisions
-        icon: Building2
-        weight: 180
-      - label: Departments
-        path: /admin/org/departments
-        icon: Network
-        weight: 190
-      - label: Org Assignments
-        path: /admin/org/assignments
-        icon: UserCog
-        weight: 200
+        children:
+          - label: Locations
+            path: /admin/org/locations
+            icon: MapPin
+            weight: 100
+          - label: Divisions
+            path: /admin/org/divisions
+            icon: Building2
+            weight: 110
+          - label: Departments
+            path: /admin/org/departments
+            icon: Network
+            weight: 120
+          - label: Org Assignments
+            path: /admin/org/assignments
+            icon: UserCog
+            weight: 130
 
 # API routes - org dimensions management
 api:

@@ -10,7 +10,7 @@
 // Re-export from the actual schema file for type checking during build
 export { 
 // Tables
-locationTypes, locations, divisions, departments, userOrgAssignments, 
+locationTypes, locations, divisions, departments, userOrgAssignments, orgEntityScopes, 
 // Default data
 DEFAULT_LOCATION_TYPES, } from "../schema/org-dimensions";
 //# sourceMappingURL=feature-pack-schemas.js.map

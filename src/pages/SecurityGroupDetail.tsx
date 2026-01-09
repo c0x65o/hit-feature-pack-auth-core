@@ -106,6 +106,25 @@ function pageGrantCandidates(path: string): string[] {
   return Array.from(new Set(out));
 }
 
+type ExclusiveActionModeGroup = {
+  groupKey: string; // e.g. "crm.contacts.ldd.read"
+  label: string; // UI label
+  options: Array<{ key: string; value: string; label: string }>;
+  precedenceKeys: string[]; // most restrictive -> least restrictive
+};
+
+function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; value: string } | null {
+  const m = String(actionKey || '').match(/^(.*)\.ldd\.read\.(any|members|lead|managers|own)$/);
+  if (!m) return null;
+  return { groupKey: `${m[1]}.ldd.read`, value: m[2] };
+}
+
+function titleFromGroupKey(groupKey: string): string {
+  // Keep it simple and readable; prefer explicit known names.
+  if (groupKey === 'crm.contacts.ldd.read') return 'CRM Contacts: LDD Read';
+  return groupKey;
+}
+
 async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>> {
   try {
     const routesMod = await import('@/.hit/generated/routes');
@@ -506,6 +525,22 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       if (gid) await mutations.removeActionGrant(id, gid);
     } else {
       await mutations.addActionGrant(id, actionKey);
+    }
+    refresh();
+  };
+
+  const setExclusiveActionMode = async (group: ExclusiveActionModeGroup, selectedKey: string | null) => {
+    // Remove all other explicit grants in the group. If selectedKey is provided,
+    // ensure it is explicitly granted.
+    for (const k of group.precedenceKeys) {
+      if (k === selectedKey) continue;
+      if (actionGrantSet.has(k)) {
+        const gid = actionGrantIdByKey.get(k);
+        if (gid) await mutations.removeActionGrant(id, gid);
+      }
+    }
+    if (selectedKey && !actionGrantSet.has(selectedKey)) {
+      await mutations.addActionGrant(id, selectedKey);
     }
     refresh();
   };
@@ -923,8 +958,108 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             {pack.actions.filter(a => !a.default_enabled).length} default-off)
                           </span>
                         </div>
-                        <div className="space-y-1 ml-6">
-                          {pack.actions.map((a) => {
+                        {(() => {
+                          // Build "dropdown" groups for exclusive mode-style action keys like:
+                          //   crm.contacts.ldd.read.{own,managers,lead,members,any}
+                          const grouped = new Map<string, { actions: typeof pack.actions; values: Map<string, ActionCatalogItem & { explicit: boolean; effective: boolean }> }>();
+                          const other: typeof pack.actions = [];
+
+                          for (const a of pack.actions) {
+                            const parsed = parseExclusiveActionModeGroup(a.key);
+                            if (!parsed) {
+                              other.push(a);
+                              continue;
+                            }
+                            if (!grouped.has(parsed.groupKey)) {
+                              grouped.set(parsed.groupKey, { actions: [], values: new Map() });
+                            }
+                            grouped.get(parsed.groupKey)!.actions.push(a);
+                            grouped.get(parsed.groupKey)!.values.set(parsed.value, a);
+                          }
+
+                          const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
+                            // Fixed precedence (most restrictive -> least restrictive)
+                            const precedenceValues = ['own', 'managers', 'lead', 'members', 'any'] as const;
+                            const options = precedenceValues
+                              .map((v) => {
+                                const item = g.values.get(v);
+                                if (!item) return null;
+                                return { key: item.key, value: v, label: item.label };
+                              })
+                              .filter(Boolean) as Array<{ key: string; value: string; label: string }>;
+
+                            const precedenceKeys = precedenceValues
+                              .map((v) => g.values.get(v)?.key)
+                              .filter(Boolean) as string[];
+
+                            return {
+                              groupKey,
+                              label: titleFromGroupKey(groupKey),
+                              options,
+                              precedenceKeys,
+                            };
+                          });
+
+                          // Determine selected key: first explicitly granted in precedence order; otherwise none ("default").
+                          const selectedKeyByGroup = new Map<string, string | null>();
+                          for (const g of groups) {
+                            let selected: string | null = null;
+                            for (const k of g.precedenceKeys) {
+                              if (actionGrantSet.has(k)) {
+                                selected = k;
+                                break;
+                              }
+                            }
+                            selectedKeyByGroup.set(g.groupKey, selected);
+                          }
+
+                          return (
+                            <>
+                              {groups.length > 0 && (
+                                <div className="ml-6 mb-3 space-y-2">
+                                  {groups.map((g) => {
+                                    const selectedKey = selectedKeyByGroup.get(g.groupKey) ?? null;
+                                    const selectedValue =
+                                      (selectedKey && g.options.find((o) => o.key === selectedKey)?.value) || '';
+
+                                    return (
+                                      <div key={g.groupKey} className="flex items-center justify-between gap-4 p-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20">
+                                        <div className="min-w-0">
+                                          <div className="text-sm font-medium text-gray-700 dark:text-gray-200">{g.label}</div>
+                                          <div className="text-xs text-gray-500 font-mono truncate">{g.groupKey}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <select
+                                            className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
+                                            value={selectedValue}
+                                            disabled={mutations.loading}
+                                            onChange={(e) => {
+                                              const v = e.target.value;
+                                              const nextKey = v ? (g.options.find((o) => o.value === v)?.key ?? null) : null;
+                                              setExclusiveActionMode(g, nextKey).catch(() => void 0);
+                                            }}
+                                          >
+                                            <option value="">Default (server fallback)</option>
+                                            {g.options.map((o) => (
+                                              <option key={o.key} value={o.value}>
+                                                {o.value}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          {selectedKey ? (
+                                            <Badge variant="info" className="text-xs">explicit</Badge>
+                                          ) : (
+                                            <Badge variant="default" className="text-xs">default</Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              <div className="space-y-1 ml-6">
+                                {other.map((a) => {
                             return (
                               <div
                                 key={a.key}
@@ -963,8 +1098,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
