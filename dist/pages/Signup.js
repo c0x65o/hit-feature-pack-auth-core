@@ -2,7 +2,11 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Loader2, CheckCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { FormInput } from '@hit/ui-kit/components/FormInput';
+import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useSignup, useAuthConfig } from '../hooks/useAuth';
 function SignupContent({ onSuccess, onNavigate, logoUrl = '/icon.png', appName = 'HIT', tagline = 'Create your account to get started', signupRedirect = '/', passwordMinLength = 8, }) {

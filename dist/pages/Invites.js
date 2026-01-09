@@ -2,8 +2,9 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { RefreshCw, Trash2, Send, UserPlus, Clock } from 'lucide-react';
-import { useUi, useAlertDialog } from '@hit/ui-kit';
-import { useServerDataTableState } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
+import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
+import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
 import { formatDateShort } from '@hit/sdk';
 import { useInvites, useInviteMutations } from '../hooks/useAuthAdmin';
 export function Invites({ onNavigate }) {

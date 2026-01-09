@@ -1,48 +1,55 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.128",
+  "version": "1.0.129",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./pages/*": {
+      "development": "./src/pages/*.tsx",
       "types": "./dist/pages/*.d.ts",
       "import": "./dist/pages/*.js",
       "require": "./dist/pages/*.js",
       "default": "./dist/pages/*.js"
     },
     "./server/api/*": {
+      "development": "./src/server/api/*.ts",
       "types": "./dist/server/api/*.d.ts",
       "import": "./dist/server/api/*.js",
       "require": "./dist/server/api/*.js",
       "default": "./dist/server/api/*.js"
     },
     "./server/lib/*": {
+      "development": "./src/server/lib/*.ts",
       "types": "./dist/server/lib/*.d.ts",
       "import": "./dist/server/lib/*.js",
       "require": "./dist/server/lib/*.js",
       "default": "./dist/server/lib/*.js"
     },
     "./hooks/*": {
+      "development": "./src/hooks/*.ts",
       "types": "./dist/hooks/*.d.ts",
       "import": "./dist/hooks/*.js",
       "require": "./dist/hooks/*.js",
       "default": "./dist/hooks/*.js"
     },
     "./schema": {
+      "development": "./src/schema/index.ts",
       "types": "./dist/schema/index.d.ts",
       "import": "./dist/schema/index.js",
       "require": "./dist/schema/index.js",
       "default": "./dist/schema/index.js"
     },
     "./schema/*": {
+      "development": "./src/schema/*.ts",
       "types": "./dist/schema/*.d.ts",
       "import": "./dist/schema/*.js",
       "require": "./dist/schema/*.js",
@@ -83,5 +90,6 @@
     "react-easy-crop": "^5.5.6",
     "typescript": "^5"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "sideEffects": false
 }

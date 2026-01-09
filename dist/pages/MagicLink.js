@@ -2,7 +2,11 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle, Mail, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { FormInput } from '@hit/ui-kit/components/FormInput';
+import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 function getAuthUrl() {
     if (typeof window !== 'undefined') {
         const win = window;

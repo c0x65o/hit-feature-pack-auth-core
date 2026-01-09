@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { Plus, Lock, Shield } from 'lucide-react';
-import { useUi, type BreadcrumbItem } from '@hit/ui-kit';
+import type { BreadcrumbItem } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
 import { usePermissionSets, usePermissionSetMutations } from '../hooks/useAuthAdmin';
 
 interface SecurityGroupsListProps {

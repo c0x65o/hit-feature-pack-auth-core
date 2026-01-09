@@ -22,7 +22,9 @@ import {
   Link2,
   Users,
 } from 'lucide-react';
-import { useUi, useAlertDialog, type BreadcrumbItem } from '@hit/ui-kit';
+import type { BreadcrumbItem } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
+import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
 import { formatDateTime } from '@hit/sdk';
 import {
   useUser,

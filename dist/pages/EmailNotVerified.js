@@ -2,7 +2,9 @@
 import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
 import { useVerifyEmail } from '../hooks/useAuth';
 // Get the auth module URL
 function getAuthUrl() {

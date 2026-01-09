@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { Loader2, Mail, AlertCircle } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
 import { useVerifyEmail } from '../hooks/useAuth';
 
 interface EmailNotVerifiedProps {

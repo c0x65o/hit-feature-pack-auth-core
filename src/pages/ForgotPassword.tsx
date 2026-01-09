@@ -2,7 +2,11 @@
 
 import React, { useState } from 'react';
 import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, FormInput, useThemeTokens, styles, useFormSubmit } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { FormInput } from '@hit/ui-kit/components/FormInput';
+import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 import { useForgotPassword } from '../hooks/useAuth';
 
 interface ForgotPasswordProps {

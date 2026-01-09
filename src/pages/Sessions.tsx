@@ -2,8 +2,9 @@
 
 import React from 'react';
 import { Trash2, RefreshCw, Monitor, Smartphone, Globe } from 'lucide-react';
-import { useUi, useAlertDialog } from '@hit/ui-kit';
-import { useServerDataTableState } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
+import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
+import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
 import { formatDateTime, formatRelativeTime } from '@hit/sdk';
 import { useSessions, useSessionMutations, type Session } from '../hooks/useAuthAdmin';
 

@@ -2,7 +2,11 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
-import { ConditionalThemeProvider, AuthLayout, AuthCard, useThemeTokens, styles, useAlertDialog, AlertDialog } from '@hit/ui-kit';
+import { ConditionalThemeProvider, styles, useThemeTokens } from '@hit/ui-kit';
+import { AlertDialog } from '@hit/ui-kit/components/AlertDialog';
+import { AuthCard } from '@hit/ui-kit/components/AuthCard';
+import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
 import { useVerifyEmail } from '../hooks/useAuth';
 function VerifyEmailContent({ token: propToken, email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
     const [token, setToken] = useState(propToken || '');

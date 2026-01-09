@@ -2,7 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import React, { useState } from 'react';
 import { ArrowLeft, Shield, Key, Lock, Unlock, Trash2, RefreshCw, Monitor, Globe, Mail, CheckCircle, Edit2, Save, X, User, Upload, Camera, Link2, Users, } from 'lucide-react';
-import { useUi, useAlertDialog } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
+import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
 import { formatDateTime } from '@hit/sdk';
 import { useUser, useUserSessions, useUserMutations, useSessionMutations, useAuthAdminConfig, useProfileFields, useUserEffectivePermissions, } from '../hooks/useAuthAdmin';
 import { ProfilePictureCropModal } from '../components/ProfilePictureCropModal';

@@ -23,7 +23,8 @@ import {
   UsersRound,
   UserCheck,
 } from 'lucide-react';
-import { useUi, type BreadcrumbItem } from '@hit/ui-kit';
+import type { BreadcrumbItem } from '@hit/ui-kit';
+import { useUi } from '@hit/ui-kit';
 import {
   usePermissionSet,
   usePermissionSetMutations,
