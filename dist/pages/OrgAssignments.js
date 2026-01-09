@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Trash2, Plus, UserCog } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
-import { useUserOrgAssignments, useUserOrgAssignmentMutations, useDivisions, useDepartments, } from '../hooks/useOrgDimensions';
+import { useUserOrgAssignments, useUserOrgAssignmentMutations, useDivisions, useDepartments, useLocations, } from '../hooks/useOrgDimensions';
 import { useUsers } from '../hooks/useAuthAdmin';
 export function OrgAssignments({ onNavigate }) {
     const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, Spinner, Select } = useUi();
@@ -27,6 +27,7 @@ export function OrgAssignments({ onNavigate }) {
     });
     const { data: divisions } = useDivisions();
     const { data: departments } = useDepartments();
+    const { data: locations } = useLocations();
     const { create, remove, loading: mutating, error: mutationError } = useUserOrgAssignmentMutations();
     const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
     const resetForm = () => {
@@ -91,13 +92,15 @@ export function OrgAssignments({ onNavigate }) {
         { value: '', label: '(No division)' },
         ...divisions.map((d) => ({ value: d.id, label: d.name })),
     ];
-    // Build department options (filtered by division if selected)
-    const filteredDepartments = divisionId
-        ? departments.filter((d) => d.divisionId === divisionId)
-        : departments;
+    // Build department options (standalone - no division filtering)
     const departmentOptions = [
         { value: '', label: '(No department)' },
-        ...filteredDepartments.map((d) => ({ value: d.id, label: d.name })),
+        ...departments.map((d) => ({ value: d.id, label: d.name })),
+    ];
+    // Build location options (standalone - same as divisions)
+    const locationOptions = [
+        { value: '', label: '(No location)' },
+        ...locations.map((l) => ({ value: l.id, label: l.name })),
     ];
     // Role options
     const roleOptions = [
@@ -156,11 +159,7 @@ export function OrgAssignments({ onNavigate }) {
                     ], emptyMessage: "No assignments found. Create your first org assignment to get started." }) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     resetForm();
-                }, title: "Create Org Assignment", description: "Assign a user to organizational units", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Select, { label: "User", value: userKey, onChange: setUserKey, options: userOptions, required: true }), _jsx(Select, { label: "Division", value: divisionId, onChange: (v) => {
-                                setDivisionId(v);
-                                // Reset department when division changes
-                                setDepartmentId('');
-                            }, options: divisionOptions }), _jsx(Select, { label: "Department", value: departmentId, onChange: setDepartmentId, options: departmentOptions }), _jsx(Input, { label: "Location ID", value: locationId, onChange: setLocationId, placeholder: "UUID of location (optional)" }), _jsx(Select, { label: "Role", value: role, onChange: setRole, options: roleOptions }), _jsx(Select, { label: "Primary Assignment", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
+                }, title: "Create Org Assignment", description: "Assign a user to organizational units", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Select, { label: "User", value: userKey, onChange: setUserKey, options: userOptions, required: true }), _jsx(Select, { label: "Division", value: divisionId, onChange: setDivisionId, options: divisionOptions }), _jsx(Select, { label: "Department", value: departmentId, onChange: setDepartmentId, options: departmentOptions }), _jsx(Select, { label: "Location", value: locationId, onChange: setLocationId, options: locationOptions }), _jsx(Select, { label: "Role", value: role, onChange: setRole, options: roleOptions }), _jsx(Select, { label: "Primary Assignment", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
                                 { value: 'false', label: 'No' },
                                 { value: 'true', label: 'Yes (make this the primary assignment)' },
                             ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !userKey || (!divisionId && !departmentId && !locationId) || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {

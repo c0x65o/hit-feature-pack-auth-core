@@ -7,7 +7,6 @@ import { formatDate } from '@hit/sdk';
 import {
   useDepartments,
   useDepartmentMutations,
-  useDivisions,
   type Department,
 } from '../hooks/useOrgDimensions';
 import { useUsers } from '../hooks/useAuthAdmin';
@@ -28,14 +27,12 @@ export function Departments({ onNavigate }: DepartmentsProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
-  const [divisionId, setDivisionId] = useState('');
   const [parentId, setParentId] = useState('');
   const [managerUserKey, setManagerUserKey] = useState('');
   const [costCenterCode, setCostCenterCode] = useState('');
   const [isActive, setIsActive] = useState(true);
 
   const { data: departments, loading, error, refresh } = useDepartments();
-  const { data: divisions } = useDivisions();
   const { create, update, remove, loading: mutating, error: mutationError } = useDepartmentMutations();
   const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
 
@@ -43,7 +40,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
     setName('');
     setCode('');
     setDescription('');
-    setDivisionId('');
     setParentId('');
     setManagerUserKey('');
     setCostCenterCode('');
@@ -56,7 +52,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
         name,
         code: code || null,
         description: description || null,
-        divisionId: divisionId || null,
         parentId: parentId || null,
         managerUserKey: managerUserKey || null,
         costCenterCode: costCenterCode || null,
@@ -77,7 +72,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
         name,
         code: code || null,
         description: description || null,
-        divisionId: divisionId || null,
         parentId: parentId || null,
         managerUserKey: managerUserKey || null,
         costCenterCode: costCenterCode || null,
@@ -109,7 +103,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
     setName(department.name);
     setCode(department.code || '');
     setDescription(department.description || '');
-    setDivisionId(department.divisionId || '');
     setParentId(department.parentId || '');
     setManagerUserKey(department.managerUserKey || '');
     setCostCenterCode(department.costCenterCode || '');
@@ -143,12 +136,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
       </Page>
     );
   }
-
-  // Build division options
-  const divisionOptions = [
-    { value: '', label: '(No division)' },
-    ...divisions.map((d) => ({ value: d.id, label: d.name })),
-  ];
 
   // Build parent department options (exclude current department if editing)
   const parentOptions = [
@@ -201,11 +188,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
               key: 'code',
               label: 'Code',
               render: (_value, row: Department) => row.code || '-',
-            },
-            {
-              key: 'divisionName',
-              label: 'Division',
-              render: (_value, row: Department) => row.divisionName || '-',
             },
             {
               key: 'managerUserKey',
@@ -285,12 +267,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
             rows={3}
           />
           <Select
-            label="Division"
-            value={divisionId}
-            onChange={setDivisionId}
-            options={divisionOptions}
-          />
-          <Select
             label="Parent Department"
             value={parentId}
             onChange={setParentId}
@@ -350,12 +326,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
             onChange={setDescription}
             placeholder="Optional description"
             rows={3}
-          />
-          <Select
-            label="Division"
-            value={divisionId}
-            onChange={setDivisionId}
-            options={divisionOptions}
           />
           <Select
             label="Parent Department"

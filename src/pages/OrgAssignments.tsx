@@ -9,6 +9,7 @@ import {
   useUserOrgAssignmentMutations,
   useDivisions,
   useDepartments,
+  useLocations,
   type UserOrgAssignment,
 } from '../hooks/useOrgDimensions';
 import { useUsers } from '../hooks/useAuthAdmin';
@@ -42,6 +43,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
   });
   const { data: divisions } = useDivisions();
   const { data: departments } = useDepartments();
+  const { data: locations } = useLocations();
   const { create, remove, loading: mutating, error: mutationError } = useUserOrgAssignmentMutations();
   const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
 
@@ -126,13 +128,16 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
     ...divisions.map((d) => ({ value: d.id, label: d.name })),
   ];
 
-  // Build department options (filtered by division if selected)
-  const filteredDepartments = divisionId
-    ? departments.filter((d) => d.divisionId === divisionId)
-    : departments;
+  // Build department options (standalone - no division filtering)
   const departmentOptions = [
     { value: '', label: '(No department)' },
-    ...filteredDepartments.map((d) => ({ value: d.id, label: d.name })),
+    ...departments.map((d) => ({ value: d.id, label: d.name })),
+  ];
+
+  // Build location options (standalone - same as divisions)
+  const locationOptions = [
+    { value: '', label: '(No location)' },
+    ...locations.map((l) => ({ value: l.id, label: l.name })),
   ];
 
   // Role options
@@ -274,11 +279,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
           <Select
             label="Division"
             value={divisionId}
-            onChange={(v) => {
-              setDivisionId(v);
-              // Reset department when division changes
-              setDepartmentId('');
-            }}
+            onChange={setDivisionId}
             options={divisionOptions}
           />
           <Select
@@ -287,11 +288,11 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             onChange={setDepartmentId}
             options={departmentOptions}
           />
-          <Input
-            label="Location ID"
+          <Select
+            label="Location"
             value={locationId}
             onChange={setLocationId}
-            placeholder="UUID of location (optional)"
+            options={locationOptions}
           />
           <Select
             label="Role"
