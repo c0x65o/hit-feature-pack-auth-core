@@ -21,4 +21,8 @@ export { Invites, default as InvitesPage } from './Invites';
 export { Groups, default as GroupsPage } from './Groups';
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './SecurityGroupsList';
 export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './SecurityGroupDetail';
+export { Locations, default as LocationsPage } from './Locations';
+export { Divisions, default as DivisionsPage } from './Divisions';
+export { Departments, default as DepartmentsPage } from './Departments';
+export { OrgAssignments, default as OrgAssignmentsPage } from './OrgAssignments';
 //# sourceMappingURL=index.d.ts.map

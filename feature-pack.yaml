@@ -1,9 +1,47 @@
 # Feature Pack: auth-core
 # Core authentication UI (login, signup, forgot password, email verification)
+# Also includes org dimensions (locations, divisions, departments, user assignments)
 
 name: auth-core
 title: HIT Auth
-description: Core authentication UI - login, signup, forgot password, email verification
+description: Core authentication UI and organizational structure management
+
+# Schema contributions (Drizzle tables)
+# Projects import these into their schema
+schema:
+  source: src/schema/org-dimensions.ts
+  exports:
+    # Location types
+    - locationTypes
+    - LocationType
+    - InsertLocationType
+    - UpdateLocationType
+    # Locations
+    - locations
+    - Location
+    - InsertLocation
+    - UpdateLocation
+    # Divisions
+    - divisions
+    - Division
+    - InsertDivision
+    - UpdateDivision
+    # Departments
+    - departments
+    - Department
+    - InsertDepartment
+    - UpdateDepartment
+    # User Org Assignments
+    - userOrgAssignments
+    - UserOrgAssignment
+    - InsertUserOrgAssignment
+    - UpdateUserOrgAssignment
+    # Utility types
+    - OrgDimensionKind
+    - OrgScope
+    - OwnershipScope
+    # Default data
+    - DEFAULT_LOCATION_TYPES
 
 # Route definitions
 routes:
@@ -55,6 +93,20 @@ routes:
     roles: [admin]
   - path: /admin/security-groups/[id]
     page: SecurityGroupDetail
+    roles: [admin]
+
+  # Org Structure routes
+  - path: /admin/org/locations
+    page: Locations
+    roles: [admin]
+  - path: /admin/org/divisions
+    page: Divisions
+    roles: [admin]
+  - path: /admin/org/departments
+    page: Departments
+    roles: [admin]
+  - path: /admin/org/assignments
+    page: OrgAssignments
     roles: [admin]
 
 # Navigation contributions
@@ -111,7 +163,82 @@ nav:
         path: /admin/audit-log
         icon: FileText
         featureFlag: auth.audit_log
-        weight: 160  # Last - audit/logging is typically at the end
+        weight: 160
+      - label: Locations
+        path: /admin/org/locations
+        icon: MapPin
+        weight: 170
+      - label: Divisions
+        path: /admin/org/divisions
+        icon: Building2
+        weight: 180
+      - label: Departments
+        path: /admin/org/departments
+        icon: Network
+        weight: 190
+      - label: Org Assignments
+        path: /admin/org/assignments
+        icon: UserCog
+        weight: 200
+
+# API routes - org dimensions management
+api:
+  routes:
+    # Location Types
+    - path: /api/org/location-types
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/location-types"
+      description: "List location types (GET) or create location type (POST)"
+
+    # Locations
+    - path: /api/org/locations
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/locations"
+      description: "List locations (GET) or create location (POST)"
+    - path: /api/org/locations/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/locations-id"
+      description: "Get, update, or delete a specific location"
+
+    # Divisions
+    - path: /api/org/divisions
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/divisions"
+      description: "List divisions (GET) or create division (POST)"
+    - path: /api/org/divisions/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/divisions-id"
+      description: "Get, update, or delete a specific division"
+
+    # Departments
+    - path: /api/org/departments
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/departments"
+      description: "List departments (GET) or create department (POST)"
+    - path: /api/org/departments/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/departments-id"
+      description: "Get, update, or delete a specific department"
+
+    # User Org Assignments
+    - path: /api/org/assignments
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/assignments"
+      description: "List user org assignments (GET) or create assignment (POST)"
+    - path: /api/org/assignments/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/assignments-id"
+      description: "Get, update, or delete a specific assignment"
+
+    # Org Scope
+    - path: /api/org/me/scope
+      methods: [GET]
+      handler: "@hit/feature-pack-auth-core/server/api/me-scope"
+      description: "Get current user's org scope (divisions, departments, locations)"
+    - path: /api/org/users/[userKey]/scope
+      methods: [GET]
+      handler: "@hit/feature-pack-auth-core/server/api/users-scope"
+      description: "Get org scope for a specific user (admin only)"
 
 # Dependencies
 requires:

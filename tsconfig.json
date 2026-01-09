@@ -18,7 +18,9 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/lib/db": ["./src/lib-stubs/db"],
+      "@/lib/feature-pack-schemas": ["./src/lib-stubs/feature-pack-schemas"]
     }
   },
   "include": ["src/**/*"],

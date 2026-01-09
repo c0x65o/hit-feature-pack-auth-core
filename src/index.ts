@@ -56,6 +56,16 @@ export {
   SecurityGroupsListPage,
   SecurityGroupDetail,
   SecurityGroupDetailPage,
+
+  // Org Dimensions
+  Locations,
+  LocationsPage,
+  Divisions,
+  DivisionsPage,
+  Departments,
+  DepartmentsPage,
+  OrgAssignments,
+  OrgAssignmentsPage,
 } from './pages/index';
 
 // Components - exported individually for tree-shaking
@@ -66,3 +76,9 @@ export * from './hooks/index';
 
 // Navigation config
 export { nav } from './nav';
+
+// Schema (for projects that need to import the tables directly)
+export * from './schema/index';
+
+// Server utilities
+export * from './server/lib/org-utils';

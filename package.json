@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.121",
+  "version": "1.0.122",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -35,6 +35,18 @@
       "import": "./dist/hooks/*.js",
       "require": "./dist/hooks/*.js",
       "default": "./dist/hooks/*.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.js",
+      "require": "./dist/schema/index.js",
+      "default": "./dist/schema/index.js"
+    },
+    "./schema/*": {
+      "types": "./dist/schema/*.d.ts",
+      "import": "./dist/schema/*.js",
+      "require": "./dist/schema/*.js",
+      "default": "./dist/schema/*.js"
     }
   },
   "files": [
@@ -50,6 +62,7 @@
   "peerDependencies": {
     "@hit/sdk": "*",
     "@hit/ui-kit": "*",
+    "drizzle-orm": "^0.38.0",
     "lucide-react": "^0.460.0",
     "next": "15.5.9",
     "react": "19.2.3",
@@ -61,6 +74,7 @@
     "@hit/ui-kit": "file:../../../packages/hit-ui-kit-ts",
     "@types/node": "^20",
     "@types/react": "^19.0.0",
+    "drizzle-orm": "^0.38.0",
     "lucide-react": "^0.460.0",
     "next": "15.5.9",
     "normalize-wheel": "^1.0.1",

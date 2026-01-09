@@ -20,11 +20,17 @@ export { Login, LoginPage, Signup, SignupPage, ForgotPassword, ForgotPasswordPag
 // Admin pages (merged into auth-core)
 Dashboard, DashboardPage, Users, UsersPage, UserDetail, UserDetailPage, Sessions, SessionsPage, AuditLog, AuditLogPage, Invites, InvitesPage, Groups, GroupsPage, 
 // Security Groups
-SecurityGroupsList, SecurityGroupsListPage, SecurityGroupDetail, SecurityGroupDetailPage, } from './pages/index';
+SecurityGroupsList, SecurityGroupsListPage, SecurityGroupDetail, SecurityGroupDetailPage, 
+// Org Dimensions
+Locations, LocationsPage, Divisions, DivisionsPage, Departments, DepartmentsPage, OrgAssignments, OrgAssignmentsPage, } from './pages/index';
 // Components - exported individually for tree-shaking
 export * from './components/index';
 // Hooks - exported individually for tree-shaking
 export * from './hooks/index';
 // Navigation config
 export { nav } from './nav';
+// Schema (for projects that need to import the tables directly)
+export * from './schema/index';
+// Server utilities
+export * from './server/lib/org-utils';
 //# sourceMappingURL=index.js.map

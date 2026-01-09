@@ -16,4 +16,23 @@ export { usePrincipals, createFetchPrincipals, } from './usePrincipals';
  * ACL Resolution Utilities
  */
 export { resolveEffectivePermissions, hasPermission, getEffectiveLevel, principalMatches, } from '../utils/acl-resolution';
+/**
+ * Org Dimensions Hooks
+ *
+ * Note: Types (LocationType, Location, Division, Department, UserOrgAssignment)
+ * are exported from schema/index.ts to avoid duplication.
+ */
+export { 
+// Location Types
+useLocationTypes, useLocationTypeMutations, 
+// Locations
+useLocations, useLocation, useLocationMutations, 
+// Divisions
+useDivisions, useDivision, useDivisionMutations, 
+// Departments
+useDepartments, useDepartment, useDepartmentMutations, 
+// User Org Assignments
+useUserOrgAssignments, useUserOrgAssignmentMutations, 
+// Org Scope
+useMyOrgScope, useUserOrgScope, } from './useOrgDimensions';
 //# sourceMappingURL=index.js.map
