@@ -57,6 +57,12 @@ function titleCase(s: string): string {
   return x.charAt(0).toUpperCase() + x.slice(1);
 }
 
+/** Convert PascalCase/camelCase to spaced words: "ContactEdit" → "Contact Edit" */
+function spacePascalCase(s: string): string {
+  if (!s) return '';
+  return s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+}
+
 function normalizePath(p: string): string {
   const x = String(p || '').trim();
   if (!x) return '';
@@ -123,14 +129,16 @@ function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; v
 }
 
 function titleFromGroupKey(groupKey: string): string {
-  // Keep it simple and readable; prefer explicit known names.
-  if (groupKey === 'crm.read.scope') return 'CRM Read Scope';
-  if (groupKey === 'crm.write.scope') return 'CRM Write Scope';
-  if (groupKey === 'crm.delete.scope') return 'CRM Delete Scope';
-  if (groupKey === 'crm.contacts.read.scope') return 'CRM Contacts Read Scope';
-  if (groupKey === 'crm.contacts.write.scope') return 'CRM Contacts Write Scope';
-  if (groupKey === 'crm.contacts.delete.scope') return 'CRM Contacts Delete Scope';
-  return groupKey;
+  // Parse patterns like: crm.read.scope, crm.contacts.read.scope, crm.activities.write.scope
+  const m = groupKey.match(/^(crm)(?:\.([a-z]+))?\.(read|write|delete)\.scope$/);
+  if (!m) return groupKey;
+  const [, module, entity, verb] = m;
+  const moduleLabel = module.toUpperCase(); // "CRM"
+  const entityLabel = entity ? entity.charAt(0).toUpperCase() + entity.slice(1) : null; // "Contacts", "Activities", etc.
+  const verbLabel = verb.charAt(0).toUpperCase() + verb.slice(1); // "Read", "Write", "Delete"
+  return entityLabel
+    ? `${moduleLabel} ${entityLabel} ${verbLabel} Scope`
+    : `${moduleLabel} ${verbLabel} Scope`;
 }
 
 async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>> {
@@ -202,8 +210,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const [activeTab, setActiveTab] = useState<'pages_actions' | 'metrics'>('pages_actions');
   const [metricsSearch, setMetricsSearch] = useState('');
 
-  // Scope tree UI state (Actions)
-  const [expandedScopeNodes, setExpandedScopeNodes] = useState<Set<string>>(new Set());
+  // Scope tree UI state (Actions) - track user's explicit expand/collapse choices
+  const [scopeNodeToggled, setScopeNodeToggled] = useState<Map<string, boolean>>(new Map());
 
   // Pending page/action changes (batch editing like Metrics)
   // Map of key -> desired explicit grant (true=grant, false=revoke)
@@ -656,11 +664,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     }
   };
 
-  const toggleScopeNode = (nodeId: string) => {
-    setExpandedScopeNodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) next.delete(nodeId);
-      else next.add(nodeId);
+  const toggleScopeNode = (nodeId: string, currentlyExpanded: boolean) => {
+    setScopeNodeToggled((prev) => {
+      const next = new Map(prev);
+      next.set(nodeId, !currentlyExpanded);
       return next;
     });
   };
@@ -1053,7 +1060,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               } hover:bg-gray-50 dark:hover:bg-gray-800`}
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-medium text-sm truncate">{p.label}</span>
+                                <span className="font-medium text-sm truncate">{spacePascalCase(p.label)}</span>
                                 <span className="text-xs text-gray-500 truncate">{p.path}</span>
                                 {p.default_enabled ? (
                                   <Badge variant="success" className="text-xs">default</Badge>
@@ -1283,13 +1290,26 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             return v;
                           }
 
+                          // Count explicit overrides within a subtree (used for closed-node summary)
+                          const explicitOverrideCountCache = new Map<string, number>();
+                          function countExplicitOverrides(node: ScopeNode): number {
+                            const cached = explicitOverrideCountCache.get(node.id);
+                            if (cached !== undefined) return cached;
+                            const self = node.group ? (getExplicitSelectedKey(node.group) ? 1 : 0) : 0;
+                            const children = node.children.reduce((acc, c) => acc + countExplicitOverrides(c), 0);
+                            const v = self + children;
+                            explicitOverrideCountCache.set(node.id, v);
+                            return v;
+                          }
+
                           // Render
                           function renderVerbNode(node: ScopeNode, depth: number, inheritedMode: ScopeModeValue | null): React.ReactNode {
                             const group = node.group!;
                             const explicitKey = getExplicitSelectedKey(group);
                             const explicitValue = explicitKey ? (optionValueForKey(group, explicitKey) as ScopeModeValue) : null;
+                            const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
                             const status: 'override' | 'inherited' | 'default' =
-                              explicitValue ? 'override' : inheritedMode ? 'inherited' : 'default';
+                              explicitValue && !isSameAsInherited ? 'override' : inheritedMode ? 'inherited' : 'default';
 
                             const rowStyle =
                               status === 'override'
@@ -1308,35 +1328,33 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const row = (
                               <div
                                 key={node.id}
-                                className={`flex items-center justify-between gap-4 px-2 py-2 rounded border ${rowStyle}`}
-                                style={{ marginLeft: depth * 16 }}
+                                className={`flex items-center justify-between gap-3 px-3 py-1.5 rounded border ${rowStyle}`}
+                                style={{ marginLeft: depth * 20 }}
                               >
-                                <div className={`w-1 self-stretch rounded ${stripeStyle}`} />
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div style={{ width: 16 }} />
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
-                                      {group.label}
-                                    </div>
-                                    <div className="text-xs text-gray-500 font-mono truncate">
-                                      {group.groupKey}
-                                    </div>
-                                  </div>
+                                <div className={`w-0.5 self-stretch rounded-full ${stripeStyle}`} />
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                    {group.label}
+                                  </span>
                                 </div>
-
                                 <div className="flex items-center gap-2">
                                   <select
-                                    className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900"
+                                    className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[140px]"
                                     value={explicitValue ?? ''}
                                     disabled={savingPagesActions || mutations.loading}
                                     onChange={(e) => {
                                       const v = e.target.value as ScopeModeValue | '';
+                                      // If user picks the same value as inherited, treat it as "inherit" (no explicit override).
+                                      if (v && inheritedMode && v === inheritedMode) {
+                                        setExclusiveActionModeLocal(group, null);
+                                        return;
+                                      }
                                       const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
                                       setExclusiveActionModeLocal(group, nextKey);
                                     }}
                                   >
                                     <option value="">
-                                      {inheritedMode ? `Inherit (${labelForValue(inheritedMode)})` : 'Default (server fallback)'}
+                                      {inheritedMode ? `Inherit (${labelForValue(inheritedMode)})` : 'Default'}
                                     </option>
                                     {group.options.map((o) => (
                                       <option key={o.key} value={o.value}>
@@ -1344,13 +1362,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                       </option>
                                     ))}
                                   </select>
-                                  {explicitValue ? (
-                                    <Badge variant="info" className="text-xs">override</Badge>
-                                  ) : inheritedMode ? (
-                                    <Badge variant="warning" className="text-xs">inherited</Badge>
-                                  ) : (
-                                    <Badge variant="default" className="text-xs">default</Badge>
-                                  )}
+                                  <Badge
+                                    variant={explicitValue ? 'info' : inheritedMode ? 'warning' : 'default'}
+                                    className="text-xs w-16 justify-center"
+                                  >
+                                    {explicitValue ? (isSameAsInherited ? 'same' : 'override') : inheritedMode ? 'inherited' : 'default'}
+                                  </Badge>
                                 </div>
                               </div>
                             );
@@ -1359,9 +1376,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
 
                           function renderBaseNode(node: ScopeNode, depth: number, inherited: InheritedByVerb): React.ReactNode {
-                            const isExpanded =
-                              depth === 0 || expandedScopeNodes.has(node.id) || nodeHasExplicitOverride(node);
                             const canExpand = node.children.length > 0;
+                            // Auto-expand root and nodes with overrides, but user can toggle
+                            const autoExpand = depth === 0 || nodeHasExplicitOverride(node);
+                            const userChoice = scopeNodeToggled.get(node.id);
+                            const isExpanded = canExpand && (userChoice !== undefined ? userChoice : autoExpand);
+                            const overrideCount = countExplicitOverrides(node);
 
                             // Compute effective summary (R/W/D) for this node, using:
                             // - explicit selections on this node's verb children
@@ -1377,37 +1397,40 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const row = (
                               <div
                                 key={node.id}
-                                className="flex items-center justify-between gap-4 px-2 py-2 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/20 dark:bg-gray-900/10"
-                                style={{ marginLeft: depth * 16 }}
+                                className="flex items-center justify-between gap-3 px-3 py-1.5 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/20"
+                                style={{ marginLeft: depth * 20 }}
                               >
-                                <div className="w-1 self-stretch rounded bg-gray-200 dark:bg-gray-800" />
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div
+                                  className={`w-0.5 self-stretch rounded-full ${
+                                    overrideCount > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'
+                                  }`}
+                                />
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
                                   {canExpand ? (
                                     <button
                                       type="button"
-                                      onClick={() => toggleScopeNode(node.id)}
-                                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                      onClick={() => toggleScopeNode(node.id, isExpanded)}
+                                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0"
                                       aria-label={isExpanded ? 'Collapse' : 'Expand'}
                                     >
                                       {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                     </button>
                                   ) : (
-                                    <div style={{ width: 16 }} />
+                                    <div className="w-4 shrink-0" />
                                   )}
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">
-                                      {node.label}
-                                    </div>
-                                    <div className="text-xs text-gray-500 font-mono truncate">
-                                      {node.id}
-                                    </div>
-                                  </div>
+                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">
+                                    {node.label}
+                                  </span>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="default" className="text-xs">
-                                    R: {shortLabelForValue(effectiveByVerb.read)} · W: {shortLabelForValue(effectiveByVerb.write)} · D: {shortLabelForValue(effectiveByVerb.delete)}
-                                  </Badge>
-                                  <Badge variant="default" className="text-xs">defaults + overrides</Badge>
+                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">R: {shortLabelForValue(effectiveByVerb.read)}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">W: {shortLabelForValue(effectiveByVerb.write)}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">D: {shortLabelForValue(effectiveByVerb.delete)}</span>
+                                  {overrideCount > 0 ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/10 dark:text-blue-200 dark:border-blue-800">
+                                      {overrideCount} override{overrideCount === 1 ? '' : 's'}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
                             );
@@ -1438,9 +1461,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           return (
                             <>
                               {groups.length > 0 && (
-                                <div className="ml-6 mb-3 space-y-2">
-                                  <div className="text-xs text-gray-500">
-                                    Scope Policy Tree (override any branch; collapsed branches inherit from parents)
+                                <div className="ml-6 mb-4 space-y-1">
+                                  <div className="text-xs text-gray-500 mb-2">
+                                    Scope Policy Tree — override any branch; collapsed nodes inherit from parents
                                   </div>
                                   {roots.map((r) =>
                                     renderBaseNode(r, 0, { read: null, write: null, delete: null })
