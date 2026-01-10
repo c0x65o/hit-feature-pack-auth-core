@@ -215,7 +215,7 @@ export function Locations({ onNavigate }: LocationsProps) {
             {
               key: 'name',
               label: 'Name',
-              render: (_value, row: Location) => (
+              render: (_value: unknown, row: Location) => (
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-muted-foreground" />
                   <span className="font-medium">{row.name}</span>
@@ -228,27 +228,27 @@ export function Locations({ onNavigate }: LocationsProps) {
             {
               key: 'code',
               label: 'Code',
-              render: (_value, row: Location) => row.code || '-',
+              render: (_value: unknown, row: Location) => row.code || '-',
             },
             {
               key: 'locationTypeName',
               label: 'Type',
-              render: (_value, row: Location) => row.locationTypeName || '-',
+              render: (_value: unknown, row: Location) => row.locationTypeName || '-',
             },
             {
               key: 'city',
               label: 'City',
-              render: (_value, row: Location) => row.city || '-',
+              render: (_value: unknown, row: Location) => row.city || '-',
             },
             {
               key: 'managerUserKey',
               label: 'Manager',
-              render: (_value, row: Location) => row.managerUserKey || '-',
+              render: (_value: unknown, row: Location) => row.managerUserKey || '-',
             },
             {
               key: 'isActive',
               label: 'Status',
-              render: (_value, row: Location) => (
+              render: (_value: unknown, row: Location) => (
                 <Badge variant={row.isActive ? 'success' : 'secondary'}>
                   {row.isActive ? 'Active' : 'Inactive'}
                 </Badge>
@@ -257,7 +257,7 @@ export function Locations({ onNavigate }: LocationsProps) {
             {
               key: 'actions',
               label: '',
-              render: (_value, row: Location) => (
+              render: (_value: unknown, row: Location) => (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -349,7 +349,7 @@ export function Locations({ onNavigate }: LocationsProps) {
           <Select
             label="Primary/HQ"
             value={isPrimary ? 'true' : 'false'}
-            onChange={(v) => setIsPrimary(v === 'true')}
+            onChange={(v: string) => setIsPrimary(v === 'true')}
             options={[
               { value: 'false', label: 'No' },
               { value: 'true', label: 'Yes (Headquarters)' },
@@ -436,7 +436,7 @@ export function Locations({ onNavigate }: LocationsProps) {
             <Select
               label="Primary/HQ"
               value={isPrimary ? 'true' : 'false'}
-              onChange={(v) => setIsPrimary(v === 'true')}
+              onChange={(v: string) => setIsPrimary(v === 'true')}
               options={[
                 { value: 'false', label: 'No' },
                 { value: 'true', label: 'Yes (Headquarters)' },
@@ -445,7 +445,7 @@ export function Locations({ onNavigate }: LocationsProps) {
             <Select
               label="Status"
               value={isActive ? 'true' : 'false'}
-              onChange={(v) => setIsActive(v === 'true')}
+              onChange={(v: string) => setIsActive(v === 'true')}
               options={[
                 { value: 'true', label: 'Active' },
                 { value: 'false', label: 'Inactive' },

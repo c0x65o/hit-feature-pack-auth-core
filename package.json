@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.132",
+  "version": "1.0.133",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -75,6 +75,14 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-easy-crop": "^5.5.6"
+  },
+  "peerDependenciesMeta": {
+    "@hit/sdk": {
+      "optional": true
+    },
+    "@hit/ui-kit": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@hit/feature-pack-stubs": "file:../../../packages/hit-feature-pack-stubs",

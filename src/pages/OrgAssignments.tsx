@@ -171,7 +171,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             <Select
               label="Filter by User"
               value={filterUserKey}
-              onChange={(v) => {
+              onChange={(v: string) => {
                 setFilterUserKey(v);
                 refresh();
               }}
@@ -182,7 +182,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             <Select
               label="Filter by Division"
               value={filterDivisionId}
-              onChange={(v) => {
+              onChange={(v: string) => {
                 setFilterDivisionId(v);
                 refresh();
               }}
@@ -199,7 +199,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             {
               key: 'userKey',
               label: 'User',
-              render: (_value, row: UserOrgAssignment) => (
+              render: (_value: unknown, row: UserOrgAssignment) => (
                 <div className="flex items-center gap-2">
                   <UserCog className="w-4 h-4 text-muted-foreground" />
                   <span className="font-medium">{row.userKey}</span>
@@ -209,27 +209,27 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             {
               key: 'divisionName',
               label: 'Division',
-              render: (_value, row: UserOrgAssignment) => row.divisionName || '-',
+              render: (_value: unknown, row: UserOrgAssignment) => row.divisionName || '-',
             },
             {
               key: 'departmentName',
               label: 'Department',
-              render: (_value, row: UserOrgAssignment) => row.departmentName || '-',
+              render: (_value: unknown, row: UserOrgAssignment) => row.departmentName || '-',
             },
             {
               key: 'locationName',
               label: 'Location',
-              render: (_value, row: UserOrgAssignment) => row.locationName || (row.locationId ? row.locationId.slice(0, 8) + '...' : '-'),
+              render: (_value: unknown, row: UserOrgAssignment) => row.locationName || (row.locationId ? row.locationId.slice(0, 8) + '...' : '-'),
             },
             {
               key: 'role',
               label: 'Role',
-              render: (_value, row: UserOrgAssignment) => row.role || '-',
+              render: (_value: unknown, row: UserOrgAssignment) => row.role || '-',
             },
             {
               key: 'isPrimary',
               label: 'Primary',
-              render: (_value, row: UserOrgAssignment) => (
+              render: (_value: unknown, row: UserOrgAssignment) => (
                 <Badge variant={row.isPrimary ? 'success' : 'secondary'}>
                   {row.isPrimary ? 'Yes' : 'No'}
                 </Badge>
@@ -238,12 +238,12 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             {
               key: 'createdAt',
               label: 'Created',
-              render: (_value, row: UserOrgAssignment) => formatDate(row.createdAt),
+              render: (_value: unknown, row: UserOrgAssignment) => formatDate(row.createdAt),
             },
             {
               key: 'actions',
               label: '',
-              render: (_value, row: UserOrgAssignment) => (
+              render: (_value: unknown, row: UserOrgAssignment) => (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -303,7 +303,7 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
           <Select
             label="Primary Assignment"
             value={isPrimary ? 'true' : 'false'}
-            onChange={(v) => setIsPrimary(v === 'true')}
+            onChange={(v: string) => setIsPrimary(v === 'true')}
             options={[
               { value: 'false', label: 'No' },
               { value: 'true', label: 'Yes (replaces existing primary if any)' },

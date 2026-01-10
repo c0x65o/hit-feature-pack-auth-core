@@ -172,7 +172,7 @@ export function Divisions({ onNavigate }: DivisionsProps) {
             {
               key: 'name',
               label: 'Name',
-              render: (_value, row: Division) => (
+              render: (_value: unknown, row: Division) => (
                 <div className="flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-muted-foreground" />
                   <span className="font-medium">{row.name}</span>
@@ -182,17 +182,17 @@ export function Divisions({ onNavigate }: DivisionsProps) {
             {
               key: 'code',
               label: 'Code',
-              render: (_value, row: Division) => row.code || '-',
+              render: (_value: unknown, row: Division) => row.code || '-',
             },
             {
               key: 'managerUserKey',
               label: 'Manager',
-              render: (_value, row: Division) => row.managerUserKey || '-',
+              render: (_value: unknown, row: Division) => row.managerUserKey || '-',
             },
             {
               key: 'isActive',
               label: 'Status',
-              render: (_value, row: Division) => (
+              render: (_value: unknown, row: Division) => (
                 <Badge variant={row.isActive ? 'success' : 'secondary'}>
                   {row.isActive ? 'Active' : 'Inactive'}
                 </Badge>
@@ -201,12 +201,12 @@ export function Divisions({ onNavigate }: DivisionsProps) {
             {
               key: 'createdAt',
               label: 'Created',
-              render: (_value, row: Division) => formatDate(row.createdAt),
+              render: (_value: unknown, row: Division) => formatDate(row.createdAt),
             },
             {
               key: 'actions',
               label: '',
-              render: (_value, row: Division) => (
+              render: (_value: unknown, row: Division) => (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -331,7 +331,7 @@ export function Divisions({ onNavigate }: DivisionsProps) {
           <Select
             label="Status"
             value={isActive ? 'true' : 'false'}
-            onChange={(v) => setIsActive(v === 'true')}
+            onChange={(v: string) => setIsActive(v === 'true')}
             options={[
               { value: 'true', label: 'Active' },
               { value: 'false', label: 'Inactive' },
