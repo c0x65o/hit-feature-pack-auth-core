@@ -51,7 +51,6 @@ export interface Department {
     divisionName?: string | null;
     parentId: string | null;
     managerUserKey: string | null;
-    costCenterCode: string | null;
     isActive: boolean;
     createdAt: string;
     updatedAt: string;

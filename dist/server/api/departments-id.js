@@ -43,7 +43,6 @@ export async function GET(request) {
             divisionName: divisions.name,
             parentId: departments.parentId,
             managerUserKey: departments.managerUserKey,
-            costCenterCode: departments.costCenterCode,
             isActive: departments.isActive,
             createdAt: departments.createdAt,
             updatedAt: departments.updatedAt,
@@ -120,8 +119,6 @@ export async function PUT(request) {
             updateData.parentId = body.parentId || null;
         if (body.managerUserKey !== undefined)
             updateData.managerUserKey = body.managerUserKey || null;
-        if (body.costCenterCode !== undefined)
-            updateData.costCenterCode = body.costCenterCode || null;
         if (body.isActive !== undefined)
             updateData.isActive = body.isActive;
         const [updated] = await db

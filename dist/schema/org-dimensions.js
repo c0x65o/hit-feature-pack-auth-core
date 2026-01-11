@@ -173,7 +173,6 @@ export const divisions = pgTable("org_divisions", {
  * - Belongs to a division (optional - some orgs have flat departments)
  * - Hierarchical structure via parentId
  * - Optional manager assignment
- * - Cost center code for finance integration
  */
 export const departments = pgTable("org_departments", {
     /** Unique identifier */
@@ -203,8 +202,6 @@ export const departments = pgTable("org_departments", {
      * Used for approval routing and reporting
      */
     managerUserKey: varchar("manager_user_key", { length: 255 }),
-    /** Cost center code for finance/HR integration */
-    costCenterCode: varchar("cost_center_code", { length: 50 }),
     /** Whether the department is active */
     isActive: boolean("is_active").notNull().default(true),
     /** When created */

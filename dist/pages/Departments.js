@@ -18,7 +18,6 @@ export function Departments({ onNavigate }) {
     const [description, setDescription] = useState('');
     const [parentId, setParentId] = useState('');
     const [managerUserKey, setManagerUserKey] = useState('');
-    const [costCenterCode, setCostCenterCode] = useState('');
     const [isActive, setIsActive] = useState(true);
     const { data: departments, loading, error, refresh } = useDepartments();
     const { create, update, remove, loading: mutating, error: mutationError } = useDepartmentMutations();
@@ -29,7 +28,6 @@ export function Departments({ onNavigate }) {
         setDescription('');
         setParentId('');
         setManagerUserKey('');
-        setCostCenterCode('');
         setIsActive(true);
     };
     const handleCreate = async () => {
@@ -40,7 +38,6 @@ export function Departments({ onNavigate }) {
                 description: description || null,
                 parentId: parentId || null,
                 managerUserKey: managerUserKey || null,
-                costCenterCode: costCenterCode || null,
                 isActive,
             });
             setCreateModalOpen(false);
@@ -61,7 +58,6 @@ export function Departments({ onNavigate }) {
                 description: description || null,
                 parentId: parentId || null,
                 managerUserKey: managerUserKey || null,
-                costCenterCode: costCenterCode || null,
                 isActive,
             });
             setEditModalOpen(false);
@@ -93,7 +89,6 @@ export function Departments({ onNavigate }) {
         setDescription(department.description || '');
         setParentId(department.parentId || '');
         setManagerUserKey(department.managerUserKey || '');
-        setCostCenterCode(department.costCenterCode || '');
         setIsActive(department.isActive);
         setEditModalOpen(true);
     };
@@ -156,11 +151,11 @@ export function Departments({ onNavigate }) {
                     ], emptyMessage: "No departments found. Create your first department to get started." }) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     resetForm();
-                }, title: "Create Department", description: "Create a new organizational department", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsx(Input, { label: "Cost Center Code", value: costCenterCode, onChange: setCostCenterCode, placeholder: "e.g., CC-1001" }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !name || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: editModalOpen, onClose: () => {
+                }, title: "Create Department", description: "Create a new organizational department", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !name || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: editModalOpen, onClose: () => {
                     setEditModalOpen(false);
                     setSelectedDepartment(null);
                     resetForm();
-                }, title: "Edit Department", description: "Update department details", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsx(Input, { label: "Cost Center Code", value: costCenterCode, onChange: setCostCenterCode, placeholder: "e.g., CC-1001" }), _jsx(Select, { label: "Status", value: isActive ? 'true' : 'false', onChange: (v) => setIsActive(v === 'true'), options: [
+                }, title: "Edit Department", description: "Update department details", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsx(Select, { label: "Status", value: isActive ? 'true' : 'false', onChange: (v) => setIsActive(v === 'true'), options: [
                                 { value: 'true', label: 'Active' },
                                 { value: 'false', label: 'Inactive' },
                             ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setEditModalOpen(false); setSelectedDepartment(null); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleUpdate, disabled: !name || mutating, children: mutating ? 'Saving...' : 'Save Changes' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {

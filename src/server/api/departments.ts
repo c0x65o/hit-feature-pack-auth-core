@@ -100,7 +100,6 @@ export async function GET(request: NextRequest) {
         divisionName: divisions.name,
         parentId: departments.parentId,
         managerUserKey: departments.managerUserKey,
-        costCenterCode: departments.costCenterCode,
         isActive: departments.isActive,
         createdAt: departments.createdAt,
         updatedAt: departments.updatedAt,
@@ -177,7 +176,6 @@ export async function POST(request: NextRequest) {
         divisionId: body.divisionId || null,
         parentId: body.parentId || null,
         managerUserKey: body.managerUserKey || null,
-        costCenterCode: body.costCenterCode || null,
         isActive: body.isActive ?? true,
       })
       .returning();

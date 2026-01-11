@@ -29,7 +29,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
   const [description, setDescription] = useState('');
   const [parentId, setParentId] = useState('');
   const [managerUserKey, setManagerUserKey] = useState('');
-  const [costCenterCode, setCostCenterCode] = useState('');
   const [isActive, setIsActive] = useState(true);
 
   const { data: departments, loading, error, refresh } = useDepartments();
@@ -42,7 +41,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
     setDescription('');
     setParentId('');
     setManagerUserKey('');
-    setCostCenterCode('');
     setIsActive(true);
   };
 
@@ -54,7 +52,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
         description: description || null,
         parentId: parentId || null,
         managerUserKey: managerUserKey || null,
-        costCenterCode: costCenterCode || null,
         isActive,
       });
       setCreateModalOpen(false);
@@ -74,7 +71,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
         description: description || null,
         parentId: parentId || null,
         managerUserKey: managerUserKey || null,
-        costCenterCode: costCenterCode || null,
         isActive,
       });
       setEditModalOpen(false);
@@ -105,7 +101,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
     setDescription(department.description || '');
     setParentId(department.parentId || '');
     setManagerUserKey(department.managerUserKey || '');
-    setCostCenterCode(department.costCenterCode || '');
     setIsActive(department.isActive);
     setEditModalOpen(true);
   };
@@ -278,12 +273,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
             onChange={setManagerUserKey}
             options={managerOptions}
           />
-          <Input
-            label="Cost Center Code"
-            value={costCenterCode}
-            onChange={setCostCenterCode}
-            placeholder="e.g., CC-1001"
-          />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => { setCreateModalOpen(false); resetForm(); }}>
               Cancel
@@ -338,12 +327,6 @@ export function Departments({ onNavigate }: DepartmentsProps) {
             value={managerUserKey}
             onChange={setManagerUserKey}
             options={managerOptions}
-          />
-          <Input
-            label="Cost Center Code"
-            value={costCenterCode}
-            onChange={setCostCenterCode}
-            placeholder="e.g., CC-1001"
           />
           <Select
             label="Status"

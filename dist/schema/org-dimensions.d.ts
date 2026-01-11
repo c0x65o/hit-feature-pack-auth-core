@@ -709,7 +709,6 @@ export declare const divisions: import("drizzle-orm/pg-core").PgTableWithColumns
  * - Belongs to a division (optional - some orgs have flat departments)
  * - Hierarchical structure via parentId
  * - Optional manager assignment
- * - Cost center code for finance integration
  */
 export declare const departments: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "org_departments";
@@ -839,25 +838,6 @@ export declare const departments: import("drizzle-orm/pg-core").PgTableWithColum
             generated: undefined;
         }, {}, {
             length: 255;
-        }>;
-        costCenterCode: import("drizzle-orm/pg-core").PgColumn<{
-            name: "cost_center_code";
-            tableName: "org_departments";
-            dataType: "string";
-            columnType: "PgVarchar";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: 50;
         }>;
         isActive: import("drizzle-orm/pg-core").PgColumn<{
             name: "is_active";
