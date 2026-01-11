@@ -3,9 +3,7 @@ import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-run
 import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
-import { styles } from '@hit/ui-kit/components/utils';
-import { AuthCard } from '@hit/ui-kit/components/AuthCard';
-import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { AuthCard, AuthLayout, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
 // Get the auth module URL
 function getAuthUrl() {

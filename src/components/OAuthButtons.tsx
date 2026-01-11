@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useThemeTokens } from '@hit/ui-kit/theme';
-import { styles } from '@hit/ui-kit/components/utils';
+import { styles } from '@hit/ui-kit';
 import { useOAuth } from '../hooks/useAuth';
 
 interface OAuthProvider {

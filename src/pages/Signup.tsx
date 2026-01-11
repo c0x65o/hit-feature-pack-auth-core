@@ -3,10 +3,7 @@
 import React, { useState } from 'react';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
-import { styles } from '@hit/ui-kit/components/utils';
-import { AuthCard } from '@hit/ui-kit/components/AuthCard';
-import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
-import { FormInput } from '@hit/ui-kit/components/FormInput';
+import { AuthCard, AuthLayout, FormInput, styles } from '@hit/ui-kit';
 import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 import { OAuthButtons } from '../components/OAuthButtons';
 import { useSignup, useAuthConfig } from '../hooks/useAuth';

@@ -3,9 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Mail, AlertCircle } from 'lucide-react';
 import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
-import { styles } from '@hit/ui-kit/components/utils';
-import { AuthCard } from '@hit/ui-kit/components/AuthCard';
-import { AuthLayout } from '@hit/ui-kit/components/AuthLayout';
+import { AuthCard, AuthLayout, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
 
 interface EmailNotVerifiedProps {
