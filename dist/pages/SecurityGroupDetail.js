@@ -332,7 +332,6 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         // Sort packs and filter out empty ones
         return Array.from(packs.entries())
             .filter(([, data]) => data.pages.length > 0 || data.actions.length > 0)
-            .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([name, data]) => ({
             name,
             ...data,
@@ -342,7 +341,13 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             actionCount: data.actions.length,
             effectiveActions: data.actions.filter((a) => a.effective).length,
             explicitActions: data.actions.filter((a) => a.explicit).length,
-        }));
+        }))
+            .sort((a, b) => {
+            // Sort by display title (title || titleCase(name)) alphabetically
+            const titleA = a.title || titleCase(a.name);
+            const titleB = b.title || titleCase(b.name);
+            return titleA.localeCompare(titleB);
+        });
     }, [pages, actionCatalog, isPageExplicitEffective, isActionExplicitEffective]);
     // Metrics organized by owner type (App vs Feature Pack)
     const metricsData = useMemo(() => {

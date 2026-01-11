@@ -3,7 +3,7 @@
 # Also includes org dimensions (locations, divisions, departments, user assignments)
 
 name: auth-core
-title: HIT Auth
+title: Admin
 description: Core authentication UI and organizational structure management
 
 # Schema contributions (Drizzle tables)
