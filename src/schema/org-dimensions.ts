@@ -309,14 +309,12 @@ export const departments = pgTable(
  *
  * Design notes:
  * - Uses userKey (email) instead of FK to auth DB for interoperability
- * - Each user can have one "primary" assignment (isPrimary = true)
- * - Users can have multiple assignments (e.g., works in 2 locations)
+ * - Each user can have at most one assignment row
  * - At least one of divisionId, departmentId, or locationId should be set
  *
  * Examples:
  * - User belongs to "Engineering" division + "Frontend" department + "NYC Office"
  * - User belongs to "Sales" division + "Chicago Office" (no department)
- * - User belongs to multiple locations (remote + HQ)
  */
 export const userOrgAssignments = pgTable(
   "org_user_assignments",
@@ -345,18 +343,6 @@ export const userOrgAssignments = pgTable(
       onDelete: "cascade",
     }),
 
-    /**
-     * Whether this is the user's primary assignment
-     * Only one assignment per user should be primary
-     */
-    isPrimary: boolean("is_primary").notNull().default(false),
-
-    /**
-     * Optional role within this assignment context
-     * Examples: "manager", "lead", "member"
-     */
-    role: varchar("role", { length: 50 }),
-
     /** When the assignment was created */
     createdAt: timestamp("created_at").defaultNow().notNull(),
 
@@ -369,16 +355,9 @@ export const userOrgAssignments = pgTable(
     divisionIdx: index("org_user_assignments_division_idx").on(table.divisionId),
     departmentIdx: index("org_user_assignments_department_idx").on(table.departmentId),
     locationIdx: index("org_user_assignments_location_idx").on(table.locationId),
-    primaryIdx: index("org_user_assignments_primary_idx").on(table.isPrimary),
 
-    // Unique constraint: user can only have one assignment to the same combination
-    // This prevents duplicate rows like "user X in division Y + department Z" twice
-    uniqueAssignment: uniqueIndex("org_user_assignments_unique").on(
-      table.userKey,
-      table.divisionId,
-      table.departmentId,
-      table.locationId
-    ),
+    // Unique constraint: user can only have one assignment row total.
+    uniqueUser: uniqueIndex("org_user_assignments_unique_user").on(table.userKey),
   })
 );
 

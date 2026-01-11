@@ -19,8 +19,6 @@ export function OrgAssignments({ onNavigate }) {
     const [divisionId, setDivisionId] = useState('');
     const [departmentId, setDepartmentId] = useState('');
     const [locationId, setLocationId] = useState('');
-    const [isPrimary, setIsPrimary] = useState(false);
-    const [role, setRole] = useState('');
     const { data: assignments, loading, error, refresh } = useUserOrgAssignments({
         userKey: filterUserKey || undefined,
         divisionId: filterDivisionId || undefined,
@@ -35,8 +33,6 @@ export function OrgAssignments({ onNavigate }) {
         setDivisionId('');
         setDepartmentId('');
         setLocationId('');
-        setIsPrimary(false);
-        setRole('');
     };
     const handleCreate = async () => {
         try {
@@ -45,8 +41,6 @@ export function OrgAssignments({ onNavigate }) {
                 divisionId: divisionId || null,
                 departmentId: departmentId || null,
                 locationId: locationId || null,
-                isPrimary,
-                role: role || null,
             });
             setCreateModalOpen(false);
             resetForm();
@@ -102,13 +96,6 @@ export function OrgAssignments({ onNavigate }) {
         { value: '', label: '(No location)' },
         ...locations.map((l) => ({ value: l.id, label: l.name })),
     ];
-    // Role options
-    const roleOptions = [
-        { value: '', label: '(No role)' },
-        { value: 'member', label: 'Member' },
-        { value: 'lead', label: 'Lead' },
-        { value: 'manager', label: 'Manager' },
-    ];
     return (_jsxs(Page, { title: "Org Assignments", actions: _jsxs(Button, { onClick: () => setCreateModalOpen(true), children: [_jsx(Plus, { className: "w-4 h-4 mr-2" }), "Create Assignment"] }), children: [mutationError && (_jsx(Alert, { variant: "error", title: "Error", className: "mb-4", children: mutationError.message })), _jsx(Card, { className: "mb-4", children: _jsxs("div", { className: "flex gap-4 items-end", children: [_jsx("div", { className: "flex-1", children: _jsx(Select, { label: "Filter by User", value: filterUserKey, onChange: (v) => {
                                     setFilterUserKey(v);
                                     refresh();
@@ -137,16 +124,6 @@ export function OrgAssignments({ onNavigate }) {
                             render: (_value, row) => row.locationName || (row.locationId ? row.locationId.slice(0, 8) + '...' : '-'),
                         },
                         {
-                            key: 'role',
-                            label: 'Role',
-                            render: (_value, row) => row.role || '-',
-                        },
-                        {
-                            key: 'isPrimary',
-                            label: 'Primary',
-                            render: (_value, row) => (_jsx(Badge, { variant: row.isPrimary ? 'success' : 'secondary', children: row.isPrimary ? 'Yes' : 'No' })),
-                        },
-                        {
                             key: 'createdAt',
                             label: 'Created',
                             render: (_value, row) => formatDate(row.createdAt),
@@ -159,10 +136,7 @@ export function OrgAssignments({ onNavigate }) {
                     ], emptyMessage: "No assignments found. Create your first org assignment to get started." }) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     resetForm();
-                }, title: "Create Org Assignment", description: "Assign a user to organizational units", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Select, { label: "User", value: userKey, onChange: setUserKey, options: userOptions, required: true }), _jsx(Select, { label: "Division", value: divisionId, onChange: setDivisionId, options: divisionOptions }), _jsx(Select, { label: "Department", value: departmentId, onChange: setDepartmentId, options: departmentOptions }), _jsx(Select, { label: "Location", value: locationId, onChange: setLocationId, options: locationOptions }), _jsx(Select, { label: "Role", value: role, onChange: setRole, options: roleOptions }), _jsx(Select, { label: "Primary Assignment", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
-                                { value: 'false', label: 'No' },
-                                { value: 'true', label: 'Yes (replaces existing primary if any)' },
-                            ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !userKey || (!divisionId && !departmentId && !locationId) || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {
+                }, title: "Create Org Assignment", description: "Assign a user to organizational units", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Select, { label: "User", value: userKey, onChange: setUserKey, options: userOptions, required: true }), _jsx(Select, { label: "Division", value: divisionId, onChange: setDivisionId, options: divisionOptions }), _jsx(Select, { label: "Department", value: departmentId, onChange: setDepartmentId, options: departmentOptions }), _jsx(Select, { label: "Location", value: locationId, onChange: setLocationId, options: locationOptions }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !userKey || (!divisionId && !departmentId && !locationId) || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {
                     setDeleteModalOpen(false);
                     setSelectedAssignment(null);
                 }, title: "Delete Assignment", description: `Are you sure you want to remove this org assignment for "${selectedAssignment?.userKey}"? This action cannot be undone.`, children: _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setDeleteModalOpen(false); setSelectedAssignment(null); }, children: "Cancel" }), _jsx(Button, { variant: "danger", onClick: handleDelete, disabled: mutating, children: mutating ? 'Deleting...' : 'Delete' })] }) })] }));

@@ -37,27 +37,55 @@ export function createFetchPrincipals(options = {}) {
         const searchLower = search?.toLowerCase();
         if (type === 'user') {
             try {
-                const response = await fetch(`${authUrl}/directory/users`, {
-                    credentials: 'include',
-                    headers,
-                });
-                if (response.ok) {
-                    const authUsers = await response.json();
-                    if (Array.isArray(authUsers)) {
-                        authUsers.forEach((user) => {
-                            const firstName = user.profile_fields?.first_name || null;
-                            const lastName = user.profile_fields?.last_name || null;
-                            const displayName = [firstName, lastName].filter(Boolean).join(' ') || user.email;
-                            if (!searchLower || displayName.toLowerCase().includes(searchLower) || user.email.toLowerCase().includes(searchLower)) {
-                                principals.push({
-                                    type: 'user',
-                                    id: user.email,
-                                    displayName,
-                                    metadata: { email: user.email, profile_fields: user.profile_fields },
-                                });
-                            }
-                        });
+                // Prefer HRM-enriched directory when available; fall back to auth module directory.
+                // This keeps auth-core generic while letting ERP apps show real employee names when HRM is installed.
+                let authUsers = null;
+                try {
+                    const hrmRes = await fetch(`/api/hrm/directory/users`, {
+                        credentials: 'include',
+                        headers,
+                    });
+                    if (hrmRes.ok) {
+                        const hrmUsers = await hrmRes.json();
+                        if (Array.isArray(hrmUsers))
+                            authUsers = hrmUsers;
                     }
+                }
+                catch {
+                    // ignore
+                }
+                if (!authUsers) {
+                    const response = await fetch(`${authUrl}/directory/users`, {
+                        credentials: 'include',
+                        headers,
+                    });
+                    if (response.ok) {
+                        const raw = await response.json();
+                        if (Array.isArray(raw))
+                            authUsers = raw;
+                    }
+                }
+                if (Array.isArray(authUsers)) {
+                    authUsers.forEach((user) => {
+                        const employee = user.employee || null;
+                        const preferred = String(employee?.preferredName || employee?.preferred_name || '').trim();
+                        const first = String(employee?.firstName || employee?.first_name || user.profile_fields?.first_name || '').trim();
+                        const last = String(employee?.lastName || employee?.last_name || user.profile_fields?.last_name || '').trim();
+                        const employeeDisplayName = preferred || [first, last].filter(Boolean).join(' ').trim();
+                        const email = String(user.email || '').trim();
+                        const fallbackName = String(user.displayName || '').trim();
+                        const displayName = employeeDisplayName || fallbackName || email;
+                        if (!email)
+                            return;
+                        if (!searchLower || displayName.toLowerCase().includes(searchLower) || email.toLowerCase().includes(searchLower)) {
+                            principals.push({
+                                type: 'user',
+                                id: email,
+                                displayName,
+                                metadata: { email, profile_fields: user.profile_fields, employee },
+                            });
+                        }
+                    });
                 }
             }
             catch (err) {

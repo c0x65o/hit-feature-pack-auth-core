@@ -1,7 +1,4 @@
 import type { OrgScope, OwnershipScope, UserOrgAssignment } from "../../schema/org-dimensions";
-export type OrgAssignmentRole = "member" | "lead" | "manager";
-export declare function normalizeOrgAssignmentRole(input: unknown): OrgAssignmentRole | null;
-export declare function roleMeetsRequirement(actual: unknown, required: OrgAssignmentRole): boolean;
 export type LddScope = Pick<OwnershipScope, "divisionId" | "departmentId" | "locationId">;
 export declare function hasAnyLdd(scope: LddScope | null | undefined): boolean;
 export declare function normalizeLddScope(input: Partial<LddScope> | null | undefined): LddScope;
@@ -9,10 +6,8 @@ export interface UserOrgContext {
     userKey: string;
     orgScope: OrgScope;
     assignments: UserOrgAssignment[];
-    primaryAssignment: UserOrgAssignment | null;
 }
 export declare function buildOrgScopeFromAssignments(assignments: UserOrgAssignment[]): OrgScope;
-export declare function getPrimaryAssignment(assignments: UserOrgAssignment[]): UserOrgAssignment | null;
 export declare function fetchUserOrgContext(userKey: string): Promise<UserOrgContext>;
 export declare function fetchEntityExtraScopes(args: {
     entityType: string;
@@ -27,19 +22,14 @@ export type LddAccessRule = {
     type: "owner";
 } | {
     type: "sameDivision";
-    minRole?: OrgAssignmentRole;
 } | {
     type: "sameDepartment";
-    minRole?: OrgAssignmentRole;
 } | {
     type: "sameLocation";
-    minRole?: OrgAssignmentRole;
 } | {
     type: "anyLdd";
-    minRole?: OrgAssignmentRole;
 } | {
     type: "sameLdd";
-    minRole?: OrgAssignmentRole;
 } | {
     type: "divisionManager";
 } | {
@@ -50,7 +40,7 @@ export type LddAccessRule = {
 export interface LddAccessContext {
     userKey: string;
     orgScope: OrgScope | null;
-    assignments: Array<Pick<UserOrgAssignment, "divisionId" | "departmentId" | "locationId" | "role">>;
+    assignments: Array<Pick<UserOrgAssignment, "divisionId" | "departmentId" | "locationId">>;
     roles?: string[];
 }
 export declare function canAccessByRule(args: {

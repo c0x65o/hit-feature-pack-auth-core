@@ -4,29 +4,6 @@ import { orgEntityScopes, userOrgAssignments } from "@/lib/feature-pack-schemas"
 import { getDb } from "@/lib/db";
 import { isInUserOrgScope, isOwner } from "./org-utils";
 
-export type OrgAssignmentRole = "member" | "lead" | "manager";
-
-const ROLE_RANK: Record<OrgAssignmentRole, number> = {
-  member: 0,
-  lead: 1,
-  manager: 2,
-};
-
-export function normalizeOrgAssignmentRole(input: unknown): OrgAssignmentRole | null {
-  const v = String(input ?? "").trim().toLowerCase();
-  if (!v) return null;
-  if (v === "member" || v === "lead" || v === "manager") return v;
-  return null;
-}
-
-export function roleMeetsRequirement(
-  actual: unknown,
-  required: OrgAssignmentRole
-): boolean {
-  const a = normalizeOrgAssignmentRole(actual) ?? "member";
-  return ROLE_RANK[a] >= ROLE_RANK[required];
-}
-
 export type LddScope = Pick<OwnershipScope, "divisionId" | "departmentId" | "locationId">;
 
 export function hasAnyLdd(scope: LddScope | null | undefined): boolean {
@@ -46,7 +23,6 @@ export interface UserOrgContext {
   userKey: string;
   orgScope: OrgScope;
   assignments: UserOrgAssignment[];
-  primaryAssignment: UserOrgAssignment | null;
 }
 
 export function buildOrgScopeFromAssignments(assignments: UserOrgAssignment[]): OrgScope {
@@ -59,10 +35,6 @@ export function buildOrgScopeFromAssignments(assignments: UserOrgAssignment[]): 
   return scope;
 }
 
-export function getPrimaryAssignment(assignments: UserOrgAssignment[]): UserOrgAssignment | null {
-  return assignments.find((a) => a.isPrimary) ?? null;
-}
-
 export async function fetchUserOrgContext(userKey: string): Promise<UserOrgContext> {
   const db = getDb();
   const assignments = await db
@@ -71,13 +43,11 @@ export async function fetchUserOrgContext(userKey: string): Promise<UserOrgConte
     .where(eq(userOrgAssignments.userKey, userKey));
 
   const orgScope = buildOrgScopeFromAssignments(assignments as any);
-  const primaryAssignment = getPrimaryAssignment(assignments as any);
 
   return {
     userKey,
     orgScope,
     assignments: assignments as any,
-    primaryAssignment: primaryAssignment as any,
   };
 }
 
@@ -122,11 +92,11 @@ export function mergePrimaryAndExtraScopes(args: {
 
 export type LddAccessRule =
   | { type: "owner" }
-  | { type: "sameDivision"; minRole?: OrgAssignmentRole }
-  | { type: "sameDepartment"; minRole?: OrgAssignmentRole }
-  | { type: "sameLocation"; minRole?: OrgAssignmentRole }
-  | { type: "anyLdd"; minRole?: OrgAssignmentRole }
-  | { type: "sameLdd"; minRole?: OrgAssignmentRole }
+  | { type: "sameDivision" }
+  | { type: "sameDepartment" }
+  | { type: "sameLocation" }
+  | { type: "anyLdd" }
+  | { type: "sameLdd" }
   | { type: "divisionManager" }
   | { type: "departmentManager" }
   | { type: "locationManager" };
@@ -134,7 +104,7 @@ export type LddAccessRule =
 export interface LddAccessContext {
   userKey: string;
   orgScope: OrgScope | null;
-  assignments: Array<Pick<UserOrgAssignment, "divisionId" | "departmentId" | "locationId" | "role">>;
+  assignments: Array<Pick<UserOrgAssignment, "divisionId" | "departmentId" | "locationId">>;
   roles?: string[];
 }
 
@@ -144,11 +114,6 @@ function scopeMatchesAssignment(scope: LddScope, a: { divisionId?: string | null
   if (scope.departmentId && scope.departmentId !== (a.departmentId ?? null)) return false;
   if (scope.locationId && scope.locationId !== (a.locationId ?? null)) return false;
   return true;
-}
-
-function assignmentMeetsMinRole(a: { role?: string | null | undefined }, minRole?: OrgAssignmentRole): boolean {
-  if (!minRole) return true;
-  return roleMeetsRequirement(a.role, minRole);
 }
 
 export function canAccessByRule(args: {
@@ -177,27 +142,27 @@ export function canAccessByRule(args: {
   if (rule.type === "sameDivision") {
     return scopes.some((s) => {
       if (!s.divisionId) return false;
-      return ctx.assignments.some((a) => a.divisionId === s.divisionId && assignmentMeetsMinRole(a, rule.minRole));
+      return ctx.assignments.some((a) => a.divisionId === s.divisionId);
     });
   }
 
   if (rule.type === "sameDepartment") {
     return scopes.some((s) => {
       if (!s.departmentId) return false;
-      return ctx.assignments.some((a) => a.departmentId === s.departmentId && assignmentMeetsMinRole(a, rule.minRole));
+      return ctx.assignments.some((a) => a.departmentId === s.departmentId);
     });
   }
 
   if (rule.type === "sameLocation") {
     return scopes.some((s) => {
       if (!s.locationId) return false;
-      return ctx.assignments.some((a) => a.locationId === s.locationId && assignmentMeetsMinRole(a, rule.minRole));
+      return ctx.assignments.some((a) => a.locationId === s.locationId);
     });
   }
 
   if (rule.type === "sameLdd") {
     return scopes.some((s) => {
-      return ctx.assignments.some((a) => scopeMatchesAssignment(s, a) && assignmentMeetsMinRole(a, rule.minRole));
+      return ctx.assignments.some((a) => scopeMatchesAssignment(s, a));
     });
   }
 
@@ -205,7 +170,7 @@ export function canAccessByRule(args: {
     return canAccessByRule({
       entityOwnerUserKey,
       entityScopes,
-      rule: { type: "sameDivision", minRole: "manager" },
+      rule: { type: "sameDivision" },
       ctx,
     });
   }
@@ -214,7 +179,7 @@ export function canAccessByRule(args: {
     return canAccessByRule({
       entityOwnerUserKey,
       entityScopes,
-      rule: { type: "sameDepartment", minRole: "manager" },
+      rule: { type: "sameDepartment" },
       ctx,
     });
   }
@@ -223,7 +188,7 @@ export function canAccessByRule(args: {
     return canAccessByRule({
       entityOwnerUserKey,
       entityScopes,
-      rule: { type: "sameLocation", minRole: "manager" },
+      rule: { type: "sameLocation" },
       ctx,
     });
   }

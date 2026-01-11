@@ -64,8 +64,6 @@ export interface UserOrgAssignment {
     departmentName?: string | null;
     locationId: string | null;
     locationName?: string | null;
-    isPrimary: boolean;
-    role: string | null;
     createdAt: string;
     createdByUserKey: string | null;
 }

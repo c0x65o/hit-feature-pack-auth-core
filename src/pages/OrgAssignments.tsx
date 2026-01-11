@@ -34,8 +34,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
   const [divisionId, setDivisionId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [locationId, setLocationId] = useState('');
-  const [isPrimary, setIsPrimary] = useState(false);
-  const [role, setRole] = useState('');
 
   const { data: assignments, loading, error, refresh } = useUserOrgAssignments({
     userKey: filterUserKey || undefined,
@@ -52,8 +50,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
     setDivisionId('');
     setDepartmentId('');
     setLocationId('');
-    setIsPrimary(false);
-    setRole('');
   };
 
   const handleCreate = async () => {
@@ -63,8 +59,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
         divisionId: divisionId || null,
         departmentId: departmentId || null,
         locationId: locationId || null,
-        isPrimary,
-        role: role || null,
       });
       setCreateModalOpen(false);
       resetForm();
@@ -138,14 +132,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
   const locationOptions = [
     { value: '', label: '(No location)' },
     ...locations.map((l) => ({ value: l.id, label: l.name })),
-  ];
-
-  // Role options
-  const roleOptions = [
-    { value: '', label: '(No role)' },
-    { value: 'member', label: 'Member' },
-    { value: 'lead', label: 'Lead' },
-    { value: 'manager', label: 'Manager' },
   ];
 
   return (
@@ -222,20 +208,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
               render: (_value: unknown, row: UserOrgAssignment) => row.locationName || (row.locationId ? row.locationId.slice(0, 8) + '...' : '-'),
             },
             {
-              key: 'role',
-              label: 'Role',
-              render: (_value: unknown, row: UserOrgAssignment) => row.role || '-',
-            },
-            {
-              key: 'isPrimary',
-              label: 'Primary',
-              render: (_value: unknown, row: UserOrgAssignment) => (
-                <Badge variant={row.isPrimary ? 'success' : 'secondary'}>
-                  {row.isPrimary ? 'Yes' : 'No'}
-                </Badge>
-              ),
-            },
-            {
               key: 'createdAt',
               label: 'Created',
               render: (_value: unknown, row: UserOrgAssignment) => formatDate(row.createdAt),
@@ -293,21 +265,6 @@ export function OrgAssignments({ onNavigate }: OrgAssignmentsProps) {
             value={locationId}
             onChange={setLocationId}
             options={locationOptions}
-          />
-          <Select
-            label="Role"
-            value={role}
-            onChange={setRole}
-            options={roleOptions}
-          />
-          <Select
-            label="Primary Assignment"
-            value={isPrimary ? 'true' : 'false'}
-            onChange={(v: string) => setIsPrimary(v === 'true')}
-            options={[
-              { value: 'false', label: 'No' },
-              { value: 'true', label: 'Yes (replaces existing primary if any)' },
-            ]}
           />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => { setCreateModalOpen(false); resetForm(); }}>

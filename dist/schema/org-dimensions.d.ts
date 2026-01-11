@@ -903,14 +903,12 @@ export declare const departments: import("drizzle-orm/pg-core").PgTableWithColum
  *
  * Design notes:
  * - Uses userKey (email) instead of FK to auth DB for interoperability
- * - Each user can have one "primary" assignment (isPrimary = true)
- * - Users can have multiple assignments (e.g., works in 2 locations)
+ * - Each user can have at most one assignment row
  * - At least one of divisionId, departmentId, or locationId should be set
  *
  * Examples:
  * - User belongs to "Engineering" division + "Frontend" department + "NYC Office"
  * - User belongs to "Sales" division + "Chicago Office" (no department)
- * - User belongs to multiple locations (remote + HQ)
  */
 export declare const userOrgAssignments: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "org_user_assignments";
@@ -1003,42 +1001,6 @@ export declare const userOrgAssignments: import("drizzle-orm/pg-core").PgTableWi
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
-        isPrimary: import("drizzle-orm/pg-core").PgColumn<{
-            name: "is_primary";
-            tableName: "org_user_assignments";
-            dataType: "boolean";
-            columnType: "PgBoolean";
-            data: boolean;
-            driverParam: boolean;
-            notNull: true;
-            hasDefault: true;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        role: import("drizzle-orm/pg-core").PgColumn<{
-            name: "role";
-            tableName: "org_user_assignments";
-            dataType: "string";
-            columnType: "PgVarchar";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: 50;
-        }>;
         createdAt: import("drizzle-orm/pg-core").PgColumn<{
             name: "created_at";
             tableName: "org_user_assignments";

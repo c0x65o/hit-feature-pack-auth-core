@@ -5,9 +5,8 @@ import { Trash2, Plus, Edit2, Network } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
 import { useDepartments, useDepartmentMutations, } from '../hooks/useOrgDimensions';
-import { useUsers } from '../hooks/useAuthAdmin';
 export function Departments({ onNavigate }) {
-    const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select } = useUi();
+    const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select, Autocomplete } = useUi();
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -21,7 +20,6 @@ export function Departments({ onNavigate }) {
     const [isActive, setIsActive] = useState(true);
     const { data: departments, loading, error, refresh } = useDepartments();
     const { create, update, remove, loading: mutating, error: mutationError } = useDepartmentMutations();
-    const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
     const resetForm = () => {
         setName('');
         setCode('');
@@ -109,14 +107,6 @@ export function Departments({ onNavigate }) {
             .filter((d) => !selectedDepartment || d.id !== selectedDepartment.id)
             .map((d) => ({ value: d.id, label: d.name })),
     ];
-    // Build manager options
-    const managerOptions = [
-        { value: '', label: '(No manager)' },
-        ...(allUsers?.items || []).map((u) => ({
-            value: u.email,
-            label: u.email,
-        })),
-    ];
     return (_jsxs(Page, { title: "Departments", actions: _jsxs(Button, { onClick: () => setCreateModalOpen(true), children: [_jsx(Plus, { className: "w-4 h-4 mr-2" }), "Create Department"] }), children: [mutationError && (_jsx(Alert, { variant: "error", title: "Error", className: "mb-4", children: mutationError.message })), _jsx(Card, { children: _jsx(DataTable, { data: departments, columns: [
                         {
                             key: 'name',
@@ -151,11 +141,77 @@ export function Departments({ onNavigate }) {
                     ], emptyMessage: "No departments found. Create your first department to get started." }) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     resetForm();
-                }, title: "Create Department", description: "Create a new organizational department", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !name || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: editModalOpen, onClose: () => {
+                }, title: "Create Department", description: "Create a new organizational department", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Autocomplete, { label: "Manager", placeholder: "Search users\u2026", value: managerUserKey, onChange: setManagerUserKey, minQueryLength: 2, debounceMs: 200, limit: 10, emptyMessage: "No users found", searchingMessage: "Searching\u2026", clearable: true, onSearch: async (query, lim) => {
+                                const params = new URLSearchParams();
+                                params.set('search', query);
+                                params.set('pageSize', String(lim));
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return [];
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                return items.slice(0, lim).map((u) => ({
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                }));
+                            }, resolveValue: async (email) => {
+                                if (!email)
+                                    return null;
+                                const params = new URLSearchParams();
+                                params.set('id', email);
+                                params.set('pageSize', '1');
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return null;
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                const u = items[0];
+                                if (!u)
+                                    return null;
+                                return {
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                };
+                            } }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !name || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: editModalOpen, onClose: () => {
                     setEditModalOpen(false);
                     setSelectedDepartment(null);
                     resetForm();
-                }, title: "Edit Department", description: "Update department details", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsx(Select, { label: "Status", value: isActive ? 'true' : 'false', onChange: (v) => setIsActive(v === 'true'), options: [
+                }, title: "Edit Department", description: "Update department details", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., Engineering", required: true }), _jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., ENG" }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 3 }), _jsx(Select, { label: "Parent Department", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Autocomplete, { label: "Manager", placeholder: "Search users\u2026", value: managerUserKey, onChange: setManagerUserKey, minQueryLength: 2, debounceMs: 200, limit: 10, emptyMessage: "No users found", searchingMessage: "Searching\u2026", clearable: true, onSearch: async (query, lim) => {
+                                const params = new URLSearchParams();
+                                params.set('search', query);
+                                params.set('pageSize', String(lim));
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return [];
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                return items.slice(0, lim).map((u) => ({
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                }));
+                            }, resolveValue: async (email) => {
+                                if (!email)
+                                    return null;
+                                const params = new URLSearchParams();
+                                params.set('id', email);
+                                params.set('pageSize', '1');
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return null;
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                const u = items[0];
+                                if (!u)
+                                    return null;
+                                return {
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                };
+                            } }), _jsx(Select, { label: "Status", value: isActive ? 'true' : 'false', onChange: (v) => setIsActive(v === 'true'), options: [
                                 { value: 'true', label: 'Active' },
                                 { value: 'false', label: 'Inactive' },
                             ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setEditModalOpen(false); setSelectedDepartment(null); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleUpdate, disabled: !name || mutating, children: mutating ? 'Saving...' : 'Save Changes' })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => {

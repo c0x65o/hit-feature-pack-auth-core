@@ -1,8 +1,8 @@
 // src/server/api/assignments-id.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { userOrgAssignments, divisions, departments } from "@/lib/feature-pack-schemas";
-import { eq, and, asc } from "drizzle-orm";
+import { userOrgAssignments, divisions, departments, locations } from "@/lib/feature-pack-schemas";
+import { eq } from "drizzle-orm";
 import { requireAdmin } from "../auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,14 +42,14 @@ export async function GET(request) {
             departmentId: userOrgAssignments.departmentId,
             departmentName: departments.name,
             locationId: userOrgAssignments.locationId,
-            isPrimary: userOrgAssignments.isPrimary,
-            role: userOrgAssignments.role,
+            locationName: locations.name,
             createdAt: userOrgAssignments.createdAt,
             createdByUserKey: userOrgAssignments.createdByUserKey,
         })
             .from(userOrgAssignments)
             .leftJoin(divisions, eq(userOrgAssignments.divisionId, divisions.id))
             .leftJoin(departments, eq(userOrgAssignments.departmentId, departments.id))
+            .leftJoin(locations, eq(userOrgAssignments.locationId, locations.id))
             .where(eq(userOrgAssignments.id, id))
             .limit(1);
         if (!assignment) {
@@ -108,12 +108,16 @@ export async function PUT(request) {
                 return NextResponse.json({ error: "Department not found" }, { status: 400 });
             }
         }
-        // If setting as primary, clear other primary assignments for this user
-        if (body.isPrimary && !existing.isPrimary) {
-            await db
-                .update(userOrgAssignments)
-                .set({ isPrimary: false })
-                .where(and(eq(userOrgAssignments.userKey, existing.userKey), eq(userOrgAssignments.isPrimary, true)));
+        // Validate location exists if being changed
+        if (body.locationId && body.locationId !== existing.locationId) {
+            const [location] = await db
+                .select()
+                .from(locations)
+                .where(eq(locations.id, body.locationId))
+                .limit(1);
+            if (!location) {
+                return NextResponse.json({ error: "Location not found" }, { status: 400 });
+            }
         }
         // Build update object
         const updateData = {};
@@ -123,10 +127,6 @@ export async function PUT(request) {
             updateData.departmentId = body.departmentId || null;
         if (body.locationId !== undefined)
             updateData.locationId = body.locationId || null;
-        if (body.isPrimary !== undefined)
-            updateData.isPrimary = body.isPrimary;
-        if (body.role !== undefined)
-            updateData.role = body.role || null;
         const [updated] = await db
             .update(userOrgAssignments)
             .set(updateData)
@@ -165,25 +165,7 @@ export async function DELETE(request) {
         if (!existing) {
             return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
         }
-        const wasPrimary = existing.isPrimary;
-        const userKey = existing.userKey;
         await db.delete(userOrgAssignments).where(eq(userOrgAssignments.id, id));
-        // If we deleted the primary, promote another assignment to primary
-        // (the oldest remaining one becomes the new primary)
-        if (wasPrimary) {
-            const remainingAssignments = await db
-                .select({ id: userOrgAssignments.id })
-                .from(userOrgAssignments)
-                .where(eq(userOrgAssignments.userKey, userKey))
-                .orderBy(asc(userOrgAssignments.createdAt))
-                .limit(1);
-            if (remainingAssignments.length > 0) {
-                await db
-                    .update(userOrgAssignments)
-                    .set({ isPrimary: true })
-                    .where(eq(userOrgAssignments.id, remainingAssignments[0].id));
-            }
-        }
         return NextResponse.json({ success: true });
     }
     catch (error) {

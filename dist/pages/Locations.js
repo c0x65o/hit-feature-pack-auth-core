@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { Trash2, Plus, Edit2, MapPin } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useLocations, useLocationMutations, useLocationTypes, } from '../hooks/useOrgDimensions';
-import { useUsers } from '../hooks/useAuthAdmin';
 export function Locations({ onNavigate }) {
-    const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select } = useUi();
+    const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select, Autocomplete } = useUi();
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -28,7 +27,6 @@ export function Locations({ onNavigate }) {
     const { data: locations, loading, error, refresh } = useLocations();
     const { data: locationTypes } = useLocationTypes();
     const { create, update, remove, loading: mutating, error: mutationError } = useLocationMutations();
-    const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
     const resetForm = () => {
         setName('');
         setCode('');
@@ -149,14 +147,6 @@ export function Locations({ onNavigate }) {
         { value: '', label: '(No type)' },
         ...locationTypes.map((t) => ({ value: t.id, label: t.name })),
     ];
-    // Build manager options
-    const managerOptions = [
-        { value: '', label: '(No manager)' },
-        ...(allUsers?.items || []).map((u) => ({
-            value: u.email,
-            label: u.email,
-        })),
-    ];
     return (_jsxs(Page, { title: "Locations", actions: _jsxs(Button, { onClick: () => setCreateModalOpen(true), children: [_jsx(Plus, { className: "w-4 h-4 mr-2" }), "Create Location"] }), children: [mutationError && (_jsx(Alert, { variant: "error", title: "Error", className: "mb-4", children: mutationError.message })), _jsx(Card, { children: _jsx(DataTable, { data: locations, columns: [
                         {
                             key: 'name',
@@ -196,14 +186,80 @@ export function Locations({ onNavigate }) {
                     ], emptyMessage: "No locations found. Create your first location to get started." }) }), _jsx(Modal, { open: createModalOpen, onClose: () => {
                     setCreateModalOpen(false);
                     resetForm();
-                }, title: "Create Location", description: "Create a new physical or virtual location", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., NYC Office", required: true }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., NYC" }), _jsx(Select, { label: "Type", value: locationTypeId, onChange: setLocationTypeId, options: typeOptions })] }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 2 }), _jsx(Input, { label: "Address", value: address, onChange: setAddress, placeholder: "Street address" }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "City", value: city, onChange: setCity }), _jsx(Input, { label: "State", value: state, onChange: setState })] }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Postal Code", value: postalCode, onChange: setPostalCode }), _jsx(Input, { label: "Country", value: country, onChange: setCountry })] }), _jsx(Select, { label: "Parent Location", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsx(Select, { label: "Primary/HQ", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
+                }, title: "Create Location", description: "Create a new physical or virtual location", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., NYC Office", required: true }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., NYC" }), _jsx(Select, { label: "Type", value: locationTypeId, onChange: setLocationTypeId, options: typeOptions })] }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 2 }), _jsx(Input, { label: "Address", value: address, onChange: setAddress, placeholder: "Street address" }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "City", value: city, onChange: setCity }), _jsx(Input, { label: "State", value: state, onChange: setState })] }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Postal Code", value: postalCode, onChange: setPostalCode }), _jsx(Input, { label: "Country", value: country, onChange: setCountry })] }), _jsx(Select, { label: "Parent Location", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Autocomplete, { label: "Manager", placeholder: "Search users\u2026", value: managerUserKey, onChange: setManagerUserKey, minQueryLength: 2, debounceMs: 200, limit: 10, emptyMessage: "No users found", searchingMessage: "Searching\u2026", clearable: true, onSearch: async (query, lim) => {
+                                const params = new URLSearchParams();
+                                params.set('search', query);
+                                params.set('pageSize', String(lim));
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return [];
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                return items.slice(0, lim).map((u) => ({
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                }));
+                            }, resolveValue: async (email) => {
+                                if (!email)
+                                    return null;
+                                const params = new URLSearchParams();
+                                params.set('id', email);
+                                params.set('pageSize', '1');
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return null;
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                const u = items[0];
+                                if (!u)
+                                    return null;
+                                return {
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                };
+                            } }), _jsx(Select, { label: "Primary/HQ", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
                                 { value: 'false', label: 'No' },
                                 { value: 'true', label: 'Yes (Headquarters)' },
                             ] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "secondary", onClick: () => { setCreateModalOpen(false); resetForm(); }, children: "Cancel" }), _jsx(Button, { onClick: handleCreate, disabled: !name || mutating, children: mutating ? 'Creating...' : 'Create' })] })] }) }), _jsx(Modal, { open: editModalOpen, onClose: () => {
                     setEditModalOpen(false);
                     setSelectedLocation(null);
                     resetForm();
-                }, title: "Edit Location", description: "Update location details", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., NYC Office", required: true }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., NYC" }), _jsx(Select, { label: "Type", value: locationTypeId, onChange: setLocationTypeId, options: typeOptions })] }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 2 }), _jsx(Input, { label: "Address", value: address, onChange: setAddress, placeholder: "Street address" }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "City", value: city, onChange: setCity }), _jsx(Input, { label: "State", value: state, onChange: setState })] }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Postal Code", value: postalCode, onChange: setPostalCode }), _jsx(Input, { label: "Country", value: country, onChange: setCountry })] }), _jsx(Select, { label: "Parent Location", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Select, { label: "Manager", value: managerUserKey, onChange: setManagerUserKey, options: managerOptions }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Select, { label: "Primary/HQ", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
+                }, title: "Edit Location", description: "Update location details", children: _jsxs("div", { className: "space-y-4 max-h-[60vh] overflow-y-auto", children: [_jsx(Input, { label: "Name", value: name, onChange: setName, placeholder: "e.g., NYC Office", required: true }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Code", value: code, onChange: setCode, placeholder: "e.g., NYC" }), _jsx(Select, { label: "Type", value: locationTypeId, onChange: setLocationTypeId, options: typeOptions })] }), _jsx(TextArea, { label: "Description", value: description, onChange: setDescription, placeholder: "Optional description", rows: 2 }), _jsx(Input, { label: "Address", value: address, onChange: setAddress, placeholder: "Street address" }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "City", value: city, onChange: setCity }), _jsx(Input, { label: "State", value: state, onChange: setState })] }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Input, { label: "Postal Code", value: postalCode, onChange: setPostalCode }), _jsx(Input, { label: "Country", value: country, onChange: setCountry })] }), _jsx(Select, { label: "Parent Location", value: parentId, onChange: setParentId, options: parentOptions }), _jsx(Autocomplete, { label: "Manager", placeholder: "Search users\u2026", value: managerUserKey, onChange: setManagerUserKey, minQueryLength: 2, debounceMs: 200, limit: 10, emptyMessage: "No users found", searchingMessage: "Searching\u2026", clearable: true, onSearch: async (query, lim) => {
+                                const params = new URLSearchParams();
+                                params.set('search', query);
+                                params.set('pageSize', String(lim));
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return [];
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                return items.slice(0, lim).map((u) => ({
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                }));
+                            }, resolveValue: async (email) => {
+                                if (!email)
+                                    return null;
+                                const params = new URLSearchParams();
+                                params.set('id', email);
+                                params.set('pageSize', '1');
+                                const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+                                if (!res.ok)
+                                    return null;
+                                const json = await res.json().catch(() => ({}));
+                                const items = Array.isArray(json?.items) ? json.items : [];
+                                const u = items[0];
+                                if (!u)
+                                    return null;
+                                return {
+                                    value: String(u.email || ''),
+                                    label: String(u.name || u.email || ''),
+                                    description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+                                };
+                            } }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx(Select, { label: "Primary/HQ", value: isPrimary ? 'true' : 'false', onChange: (v) => setIsPrimary(v === 'true'), options: [
                                         { value: 'false', label: 'No' },
                                         { value: 'true', label: 'Yes (Headquarters)' },
                                     ] }), _jsx(Select, { label: "Status", value: isActive ? 'true' : 'false', onChange: (v) => setIsActive(v === 'true'), options: [

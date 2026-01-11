@@ -1,7 +1,7 @@
 // src/server/api/assignments.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { userOrgAssignments, divisions, departments } from "@/lib/feature-pack-schemas";
+import { userOrgAssignments, divisions, departments, locations } from "@/lib/feature-pack-schemas";
 import { eq, desc, and } from "drizzle-orm";
 import { requireAdmin, getUserId, isAdmin } from "../auth";
 export const dynamic = "force-dynamic";
@@ -65,14 +65,14 @@ export async function GET(request) {
             departmentId: userOrgAssignments.departmentId,
             departmentName: departments.name,
             locationId: userOrgAssignments.locationId,
-            isPrimary: userOrgAssignments.isPrimary,
-            role: userOrgAssignments.role,
+            locationName: locations.name,
             createdAt: userOrgAssignments.createdAt,
             createdByUserKey: userOrgAssignments.createdByUserKey,
         })
             .from(userOrgAssignments)
             .leftJoin(divisions, eq(userOrgAssignments.divisionId, divisions.id))
-            .leftJoin(departments, eq(userOrgAssignments.departmentId, departments.id));
+            .leftJoin(departments, eq(userOrgAssignments.departmentId, departments.id))
+            .leftJoin(locations, eq(userOrgAssignments.locationId, locations.id));
         const items = whereClause
             ? await baseQuery.where(whereClause).orderBy(desc(userOrgAssignments.createdAt))
             : await baseQuery.orderBy(desc(userOrgAssignments.createdAt));
@@ -125,20 +125,25 @@ export async function POST(request) {
                 return NextResponse.json({ error: "Department not found" }, { status: 400 });
             }
         }
-        // Check if user has any existing assignments
-        const existingAssignments = await db
+        // Validate location exists if provided
+        if (body.locationId) {
+            const [location] = await db
+                .select()
+                .from(locations)
+                .where(eq(locations.id, body.locationId))
+                .limit(1);
+            if (!location) {
+                return NextResponse.json({ error: "Location not found" }, { status: 400 });
+            }
+        }
+        // Enforce one assignment row per user.
+        const existing = await db
             .select({ id: userOrgAssignments.id })
             .from(userOrgAssignments)
             .where(eq(userOrgAssignments.userKey, body.userKey))
             .limit(1);
-        // Auto-set primary if this is the user's first assignment
-        const shouldBePrimary = body.isPrimary || existingAssignments.length === 0;
-        // If setting as primary, clear other primary assignments for this user
-        if (shouldBePrimary) {
-            await db
-                .update(userOrgAssignments)
-                .set({ isPrimary: false })
-                .where(and(eq(userOrgAssignments.userKey, body.userKey), eq(userOrgAssignments.isPrimary, true)));
+        if (existing.length > 0) {
+            return NextResponse.json({ error: "User already has an org assignment" }, { status: 409 });
         }
         const result = await db
             .insert(userOrgAssignments)
@@ -147,8 +152,6 @@ export async function POST(request) {
             divisionId: body.divisionId || null,
             departmentId: body.departmentId || null,
             locationId: body.locationId || null,
-            isPrimary: shouldBePrimary,
-            role: body.role || null,
             createdByUserKey: currentUserId,
         })
             .returning();

@@ -9,14 +9,13 @@ import {
   useDivisionMutations,
   type Division,
 } from '../hooks/useOrgDimensions';
-import { useUsers } from '../hooks/useAuthAdmin';
 
 interface DivisionsProps {
   onNavigate?: (path: string) => void;
 }
 
 export function Divisions({ onNavigate }: DivisionsProps) {
-  const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select } = useUi();
+  const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, TextArea, Spinner, Select, Autocomplete } = useUi();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -33,7 +32,6 @@ export function Divisions({ onNavigate }: DivisionsProps) {
 
   const { data: divisions, loading, error, refresh } = useDivisions();
   const { create, update, remove, loading: mutating, error: mutationError } = useDivisionMutations();
-  const { data: allUsers } = useUsers({ page: 1, pageSize: 1000 });
 
   const resetForm = () => {
     setName('');
@@ -140,15 +138,6 @@ export function Divisions({ onNavigate }: DivisionsProps) {
       .map((d) => ({ value: d.id, label: d.name })),
   ];
 
-  // Build manager options
-  const managerOptions = [
-    { value: '', label: '(No manager)' },
-    ...(allUsers?.items || []).map((u) => ({
-      value: u.email,
-      label: u.email,
-    })),
-  ];
-
   return (
     <Page
       title="Divisions"
@@ -240,7 +229,7 @@ export function Divisions({ onNavigate }: DivisionsProps) {
         title="Create Division"
         description="Create a new organizational division"
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
           <Input
             label="Name"
             value={name}
@@ -267,11 +256,48 @@ export function Divisions({ onNavigate }: DivisionsProps) {
             onChange={setParentId}
             options={parentOptions}
           />
-          <Select
+          <Autocomplete
             label="Manager"
+            placeholder="Search users…"
             value={managerUserKey}
             onChange={setManagerUserKey}
-            options={managerOptions}
+            minQueryLength={2}
+            debounceMs={200}
+            limit={10}
+            emptyMessage="No users found"
+            searchingMessage="Searching…"
+            clearable
+            onSearch={async (query: string, lim: number) => {
+              const params = new URLSearchParams();
+              params.set('search', query);
+              params.set('pageSize', String(lim));
+              const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+              if (!res.ok) return [];
+              const json = await res.json().catch(() => ({}));
+              const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+              return items.slice(0, lim).map((u: any) => ({
+                value: String(u.email || ''),
+                label: String(u.name || u.email || ''),
+                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+              }));
+            }}
+            resolveValue={async (email: string) => {
+              if (!email) return null;
+              const params = new URLSearchParams();
+              params.set('id', email);
+              params.set('pageSize', '1');
+              const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+              if (!res.ok) return null;
+              const json = await res.json().catch(() => ({}));
+              const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+              const u = items[0];
+              if (!u) return null;
+              return {
+                value: String(u.email || ''),
+                label: String(u.name || u.email || ''),
+                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+              };
+            }}
           />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => { setCreateModalOpen(false); resetForm(); }}>
@@ -295,7 +321,7 @@ export function Divisions({ onNavigate }: DivisionsProps) {
         title="Edit Division"
         description="Update division details"
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
           <Input
             label="Name"
             value={name}
@@ -322,11 +348,48 @@ export function Divisions({ onNavigate }: DivisionsProps) {
             onChange={setParentId}
             options={parentOptions}
           />
-          <Select
+          <Autocomplete
             label="Manager"
+            placeholder="Search users…"
             value={managerUserKey}
             onChange={setManagerUserKey}
-            options={managerOptions}
+            minQueryLength={2}
+            debounceMs={200}
+            limit={10}
+            emptyMessage="No users found"
+            searchingMessage="Searching…"
+            clearable
+            onSearch={async (query: string, lim: number) => {
+              const params = new URLSearchParams();
+              params.set('search', query);
+              params.set('pageSize', String(lim));
+              const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+              if (!res.ok) return [];
+              const json = await res.json().catch(() => ({}));
+              const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+              return items.slice(0, lim).map((u: any) => ({
+                value: String(u.email || ''),
+                label: String(u.name || u.email || ''),
+                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+              }));
+            }}
+            resolveValue={async (email: string) => {
+              if (!email) return null;
+              const params = new URLSearchParams();
+              params.set('id', email);
+              params.set('pageSize', '1');
+              const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+              if (!res.ok) return null;
+              const json = await res.json().catch(() => ({}));
+              const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+              const u = items[0];
+              if (!u) return null;
+              return {
+                value: String(u.email || ''),
+                label: String(u.name || u.email || ''),
+                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+              };
+            }}
           />
           <Select
             label="Status"

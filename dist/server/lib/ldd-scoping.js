@@ -2,23 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { orgEntityScopes, userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { getDb } from "@/lib/db";
 import { isInUserOrgScope, isOwner } from "./org-utils";
-const ROLE_RANK = {
-    member: 0,
-    lead: 1,
-    manager: 2,
-};
-export function normalizeOrgAssignmentRole(input) {
-    const v = String(input ?? "").trim().toLowerCase();
-    if (!v)
-        return null;
-    if (v === "member" || v === "lead" || v === "manager")
-        return v;
-    return null;
-}
-export function roleMeetsRequirement(actual, required) {
-    const a = normalizeOrgAssignmentRole(actual) ?? "member";
-    return ROLE_RANK[a] >= ROLE_RANK[required];
-}
 export function hasAnyLdd(scope) {
     if (!scope)
         return false;
@@ -43,9 +26,6 @@ export function buildOrgScopeFromAssignments(assignments) {
     }
     return scope;
 }
-export function getPrimaryAssignment(assignments) {
-    return assignments.find((a) => a.isPrimary) ?? null;
-}
 export async function fetchUserOrgContext(userKey) {
     const db = getDb();
     const assignments = await db
@@ -53,12 +33,10 @@ export async function fetchUserOrgContext(userKey) {
         .from(userOrgAssignments)
         .where(eq(userOrgAssignments.userKey, userKey));
     const orgScope = buildOrgScopeFromAssignments(assignments);
-    const primaryAssignment = getPrimaryAssignment(assignments);
     return {
         userKey,
         orgScope,
         assignments: assignments,
-        primaryAssignment: primaryAssignment,
     };
 }
 export async function fetchEntityExtraScopes(args) {
@@ -97,11 +75,6 @@ function scopeMatchesAssignment(scope, a) {
         return false;
     return true;
 }
-function assignmentMeetsMinRole(a, minRole) {
-    if (!minRole)
-        return true;
-    return roleMeetsRequirement(a.role, minRole);
-}
 export function canAccessByRule(args) {
     const { entityOwnerUserKey, entityScopes, rule, ctx } = args;
     // Admin bypass if provided
@@ -121,33 +94,33 @@ export function canAccessByRule(args) {
         return scopes.some((s) => {
             if (!s.divisionId)
                 return false;
-            return ctx.assignments.some((a) => a.divisionId === s.divisionId && assignmentMeetsMinRole(a, rule.minRole));
+            return ctx.assignments.some((a) => a.divisionId === s.divisionId);
         });
     }
     if (rule.type === "sameDepartment") {
         return scopes.some((s) => {
             if (!s.departmentId)
                 return false;
-            return ctx.assignments.some((a) => a.departmentId === s.departmentId && assignmentMeetsMinRole(a, rule.minRole));
+            return ctx.assignments.some((a) => a.departmentId === s.departmentId);
         });
     }
     if (rule.type === "sameLocation") {
         return scopes.some((s) => {
             if (!s.locationId)
                 return false;
-            return ctx.assignments.some((a) => a.locationId === s.locationId && assignmentMeetsMinRole(a, rule.minRole));
+            return ctx.assignments.some((a) => a.locationId === s.locationId);
         });
     }
     if (rule.type === "sameLdd") {
         return scopes.some((s) => {
-            return ctx.assignments.some((a) => scopeMatchesAssignment(s, a) && assignmentMeetsMinRole(a, rule.minRole));
+            return ctx.assignments.some((a) => scopeMatchesAssignment(s, a));
         });
     }
     if (rule.type === "divisionManager") {
         return canAccessByRule({
             entityOwnerUserKey,
             entityScopes,
-            rule: { type: "sameDivision", minRole: "manager" },
+            rule: { type: "sameDivision" },
             ctx,
         });
     }
@@ -155,7 +128,7 @@ export function canAccessByRule(args) {
         return canAccessByRule({
             entityOwnerUserKey,
             entityScopes,
-            rule: { type: "sameDepartment", minRole: "manager" },
+            rule: { type: "sameDepartment" },
             ctx,
         });
     }
@@ -163,7 +136,7 @@ export function canAccessByRule(args) {
         return canAccessByRule({
             entityOwnerUserKey,
             entityScopes,
-            rule: { type: "sameLocation", minRole: "manager" },
+            rule: { type: "sameLocation" },
             ctx,
         });
     }
