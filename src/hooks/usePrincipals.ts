@@ -41,6 +41,13 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
+function hasFeaturePack(packName: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const win = window as unknown as { __HIT_CONFIG?: any };
+  const fp = win.__HIT_CONFIG?.featurePacks || {};
+  return Boolean(fp && typeof fp === 'object' && fp[String(packName)]);
+}
+
 /**
  * Creates a fetchPrincipals function for use with AclPicker.
  * 
@@ -65,17 +72,19 @@ export function createFetchPrincipals(options: {
         // This keeps auth-core generic while letting ERP apps show real employee names when HRM is installed.
         let authUsers: any[] | null = null;
 
-        try {
-          const hrmRes = await fetch(`/api/hrm/directory/users`, {
-            credentials: 'include',
-            headers,
-          });
-          if (hrmRes.ok) {
-            const hrmUsers = await hrmRes.json();
-            if (Array.isArray(hrmUsers)) authUsers = hrmUsers;
+        if (hasFeaturePack('hrm')) {
+          try {
+            const hrmRes = await fetch(`/api/hrm/directory/users`, {
+              credentials: 'include',
+              headers,
+            });
+            if (hrmRes.ok) {
+              const hrmUsers = await hrmRes.json();
+              if (Array.isArray(hrmUsers)) authUsers = hrmUsers;
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
 
         if (!authUsers) {
