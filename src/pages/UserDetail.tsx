@@ -175,8 +175,10 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     setImpersonating(true);
     try {
       const originalToken = typeof window !== 'undefined' ? localStorage.getItem('hit_token') : null;
-      if (originalToken && typeof window !== 'undefined' && !localStorage.getItem('hit_token_original')) {
+      if (originalToken && typeof window !== 'undefined') {
+        // Stash admin token + last assumed user so the shell can offer a quick toggle back/forth.
         localStorage.setItem('hit_token_original', originalToken);
+        localStorage.setItem('hit_last_impersonated_email', userEmail);
       }
 
       const res = await startImpersonation(userEmail);

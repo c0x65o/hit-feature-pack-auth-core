@@ -55,7 +55,7 @@ function pageGrantCandidates(path) {
     return Array.from(new Set(out));
 }
 function parseExclusiveActionModeGroup(actionKey) {
-    const m = String(actionKey || '').match(/^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(any|own|ldd)$/);
+    const m = String(actionKey || '').match(/^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|any|own|ldd)$/);
     if (!m)
         return null;
     return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
@@ -777,7 +777,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             }
                                                             const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
                                                                 // Fixed precedence (most restrictive -> least restrictive)
-                                                                const precedenceValues = ['own', 'ldd', 'any'];
+                                                                const precedenceValues = ['none', 'own', 'ldd', 'any'];
                                                                 const options = precedenceValues
                                                                     .map((v) => {
                                                                     const item = g.values.get(v);
@@ -812,6 +812,8 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 return opt?.value ?? '';
                                                             }
                                                             function labelForValue(v) {
+                                                                if (v === 'none')
+                                                                    return 'None';
                                                                 if (v === 'any')
                                                                     return 'Any';
                                                                 if (v === 'own')
@@ -823,6 +825,8 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             function shortLabelForValue(v) {
                                                                 if (!v)
                                                                     return '—';
+                                                                if (v === 'none')
+                                                                    return 'None';
                                                                 if (v === 'any')
                                                                     return 'Any';
                                                                 if (v === 'own')

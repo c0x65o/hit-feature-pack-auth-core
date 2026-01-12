@@ -122,7 +122,7 @@ type ExclusiveActionModeGroup = {
 
 function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; value: string } | null {
   const m = String(actionKey || '').match(
-    /^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(any|own|ldd)$/
+    /^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|any|own|ldd)$/
   );
   if (!m) return null;
   return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
@@ -1178,7 +1178,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
                             // Fixed precedence (most restrictive -> least restrictive)
-                            const precedenceValues = ['own', 'ldd', 'any'] as const;
+                            const precedenceValues = ['none', 'own', 'ldd', 'any'] as const;
                             const options = precedenceValues
                               .map((v) => {
                                 const item = g.values.get(v);
@@ -1215,6 +1215,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
 
                           function labelForValue(v: string): string {
+                            if (v === 'none') return 'None';
                             if (v === 'any') return 'Any';
                             if (v === 'own') return 'Own';
                             if (v === 'ldd') return 'LDD';
@@ -1223,6 +1224,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           function shortLabelForValue(v: ScopeModeValue | null): string {
                             if (!v) return '—';
+                            if (v === 'none') return 'None';
                             if (v === 'any') return 'Any';
                             if (v === 'own') return 'Own';
                             if (v === 'ldd') return 'LDD';
@@ -1240,7 +1242,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           //     Contacts / Prospects / ...         (entity nodes)
                           //       Read/Write/Delete Scope          (overrides, inherit from parent verb)
                           type ScopeVerb = 'read' | 'write' | 'delete';
-                          type ScopeModeValue = 'own' | 'ldd' | 'any';
+                          type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
                           type InheritedByVerb = Record<ScopeVerb, ScopeModeValue | null>;
 
                           type ScopeNode = {
