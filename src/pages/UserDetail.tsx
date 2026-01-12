@@ -61,7 +61,8 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     return out;
   };
   const userEmail = normalizeEmail(email);
-  const [impersonationEnabled, setImpersonationEnabled] = useState<boolean>(true);
+  // Default hidden until we confirm the backend config says it's enabled.
+  const [impersonationEnabled, setImpersonationEnabled] = useState<boolean>(false);
   
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -550,14 +551,16 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
                 <Edit2 size={16} className="mr-2" />
                 Edit
               </Button>
-              <Button
-                variant="secondary"
-                onClick={handleStartImpersonation}
-                disabled={mutating || impersonating || !impersonationEnabled}
-              >
-                <UserCheck size={16} className="mr-2" />
-                {impersonating ? 'Assuming...' : 'Assume'}
-              </Button>
+              {impersonationEnabled ? (
+                <Button
+                  variant="secondary"
+                  onClick={handleStartImpersonation}
+                  disabled={mutating || impersonating}
+                >
+                  <UserCheck size={16} className="mr-2" />
+                  {impersonating ? 'Assuming...' : 'Assume'}
+                </Button>
+              ) : null}
               {!user.email_verified && (
                 <>
                   <Button variant="secondary" onClick={handleVerifyEmail} disabled={mutating}>
