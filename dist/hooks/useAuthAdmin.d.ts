@@ -154,6 +154,16 @@ export declare function useUserMutations(): {
     deleteProfilePicture: (email: string) => Promise<void>;
     lockUser: (email: string) => Promise<void>;
     unlockUser: (email: string) => Promise<void>;
+    startImpersonation: (userEmail: string) => Promise<{
+        token: string;
+        refresh_token?: string;
+        impersonated_user?: {
+            email?: string;
+            email_verified?: boolean;
+            roles?: string[];
+        };
+        admin_email?: string;
+    }>;
     loading: boolean;
     error: Error | null;
 };

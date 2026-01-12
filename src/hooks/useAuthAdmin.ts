@@ -172,6 +172,21 @@ class AuthAdminError extends Error {
   }
 }
 
+function normalizeErrorDetail(errorBody: any, fallback: string): string {
+  const detail = errorBody?.detail ?? errorBody?.message ?? fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI validation errors often come back as a list of { loc, msg, type }.
+    const firstMsg = detail.find((d: any) => typeof d?.msg === 'string')?.msg;
+    if (firstMsg) return String(firstMsg);
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return String(detail);
+  }
+}
+
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const authUrl = getAuthUrl();
   const url = `${authUrl}${endpoint}`;
@@ -188,7 +203,7 @@ async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promis
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
-    const detail = errorBody.detail || errorBody.message || `Request failed: ${res.status}`;
+    const detail = normalizeErrorDetail(errorBody, `Request failed: ${res.status}`);
     throw new AuthAdminError(res.status, detail);
   }
 
@@ -588,6 +603,17 @@ export function useUserMutations() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  type ImpersonateResponse = {
+    token: string;
+    refresh_token?: string;
+    impersonated_user?: {
+      email?: string;
+      email_verified?: boolean;
+      roles?: string[];
+    };
+    admin_email?: string;
+  };
+
   const createUser = async (data: { email: string; password: string; roles?: string[] }) => {
     setLoading(true);
     setError(null);
@@ -823,6 +849,22 @@ export function useUserMutations() {
     }
   };
 
+  const startImpersonation = async (userEmail: string): Promise<ImpersonateResponse> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fetchWithAuth<ImpersonateResponse>('/impersonate/start', {
+        method: 'POST',
+        body: JSON.stringify({ user_email: userEmail }),
+      });
+    } catch (e) {
+      setError(e as Error);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     createUser,
     deleteUser,
@@ -836,6 +878,7 @@ export function useUserMutations() {
     deleteProfilePicture,
     lockUser,
     unlockUser,
+    startImpersonation,
     loading,
     error,
   };

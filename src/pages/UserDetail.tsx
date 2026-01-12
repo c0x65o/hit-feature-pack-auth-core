@@ -17,6 +17,7 @@ import {
   Save,
   X,
   User,
+  UserCheck,
   Upload,
   Camera,
   Link2,
@@ -45,6 +46,22 @@ interface UserDetailProps {
 export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const { Page, Card, Button, Badge, DataTable, Modal, Alert, Spinner, EmptyState, Select, Input, AlertDialog } = useUi();
   const alertDialog = useAlertDialog();
+
+  const normalizeEmail = (raw: string) => {
+    let out = String(raw || '').trim();
+    // Next route params may arrive percent-encoded (sometimes double-encoded). Decode up to 2 times.
+    for (let i = 0; i < 2; i++) {
+      if (!/%[0-9A-Fa-f]{2}/.test(out)) break;
+      try {
+        out = decodeURIComponent(out);
+      } catch {
+        break;
+      }
+    }
+    return out;
+  };
+  const userEmail = normalizeEmail(email);
+  const [impersonationEnabled, setImpersonationEnabled] = useState<boolean>(true);
   
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -63,13 +80,13 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const { user, loading, error, refresh } = useUser(email);
+  const { user, loading, error, refresh } = useUser(userEmail);
   const {
     data: effectivePerms,
     loading: effectivePermsLoading,
     error: effectivePermsError,
     refresh: refreshEffectivePerms,
-  } = useUserEffectivePermissions(email);
+  } = useUserEffectivePermissions(userEmail);
   const { config: authConfig } = useAuthAdminConfig();
   const { data: profileFieldMetadata, loading: fieldsLoading } = useProfileFields();
   const profileFieldsList = profileFieldMetadata || [];
@@ -90,14 +107,16 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
         const data = await response.json();
         const roles = data.features?.available_roles || ['admin', 'user'];
         setAvailableRoles(roles);
+        setImpersonationEnabled(Boolean(data.features?.admin_impersonation));
       } catch (e) {
         // Fallback to default roles
         setAvailableRoles(['admin', 'user']);
+        setImpersonationEnabled(false);
       }
     };
     fetchAvailableRoles();
   }, []);
-  const { data: sessionsData, refresh: refreshSessions } = useUserSessions(email);
+  const { data: sessionsData, refresh: refreshSessions } = useUserSessions(userEmail);
   const {
     deleteUser,
     resetPassword,
@@ -110,9 +129,32 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     deleteProfilePicture,
     lockUser,
     unlockUser,
+    startImpersonation,
     loading: mutating,
   } = useUserMutations();
   const { revokeSession, revokeAllUserSessions } = useSessionMutations();
+
+  const [impersonating, setImpersonating] = useState(false);
+
+  const setAuthToken = (token: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('hit_token', token);
+
+    // Best-effort cookie max-age from JWT exp (falls back to 1 hour).
+    let maxAge = 3600;
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload.exp) {
+          maxAge = Math.max(0, payload.exp - Math.floor(Date.now() / 1000));
+        }
+      }
+    } catch {
+      // Use default
+    }
+    document.cookie = `hit_token=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  };
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -122,9 +164,47 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     }
   };
 
+  const handleStartImpersonation = async () => {
+    const confirmed = await alertDialog.showConfirm(`Assume ${userEmail}?`, {
+      title: 'Assume User',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
+
+    setImpersonating(true);
+    try {
+      const originalToken = typeof window !== 'undefined' ? localStorage.getItem('hit_token') : null;
+      if (originalToken && typeof window !== 'undefined' && !localStorage.getItem('hit_token_original')) {
+        localStorage.setItem('hit_token_original', originalToken);
+      }
+
+      const res = await startImpersonation(userEmail);
+      if (!res?.token) {
+        throw new Error('Impersonation did not return a token');
+      }
+
+      setAuthToken(res.token);
+
+      // Full reload so the shell rehydrates from the new token cleanly.
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      } else {
+        navigate('/');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start impersonation';
+      await alertDialog.showAlert(message, { variant: 'error', title: 'Impersonation Failed' });
+      // If start failed, don't leave a stale "original token" behind.
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('hit_token_original');
+      }
+      setImpersonating(false);
+    }
+  };
+
   const handleDeleteUser = async () => {
     try {
-      await deleteUser(email);
+      await deleteUser(userEmail);
       navigate('/admin/users');
     } catch {
       // Error handled by hook
@@ -143,7 +223,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     
     if (resetPasswordMethod === 'email') {
       try {
-        await resetPassword(email, true);
+        await resetPassword(userEmail, true);
         setResetPasswordSuccess('Password reset email sent successfully!');
         setTimeout(() => {
           setResetPasswordModalOpen(false);
@@ -167,7 +247,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
         return;
       }
       try {
-        await resetPassword(email, false, newPassword);
+        await resetPassword(userEmail, false, newPassword);
         setResetPasswordSuccess('Password has been reset successfully!');
         setTimeout(() => {
           setResetPasswordModalOpen(false);
@@ -185,12 +265,12 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   };
 
   const handleResendVerification = async () => {
-    const confirmed = await alertDialog.showConfirm(`Resend verification email to ${email}?`, {
+    const confirmed = await alertDialog.showConfirm(`Resend verification email to ${userEmail}?`, {
       title: 'Resend Verification',
     });
     if (confirmed) {
       try {
-        await resendVerification(email);
+        await resendVerification(userEmail);
         await alertDialog.showAlert('Verification email sent!', { variant: 'success', title: 'Success' });
       } catch {
         // Error handled by hook
@@ -199,12 +279,12 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   };
 
   const handleVerifyEmail = async () => {
-    const confirmed = await alertDialog.showConfirm(`Mark email as verified for ${email}?`, {
+    const confirmed = await alertDialog.showConfirm(`Mark email as verified for ${userEmail}?`, {
       title: 'Verify Email',
     });
     if (confirmed) {
       try {
-        await verifyEmail(email);
+        await verifyEmail(userEmail);
         refresh();
         await alertDialog.showAlert('Email verified successfully!', { variant: 'success', title: 'Success' });
       } catch {
@@ -222,7 +302,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     });
     if (confirmed) {
       try {
-        await action(email);
+        await action(userEmail);
         refresh();
       } catch {
         // Error handled by hook
@@ -235,13 +315,13 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
       // Update role if changed
       const currentRole = user?.role || (user?.roles && user.roles.length > 0 ? user.roles[0] : 'user') || 'user';
       if (newRole && newRole !== currentRole) {
-        await updateRoles(email, newRole);
+        await updateRoles(userEmail, newRole);
       }
       
       // Update profile fields if changed
       const hasChanges = JSON.stringify(profileFields) !== JSON.stringify(user?.profile_fields || {});
       if (hasChanges) {
-        await updateUser(email, { profile_fields: profileFields });
+        await updateUser(userEmail, { profile_fields: profileFields });
       }
       
       setIsEditing(false);
@@ -280,7 +360,7 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     });
     if (confirmed) {
       try {
-        await revokeAllUserSessions(email);
+        await revokeAllUserSessions(userEmail);
         refreshSessions();
       } catch {
         // Error handled by hook
@@ -353,13 +433,13 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     try {
       setUploadingPicture(true);
       // Upload the cropped image (base64 string)
-      await uploadProfilePictureBase64(email, croppedImageBase64);
+      await uploadProfilePictureBase64(userEmail, croppedImageBase64);
       refresh();
       
       // Dispatch event to update top header avatar
       if (typeof window !== 'undefined') {
         const updateEvent = new CustomEvent('user-profile-updated', {
-          detail: { profile_picture_url: croppedImageBase64, email },
+          detail: { profile_picture_url: croppedImageBase64, email: userEmail },
         });
         window.dispatchEvent(updateEvent);
       }
@@ -385,13 +465,13 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
 
     try {
       setUploadingPicture(true);
-      await deleteProfilePicture(email);
+      await deleteProfilePicture(userEmail);
       refresh();
       
       // Dispatch event to update top header avatar
       if (typeof window !== 'undefined') {
         const updateEvent = new CustomEvent('user-profile-updated', {
-          detail: { profile_picture_url: null, email },
+          detail: { profile_picture_url: null, email: userEmail },
         });
         window.dispatchEvent(updateEvent);
       }
@@ -469,6 +549,14 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
               <Button variant="secondary" onClick={startEditing}>
                 <Edit2 size={16} className="mr-2" />
                 Edit
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleStartImpersonation}
+                disabled={mutating || impersonating || !impersonationEnabled}
+              >
+                <UserCheck size={16} className="mr-2" />
+                {impersonating ? 'Assuming...' : 'Assume'}
               </Button>
               {!user.email_verified && (
                 <>

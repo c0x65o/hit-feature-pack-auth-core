@@ -74,6 +74,23 @@ class AuthAdminError extends Error {
         return this.status === 401 || this.status === 403;
     }
 }
+function normalizeErrorDetail(errorBody, fallback) {
+    const detail = errorBody?.detail ?? errorBody?.message ?? fallback;
+    if (typeof detail === 'string')
+        return detail;
+    if (Array.isArray(detail)) {
+        // FastAPI validation errors often come back as a list of { loc, msg, type }.
+        const firstMsg = detail.find((d) => typeof d?.msg === 'string')?.msg;
+        if (firstMsg)
+            return String(firstMsg);
+    }
+    try {
+        return JSON.stringify(detail);
+    }
+    catch {
+        return String(detail);
+    }
+}
 async function fetchWithAuth(endpoint, options) {
     const authUrl = getAuthUrl();
     const url = `${authUrl}${endpoint}`;
@@ -88,7 +105,7 @@ async function fetchWithAuth(endpoint, options) {
     });
     if (!res.ok) {
         const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
-        const detail = errorBody.detail || errorBody.message || `Request failed: ${res.status}`;
+        const detail = normalizeErrorDetail(errorBody, `Request failed: ${res.status}`);
         throw new AuthAdminError(res.status, detail);
     }
     // Many endpoints (DELETE, etc.) correctly return 204 No Content.
@@ -682,6 +699,23 @@ export function useUserMutations() {
             setLoading(false);
         }
     };
+    const startImpersonation = async (userEmail) => {
+        setLoading(true);
+        setError(null);
+        try {
+            return await fetchWithAuth('/impersonate/start', {
+                method: 'POST',
+                body: JSON.stringify({ user_email: userEmail }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    };
     return {
         createUser,
         deleteUser,
@@ -695,6 +729,7 @@ export function useUserMutations() {
         deleteProfilePicture,
         lockUser,
         unlockUser,
+        startImpersonation,
         loading,
         error,
     };
