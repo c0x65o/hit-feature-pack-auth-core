@@ -1,6 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Lock, Shield, Users, ChevronRight, ChevronDown, Trash2, Edit2, Save, X, Plus, Search, Package, KeyRound, BarChart3, Crown, UsersRound, UserCheck, } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { usePermissionSet, usePermissionSetMutations, usePermissionActions, useUsers, useGroups, useMetricsCatalog, } from '../hooks/useAuthAdmin';
@@ -29,6 +29,27 @@ function normalizePath(p) {
     if (x === '/')
         return '/';
     return x.startsWith('/') ? x.replace(/\/+$/, '') : `/${x.replace(/\/+$/, '')}`;
+}
+async function loadFeaturePackRoutes() {
+    try {
+        const routesMod = await import('@/.hit/generated/routes').catch(() => null);
+        const featurePackRoutes = Array.isArray(routesMod?.featurePackRoutes)
+            ? routesMod.featurePackRoutes
+            : [];
+        return featurePackRoutes
+            .map((r) => ({
+            path: normalizePath(String(r?.path || '')),
+            packName: String(r?.packName || ''),
+            packTitle: typeof r?.packTitle === 'string' ? String(r.packTitle) : null,
+            componentName: String(r?.componentName || ''),
+            shell: Boolean(r?.shell),
+            authz: r?.authz ? r.authz : undefined,
+        }))
+            .filter((r) => Boolean(r.path) && Boolean(r.packName));
+    }
+    catch {
+        return [];
+    }
 }
 function parseExclusiveActionModeGroup(actionKey) {
     const m = String(actionKey || '').trim().match(/^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
@@ -65,6 +86,10 @@ function titleFromGroupKey(groupKey) {
         ? `${moduleLabel} ${entityLabel} ${verbLabel} Scope`
         : `${moduleLabel} ${verbLabel} Scope`;
 }
+function scopeValueForKey(key) {
+    const m = String(key || '').match(/\.scope\.(none|own|ldd|any)$/);
+    return m ? m[1] : null;
+}
 // Pages are derived-gated from `authz` + actions and are not edited directly in the Security Groups UI.
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -89,6 +114,8 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     // Grants
     const [search, setSearch] = useState('');
     const [expandedPacks, setExpandedPacks] = useState(new Set());
+    const [routes, setRoutes] = useState([]);
+    const [routesLoading, setRoutesLoading] = useState(true);
     // Scope tree UI state (Actions) - track user's explicit expand/collapse choices
     const [scopeNodeToggled, setScopeNodeToggled] = useState(new Map());
     // Pending action changes (batch editing like Metrics)
@@ -109,6 +136,24 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         else if (typeof window !== 'undefined')
             window.location.href = path;
     };
+    // Load route metadata once (read-only) so we can show which pages are derived by a node.
+    useEffect(() => {
+        let cancelled = false;
+        setRoutesLoading(true);
+        loadFeaturePackRoutes()
+            .then((xs) => {
+            if (cancelled)
+                return;
+            setRoutes(xs);
+        })
+            .finally(() => {
+            if (!cancelled)
+                setRoutesLoading(false);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     // Root/default scope mode depends on whether this permission set is an "admin template".
     // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
     const defaultScopeMode = permissionSet?.template_role === 'admin' ? 'own' : 'none';
@@ -184,6 +229,26 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             return pending;
         return actionGrantSet.has(key);
     }, [pendingActionChanges, actionGrantSet]);
+    const crmHeaderSummary = useMemo(() => {
+        const precedence = ['none', 'own', 'ldd', 'any'];
+        const pick = (verb) => {
+            const candidates = actionCatalog
+                .filter((a) => String(a.key || '').toLowerCase().startsWith(`crm.${verb}.scope.`))
+                .map((a) => String(a.key));
+            // Choose the most restrictive explicitly granted mode if any exist; otherwise defaultScopeMode.
+            for (const mode of precedence) {
+                const key = `crm.${verb}.scope.${mode}`;
+                if (candidates.includes(key) && isActionExplicitEffective(key))
+                    return mode;
+            }
+            return defaultScopeMode;
+        };
+        return {
+            read: pick('read'),
+            write: pick('write'),
+            delete: pick('delete'),
+        };
+    }, [actionCatalog, isActionExplicitEffective, defaultScopeMode]);
     const hasPendingActionChange = useCallback((actionKey) => {
         const key = String(actionKey || '').trim();
         const pending = pendingActionChanges.get(key);
@@ -359,10 +424,26 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     const togglePack = (packName) => {
         setExpandedPacks((prev) => {
             const next = new Set(prev);
-            if (next.has(packName))
+            const wasExpanded = next.has(packName);
+            if (wasExpanded)
                 next.delete(packName);
             else
                 next.add(packName);
+            // UX: expanding CRM should jump you directly into the CRM scope tree section.
+            if (!wasExpanded && String(packName || '').toLowerCase() === 'crm') {
+                setScopeNodeToggled((m) => {
+                    const nm = new Map(m);
+                    nm.set('crm', true);
+                    return nm;
+                });
+                // Best-effort scroll to the CRM root node.
+                setTimeout(() => {
+                    const el = document.getElementById('scope-node-crm');
+                    if (el && typeof el.scrollIntoView === 'function') {
+                        el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                    }
+                }, 0);
+            }
             return next;
         });
     };
@@ -589,7 +670,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
-    if (loading || actionsLoading || metricsLoading) {
+    if (loading || actionsLoading || metricsLoading || routesLoading) {
         return (_jsx(Page, { title: "Loading...", breadcrumbs: [
                 { label: 'Admin', href: '/admin' },
                 { label: 'Security Groups', href: '/admin/security-groups' },
@@ -616,331 +697,388 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                         }) }))] }), _jsxs(Card, { children: [_jsx(Alert, { variant: "info", className: "mb-4", children: _jsxs("div", { className: "text-sm space-y-1", children: [_jsx("div", { children: _jsx("strong", { children: "Legend:" }) }), _jsxs("div", { className: "flex flex-wrap gap-4 mt-2", children: [_jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-green-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default On" }), " ", _jsx("span", { className: "text-gray-500", children: "- enabled for all users by default" })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-orange-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default Off" }), " ", _jsx("span", { className: "text-gray-500", children: "- requires explicit grant" })] })] }), _jsxs("div", { className: "text-gray-500 text-xs mt-2", children: ["\"Effective\" is read-only (includes inherited subtree grants like ", _jsx("code", { children: "/*" }), "). \"Grant\" toggles the explicit grant from THIS security group."] })] }) }), _jsxs("div", { className: "flex items-center justify-between mb-4 gap-4", children: [_jsxs("div", { className: "relative flex-1 max-w-md", children: [_jsx(Search, { size: 18, className: "absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" }), _jsx("input", { type: "text", value: search, onChange: (e) => setSearch(e.target.value), placeholder: "Search pages, actions, metrics...", className: "w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Button, { variant: "ghost", size: "sm", onClick: expandAll, disabled: anySaving, children: "Expand All" }), _jsx(Button, { variant: "ghost", size: "sm", onClick: collapseAll, disabled: anySaving, children: "Collapse" }), pendingTotalChangeCount > 0 && (_jsxs(_Fragment, { children: [_jsx("div", { className: "h-4 w-px bg-gray-300 dark:bg-gray-600" }), _jsxs(Badge, { variant: "warning", className: "text-xs", children: [pendingTotalChangeCount, " unsaved change", pendingTotalChangeCount !== 1 ? 's' : ''] }), _jsx(Button, { variant: "ghost", size: "sm", onClick: discardAllChanges, disabled: anySaving, children: "Discard" }), _jsxs(Button, { variant: "primary", size: "sm", onClick: () => saveAllChanges().catch(() => void 0), loading: anySaving, children: [_jsx(Save, { size: 14, className: "mr-1" }), " Save"] })] }))] })] }), _jsxs("div", { className: "space-y-2", children: [filteredPacks.map((pack) => {
                                 const isExpanded = expandedPacks.has(pack.name);
                                 const hasEffective = pack.effectiveActions > 0 || pack.grantedMetrics > 0;
-                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500', children: [pack.effectiveActions, "/", pack.actionCount] }), pack.explicitActions > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitActions, " explicit)"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] })] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(KeyRound, { size: 16, className: "text-green-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Actions" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.actions.filter((a) => a.default_enabled).length, " default-on,", ' ', pack.actions.filter((a) => !a.default_enabled).length, " default-off)"] })] }), (() => {
-                                                            const grouped = new Map();
-                                                            const other = [];
-                                                            for (const a of pack.actions) {
-                                                                const parsed = parseExclusiveActionModeGroup(a.key);
-                                                                if (!parsed) {
-                                                                    other.push(a);
-                                                                    continue;
-                                                                }
-                                                                if (!grouped.has(parsed.groupKey)) {
-                                                                    grouped.set(parsed.groupKey, { actions: [], values: new Map() });
-                                                                }
-                                                                grouped.get(parsed.groupKey).actions.push(a);
-                                                                grouped.get(parsed.groupKey).values.set(parsed.value, a);
+                                const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
+                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [isCrmPack && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500', children: [pack.effectiveActions, "/", pack.actionCount] }), pack.explicitActions > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitActions, " explicit)"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] })] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                                        const grouped = new Map();
+                                                        const other = [];
+                                                        for (const a of pack.actions) {
+                                                            const parsed = parseExclusiveActionModeGroup(a.key);
+                                                            if (!parsed) {
+                                                                other.push(a);
+                                                                continue;
                                                             }
-                                                            const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
-                                                                // Fixed precedence (most restrictive -> least restrictive)
-                                                                const precedenceValues = ['none', 'own', 'ldd', 'any'];
-                                                                // Optional: restrict options based on action metadata (scope_modes on any option wins).
-                                                                const declaredModes = (() => {
-                                                                    const anyOpt = Array.from(g.values.values()).find((x) => Array.isArray(x.scope_modes));
-                                                                    const ms = anyOpt?.scope_modes;
-                                                                    if (!Array.isArray(ms) || ms.length === 0)
-                                                                        return null;
-                                                                    const norm = ms.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
-                                                                    const allowed = norm.filter((x) => ['none', 'own', 'ldd', 'any'].includes(x));
-                                                                    return allowed.length ? allowed : null;
-                                                                })();
-                                                                const valuesToUse = declaredModes ? declaredModes : precedenceValues;
-                                                                const options = valuesToUse
-                                                                    .map((v) => {
-                                                                    const item = g.values.get(v);
-                                                                    if (!item)
-                                                                        return null;
-                                                                    return { key: item.key, value: v, label: item.label };
-                                                                })
-                                                                    .filter(Boolean);
-                                                                const precedenceKeys = precedenceValues
-                                                                    .map((v) => g.values.get(v)?.key)
-                                                                    .filter(Boolean);
-                                                                return {
-                                                                    groupKey,
-                                                                    label: titleFromGroupKey(groupKey),
-                                                                    options,
-                                                                    precedenceKeys,
-                                                                };
-                                                            });
-                                                            // Determine explicit selection for a group (first explicit in precedence order; otherwise null).
-                                                            // IMPORTANT: use the effective local state (includes pending changes), not just persisted grants.
-                                                            function getExplicitSelectedKey(g) {
-                                                                for (const k of g.precedenceKeys) {
-                                                                    if (isActionExplicitEffective(k))
-                                                                        return k;
-                                                                }
-                                                                return null;
+                                                            if (!grouped.has(parsed.groupKey)) {
+                                                                grouped.set(parsed.groupKey, { actions: [], values: new Map() });
                                                             }
-                                                            function optionValueForKey(g, key) {
-                                                                if (!key)
-                                                                    return '';
-                                                                const opt = g.options.find((o) => o.key === key);
-                                                                return opt?.value ?? '';
-                                                            }
-                                                            function labelForValue(v) {
-                                                                if (v === 'none')
-                                                                    return 'None';
-                                                                if (v === 'any')
-                                                                    return 'Any';
-                                                                if (v === 'own')
-                                                                    return 'Own';
-                                                                if (v === 'ldd')
-                                                                    return 'LDD';
-                                                                return v;
-                                                            }
-                                                            function shortLabelForValue(v, fallback) {
-                                                                if (!v)
-                                                                    return shortLabelForValue(fallback, fallback);
-                                                                if (v === 'none')
-                                                                    return 'None';
-                                                                if (v === 'any')
-                                                                    return 'Any';
-                                                                if (v === 'own')
-                                                                    return 'Own';
-                                                                if (v === 'ldd')
-                                                                    return 'LDD';
-                                                                return String(v);
-                                                            }
-                                                            const nodeById = new Map();
-                                                            function getOrCreateNode(id, kind = 'base', verb) {
-                                                                const existing = nodeById.get(id);
-                                                                if (existing)
-                                                                    return existing;
-                                                                const seg = id.split('.').slice(-1)[0] || id;
-                                                                const label = id === 'crm' ? 'CRM' : titleCase(seg);
-                                                                const node = { id, kind, verb, label, children: [] };
-                                                                nodeById.set(id, node);
-                                                                return node;
-                                                            }
-                                                            function splitGroupKey(groupKey) {
-                                                                const m = groupKey.match(/^(.*)\.(read|write|delete)\.scope$/);
-                                                                if (!m)
+                                                            grouped.get(parsed.groupKey).actions.push(a);
+                                                            grouped.get(parsed.groupKey).values.set(parsed.value, a);
+                                                        }
+                                                        const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
+                                                            // Fixed precedence (most restrictive -> least restrictive)
+                                                            const precedenceValues = ['none', 'own', 'ldd', 'any'];
+                                                            // Optional: restrict options based on action metadata (scope_modes on any option wins).
+                                                            const declaredModes = (() => {
+                                                                const anyOpt = Array.from(g.values.values()).find((x) => Array.isArray(x.scope_modes));
+                                                                const ms = anyOpt?.scope_modes;
+                                                                if (!Array.isArray(ms) || ms.length === 0)
                                                                     return null;
-                                                                return { base: m[1], verb: m[2] };
+                                                                const norm = ms.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+                                                                const allowed = norm.filter((x) => ['none', 'own', 'ldd', 'any'].includes(x));
+                                                                return allowed.length ? allowed : null;
+                                                            })();
+                                                            const valuesToUse = declaredModes ? declaredModes : precedenceValues;
+                                                            const options = valuesToUse
+                                                                .map((v) => {
+                                                                const item = g.values.get(v);
+                                                                if (!item)
+                                                                    return null;
+                                                                return { key: item.key, value: v, label: item.label };
+                                                            })
+                                                                .filter(Boolean);
+                                                            const precedenceKeys = precedenceValues
+                                                                .map((v) => g.values.get(v)?.key)
+                                                                .filter(Boolean);
+                                                            return {
+                                                                groupKey,
+                                                                label: titleFromGroupKey(groupKey),
+                                                                options,
+                                                                precedenceKeys,
+                                                            };
+                                                        });
+                                                        // Determine explicit selection for a group (first explicit in precedence order; otherwise null).
+                                                        // IMPORTANT: use the effective local state (includes pending changes), not just persisted grants.
+                                                        function getExplicitSelectedKey(g) {
+                                                            for (const k of g.precedenceKeys) {
+                                                                if (isActionExplicitEffective(k))
+                                                                    return k;
                                                             }
-                                                            function verbLabel(v) {
-                                                                if (v === 'read')
-                                                                    return 'Read Scope';
-                                                                if (v === 'write')
-                                                                    return 'Write Scope';
-                                                                return 'Delete Scope';
+                                                            return null;
+                                                        }
+                                                        function optionValueForKey(g, key) {
+                                                            if (!key)
+                                                                return '';
+                                                            const opt = g.options.find((o) => o.key === key);
+                                                            return opt?.value ?? '';
+                                                        }
+                                                        function labelForValue(v) {
+                                                            if (v === 'none')
+                                                                return 'None';
+                                                            if (v === 'any')
+                                                                return 'Any';
+                                                            if (v === 'own')
+                                                                return 'Own';
+                                                            if (v === 'ldd')
+                                                                return 'LDD';
+                                                            return v;
+                                                        }
+                                                        function shortLabelForValue(v, fallback) {
+                                                            if (!v)
+                                                                return shortLabelForValue(fallback, fallback);
+                                                            if (v === 'none')
+                                                                return 'None';
+                                                            if (v === 'any')
+                                                                return 'Any';
+                                                            if (v === 'own')
+                                                                return 'Own';
+                                                            if (v === 'ldd')
+                                                                return 'LDD';
+                                                            return String(v);
+                                                        }
+                                                        const nodeById = new Map();
+                                                        function getOrCreateNode(id, kind = 'base', verb) {
+                                                            const existing = nodeById.get(id);
+                                                            if (existing)
+                                                                return existing;
+                                                            const seg = id.split('.').slice(-1)[0] || id;
+                                                            const label = id === 'crm' ? 'CRM' : titleCase(seg);
+                                                            const node = { id, kind, verb, label, children: [] };
+                                                            nodeById.set(id, node);
+                                                            return node;
+                                                        }
+                                                        function splitGroupKey(groupKey) {
+                                                            const m = groupKey.match(/^(.*)\.(read|write|delete)\.scope$/);
+                                                            if (!m)
+                                                                return null;
+                                                            return { base: m[1], verb: m[2] };
+                                                        }
+                                                        function verbLabel(v) {
+                                                            if (v === 'read')
+                                                                return 'Read Scope';
+                                                            if (v === 'write')
+                                                                return 'Write Scope';
+                                                            return 'Delete Scope';
+                                                        }
+                                                        // Attach groups to nodes (verb becomes a child node under its base)
+                                                        for (const g of groups) {
+                                                            const parts = splitGroupKey(g.groupKey);
+                                                            if (!parts)
+                                                                continue;
+                                                            const baseNode = getOrCreateNode(parts.base, 'base');
+                                                            const verbNodeId = `${parts.base}.${parts.verb}`;
+                                                            const verbNode = getOrCreateNode(verbNodeId, 'verb', parts.verb);
+                                                            verbNode.label = verbLabel(parts.verb);
+                                                            verbNode.group = g;
+                                                            if (!baseNode.children.some((c) => c.id === verbNode.id)) {
+                                                                baseNode.children.push(verbNode);
                                                             }
-                                                            // Attach groups to nodes (verb becomes a child node under its base)
-                                                            for (const g of groups) {
-                                                                const parts = splitGroupKey(g.groupKey);
-                                                                if (!parts)
-                                                                    continue;
-                                                                const baseNode = getOrCreateNode(parts.base, 'base');
-                                                                const verbNodeId = `${parts.base}.${parts.verb}`;
-                                                                const verbNode = getOrCreateNode(verbNodeId, 'verb', parts.verb);
-                                                                verbNode.label = verbLabel(parts.verb);
-                                                                verbNode.group = g;
-                                                                if (!baseNode.children.some((c) => c.id === verbNode.id)) {
-                                                                    baseNode.children.push(verbNode);
-                                                                }
+                                                        }
+                                                        // Attach non-scope actions (like create) under derived base nodes for ALL packs.
+                                                        for (const a of other) {
+                                                            const baseId = baseIdFromActionKey(a.key);
+                                                            if (!baseId)
+                                                                continue;
+                                                            const n = getOrCreateNode(baseId, 'base');
+                                                            if (!n.actions)
+                                                                n.actions = [];
+                                                            n.actions.push(a);
+                                                        }
+                                                        for (const n of nodeById.values()) {
+                                                            if (n.actions && n.actions.length > 0) {
+                                                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
                                                             }
-                                                            // Attach non-scope actions (like create) under derived base nodes for ALL packs.
-                                                            for (const a of other) {
-                                                                const baseId = baseIdFromActionKey(a.key);
-                                                                if (!baseId)
-                                                                    continue;
-                                                                const n = getOrCreateNode(baseId, 'base');
-                                                                if (!n.actions)
-                                                                    n.actions = [];
-                                                                n.actions.push(a);
-                                                            }
-                                                            for (const n of nodeById.values()) {
-                                                                if (n.actions && n.actions.length > 0) {
-                                                                    n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-                                                                }
-                                                            }
-                                                            // Ensure ancestors exist, and wire parent->child for base nodes only.
-                                                            // Skip verb nodes (they were already attached under their base).
-                                                            for (const id of Array.from(nodeById.keys())) {
-                                                                if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete'))
-                                                                    continue;
-                                                                const parts = id.split('.');
-                                                                if (parts.length <= 1)
-                                                                    continue;
-                                                                const parentId = parts.slice(0, -1).join('.');
-                                                                const parent = getOrCreateNode(parentId, 'base');
-                                                                const child = getOrCreateNode(id, 'base');
-                                                                if (!parent.children.some((c) => c.id === child.id)) {
-                                                                    parent.children.push(child);
-                                                                }
-                                                            }
-                                                            // Roots are base nodes without parents in the node map.
-                                                            const roots = Array.from(nodeById.values()).filter((n) => {
-                                                                if (n.kind !== 'base')
-                                                                    return false;
-                                                                const parts = n.id.split('.');
-                                                                if (parts.length <= 1)
-                                                                    return true;
-                                                                const parentId = parts.slice(0, -1).join('.');
-                                                                return !nodeById.has(parentId);
+                                                        }
+                                                        // Attach derived-gated pages (read-only) under nodes using route authz metadata.
+                                                        // Example: CRM Setup should show its 4 setup pages under `crm.setup`.
+                                                        for (const r of routes) {
+                                                            if (!r?.authz?.entity || !r?.authz?.verb)
+                                                                continue;
+                                                            // Only show pages that opt-in via YAML (keeps activities/contacts/etc clean; setup can show its 4 routes).
+                                                            if (!r?.authz?.show_pages)
+                                                                continue;
+                                                            const packName = String(r.packName || '').trim().toLowerCase();
+                                                            if (!packName || packName !== String(pack.name || '').trim().toLowerCase())
+                                                                continue;
+                                                            const entity = String(r.authz.entity || '').trim().toLowerCase();
+                                                            if (!entity)
+                                                                continue;
+                                                            const baseId = `${packName}.${entity}`;
+                                                            const n = getOrCreateNode(baseId, 'base');
+                                                            if (!n.pages)
+                                                                n.pages = [];
+                                                            n.pages.push({
+                                                                path: String(r.path),
+                                                                label: r.componentName || r.path,
+                                                                default_enabled: false,
+                                                                explicit: false,
+                                                                effective: false,
+                                                                require_action: r?.authz?.require_action || r?.authz?.requireAction,
                                                             });
-                                                            // Sort children for stable UI
-                                                            for (const n of nodeById.values()) {
-                                                                n.children.sort((a, b) => {
-                                                                    // Verb nodes first (read/write/delete), then base nodes alpha.
-                                                                    if (a.kind === 'verb' && b.kind === 'verb') {
-                                                                        const order = { read: 0, write: 1, delete: 2 };
-                                                                        return order[a.verb] - order[b.verb];
-                                                                    }
-                                                                    if (a.kind === 'verb')
-                                                                        return -1;
-                                                                    if (b.kind === 'verb')
-                                                                        return 1;
-                                                                    return a.label.localeCompare(b.label);
-                                                                });
+                                                        }
+                                                        for (const n of nodeById.values()) {
+                                                            if (n.pages && n.pages.length > 0) {
+                                                                n.pages.sort((a, b) => a.path.localeCompare(b.path));
                                                             }
-                                                            roots.sort((a, b) => a.label.localeCompare(b.label));
-                                                            function explicitValueForGroup(g) {
-                                                                const k = getExplicitSelectedKey(g);
-                                                                return k ? optionValueForKey(g, k) : null;
+                                                        }
+                                                        // Ensure ancestors exist, and wire parent->child for base nodes only.
+                                                        // Skip verb nodes (they were already attached under their base).
+                                                        for (const id of Array.from(nodeById.keys())) {
+                                                            if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete'))
+                                                                continue;
+                                                            const parts = id.split('.');
+                                                            if (parts.length <= 1)
+                                                                continue;
+                                                            const parentId = parts.slice(0, -1).join('.');
+                                                            const parent = getOrCreateNode(parentId, 'base');
+                                                            const child = getOrCreateNode(id, 'base');
+                                                            if (!parent.children.some((c) => c.id === child.id)) {
+                                                                parent.children.push(child);
                                                             }
-                                                            // Render
-                                                            function renderVerbNode(node, depth, inheritedMode) {
-                                                                const group = node.group;
-                                                                const explicitValue = explicitValueForGroup(group);
-                                                                const baseDefault = defaultScopeMode;
-                                                                const effectiveValue = explicitValue ?? inheritedMode ?? baseDefault;
-                                                                const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
-                                                                const status = explicitValue
-                                                                    ? (isSameAsInherited ? 'same' : 'override')
-                                                                    : inheritedMode
-                                                                        ? 'inherited'
-                                                                        : 'default';
-                                                                const rowStyle = status === 'override'
-                                                                    ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
-                                                                    : status === 'inherited'
-                                                                        ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-900/10'
-                                                                        : status === 'same'
-                                                                            ? 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20'
-                                                                            : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
-                                                                const stripeStyle = status === 'override'
-                                                                    ? 'bg-blue-500'
-                                                                    : status === 'inherited'
-                                                                        ? 'bg-amber-500'
-                                                                        : 'bg-gray-300 dark:bg-gray-700';
-                                                                const row = (_jsxs("div", { className: `flex items-center justify-between gap-3 px-3 py-1.5 rounded border ${rowStyle}`, style: { marginLeft: depth * 20 }, children: [_jsx("div", { className: `w-0.5 self-stretch rounded-full ${stripeStyle}` }), _jsx("div", { className: "flex-1 min-w-0", children: _jsx("span", { className: "text-sm font-medium text-gray-700 dark:text-gray-200", children: group.label }) }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[140px]", value: effectiveValue, disabled: savingPagesActions || mutations.loading, onChange: (e) => {
-                                                                                        const v = e.target.value;
-                                                                                        const inheritedOrDefault = inheritedMode ?? baseDefault;
-                                                                                        // If user picks the same value as inherited/default, treat it as "inherit" (no explicit override).
-                                                                                        if (v && v === inheritedOrDefault) {
-                                                                                            setExclusiveActionModeLocal(group, null);
-                                                                                            return;
-                                                                                        }
-                                                                                        const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
-                                                                                        setExclusiveActionModeLocal(group, nextKey);
-                                                                                    }, children: group.options.map((o) => (_jsx("option", { value: o.value, children: labelForValue(o.value) }, o.key))) }), _jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading || !explicitValue, onClick: () => setExclusiveActionModeLocal(group, null), title: "Clear this override (inherit/default).", children: "Clear" }), _jsx(Badge, { variant: status === 'override' ? 'info' : status === 'inherited' ? 'warning' : 'default', className: "text-xs w-16 justify-center", children: status === 'override' ? 'override' : status === 'same' ? 'same' : status === 'inherited' ? 'inherited' : 'default' })] })] }, node.id));
+                                                        }
+                                                        // Roots are base nodes without parents in the node map.
+                                                        const roots = Array.from(nodeById.values()).filter((n) => {
+                                                            if (n.kind !== 'base')
+                                                                return false;
+                                                            const parts = n.id.split('.');
+                                                            if (parts.length <= 1)
+                                                                return true;
+                                                            const parentId = parts.slice(0, -1).join('.');
+                                                            return !nodeById.has(parentId);
+                                                        });
+                                                        // Sort children for stable UI
+                                                        for (const n of nodeById.values()) {
+                                                            n.children.sort((a, b) => {
+                                                                // Verb nodes first (read/write/delete), then base nodes alpha.
+                                                                if (a.kind === 'verb' && b.kind === 'verb') {
+                                                                    const order = { read: 0, write: 1, delete: 2 };
+                                                                    return order[a.verb] - order[b.verb];
+                                                                }
+                                                                if (a.kind === 'verb')
+                                                                    return -1;
+                                                                if (b.kind === 'verb')
+                                                                    return 1;
+                                                                return a.label.localeCompare(b.label);
+                                                            });
+                                                        }
+                                                        roots.sort((a, b) => a.label.localeCompare(b.label));
+                                                        function explicitValueForGroup(g) {
+                                                            const k = getExplicitSelectedKey(g);
+                                                            return k ? optionValueForKey(g, k) : null;
+                                                        }
+                                                        // Render
+                                                        function renderVerbNode(node, depth, inheritedMode) {
+                                                            const group = node.group;
+                                                            const explicitValue = explicitValueForGroup(group);
+                                                            const allowedModes = group.options
+                                                                .map((o) => o.value)
+                                                                .filter((x) => ['none', 'own', 'ldd', 'any'].includes(String(x)));
+                                                            const isOnOffOnly = allowedModes.includes('none') &&
+                                                                allowedModes.includes('any') &&
+                                                                !allowedModes.includes('own') &&
+                                                                !allowedModes.includes('ldd');
+                                                            // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
+                                                            // Admin templates default to ANY (on). Non-admin templates default to NONE (off).
+                                                            const baseDefault = isOnOffOnly
+                                                                ? (permissionSet?.template_role === 'admin' ? 'any' : 'none')
+                                                                : defaultScopeMode;
+                                                            const inheritedModeSafe = inheritedMode && allowedModes.includes(inheritedMode) ? inheritedMode : null;
+                                                            const effectiveValue = explicitValue ?? inheritedModeSafe ?? baseDefault;
+                                                            const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
+                                                            const status = explicitValue
+                                                                ? (isSameAsInherited ? 'same' : 'override')
+                                                                : inheritedModeSafe
+                                                                    ? 'inherited'
+                                                                    : 'default';
+                                                            const rowStyle = status === 'override'
+                                                                ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
+                                                                : status === 'inherited'
+                                                                    ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-900/10'
+                                                                    : status === 'same'
+                                                                        ? 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20'
+                                                                        : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
+                                                            const stripeStyle = status === 'override'
+                                                                ? 'bg-blue-500'
+                                                                : status === 'inherited'
+                                                                    ? 'bg-amber-500'
+                                                                    : 'bg-gray-300 dark:bg-gray-700';
+                                                            const row = (_jsxs("div", { className: `flex items-center justify-between gap-3 px-3 py-1.5 rounded border ${rowStyle}`, style: { marginLeft: depth * 20 }, children: [_jsx("div", { className: `w-0.5 self-stretch rounded-full ${stripeStyle}` }), _jsx("div", { className: "flex-1 min-w-0", children: _jsx("span", { className: "text-sm font-medium text-gray-700 dark:text-gray-200", children: group.label }) }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[140px]", value: effectiveValue, disabled: savingPagesActions || mutations.loading, onChange: (e) => {
+                                                                                    const v = e.target.value;
+                                                                                    const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
+                                                                                    // If user picks the same value as inherited/default, treat it as "inherit" (no explicit override).
+                                                                                    if (v && v === inheritedOrDefault) {
+                                                                                        setExclusiveActionModeLocal(group, null);
+                                                                                        return;
+                                                                                    }
+                                                                                    const nextKey = v ? (group.options.find((o) => o.value === v)?.key ?? null) : null;
+                                                                                    setExclusiveActionModeLocal(group, nextKey);
+                                                                                }, children: group.options.map((o) => (_jsx("option", { value: o.value, children: labelForValue(o.value) }, o.key))) }), _jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading || !explicitValue, onClick: () => setExclusiveActionModeLocal(group, null), title: "Clear this override (inherit/default).", children: "Clear" }), _jsx(Badge, { variant: status === 'override' ? 'info' : status === 'inherited' ? 'warning' : 'default', className: "text-xs w-16 justify-center", children: status === 'override' ? 'override' : status === 'same' ? 'same' : status === 'inherited' ? 'inherited' : 'default' })] })] }, node.id));
+                                                            return row;
+                                                        }
+                                                        function renderBaseNode(node, depth, inherited) {
+                                                            const canExpand = node.children.length > 0 ||
+                                                                (Array.isArray(node.pages) && node.pages.length > 0) ||
+                                                                (Array.isArray(node.actions) && node.actions.length > 0);
+                                                            // Count overrides with inheritance awareness (explicit == inherited is NOT an override).
+                                                            function countOverridesWithInheritance(n, inh) {
+                                                                let self = 0;
+                                                                if (n.kind === 'verb' && n.group && n.verb) {
+                                                                    const v = explicitValueForGroup(n.group);
+                                                                    if (v && v !== inh[n.verb])
+                                                                        self = 1;
+                                                                    return self;
+                                                                }
+                                                                // base node: derive next inherited using its verb children (explicit overrides win)
+                                                                const nextInherited = { ...inh };
+                                                                for (const c of n.children) {
+                                                                    if (c.kind !== 'verb' || !c.group || !c.verb)
+                                                                        continue;
+                                                                    const v = explicitValueForGroup(c.group);
+                                                                    nextInherited[c.verb] = v ?? inh[c.verb] ?? null;
+                                                                }
+                                                                let total = 0;
+                                                                for (const c of n.children) {
+                                                                    if (c.kind === 'verb')
+                                                                        total += countOverridesWithInheritance(c, inh);
+                                                                    else
+                                                                        total += countOverridesWithInheritance(c, nextInherited);
+                                                                }
+                                                                return total;
+                                                            }
+                                                            const overrideCount = countOverridesWithInheritance(node, inherited);
+                                                            function collectVerbGroups(n) {
+                                                                const out = [];
+                                                                const walk = (x) => {
+                                                                    if (x.kind === 'verb' && x.group)
+                                                                        out.push(x.group);
+                                                                    for (const c of x.children)
+                                                                        walk(c);
+                                                                };
+                                                                walk(n);
+                                                                return out;
+                                                            }
+                                                            // Auto-expand root and nodes with overrides, but user can toggle
+                                                            const autoExpand = depth === 0 || overrideCount > 0;
+                                                            const userChoice = scopeNodeToggled.get(node.id);
+                                                            const isExpanded = canExpand && (userChoice !== undefined ? userChoice : autoExpand);
+                                                            // Compute effective summary (R/W/D) for this node, using:
+                                                            // - explicit selections on this node's verb children
+                                                            // - otherwise inherited from parent
+                                                            const effectiveByVerb = { ...inherited };
+                                                            for (const c of node.children) {
+                                                                if (c.kind !== 'verb' || !c.group || !c.verb)
+                                                                    continue;
+                                                                const v = explicitValueForGroup(c.group);
+                                                                if (v)
+                                                                    effectiveByVerb[c.verb] = v;
+                                                            }
+                                                            const domId = depth === 0 ? `scope-node-${node.id.replace(/\./g, '-')}` : undefined;
+                                                            const row = (_jsxs("div", { id: domId, className: "flex items-center justify-between gap-3 px-3 py-1.5 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/20", style: { marginLeft: depth * 20 }, children: [_jsx("div", { className: `w-0.5 self-stretch rounded-full ${overrideCount > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'}` }), _jsxs("div", { className: "flex items-center gap-2 flex-1 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id, isExpanded), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { className: "w-4 shrink-0" })), _jsx("span", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label })] }), _jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", shortLabelForValue(effectiveByVerb.read, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", shortLabelForValue(effectiveByVerb.write, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", shortLabelForValue(effectiveByVerb.delete, defaultScopeMode)] }), overrideCount > 0 ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => {
+                                                                                    const gs = collectVerbGroups(node);
+                                                                                    for (const g of gs)
+                                                                                        setExclusiveActionModeLocal(g, null);
+                                                                                }, title: "Clear all scope overrides under this branch (inherit/default).", children: "Clear branch" })) : null, overrideCount > 0 ? (_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/10 dark:text-blue-200 dark:border-blue-800", children: [overrideCount, " override", overrideCount === 1 ? '' : 's'] })) : null] })] }, node.id));
+                                                            if (!isExpanded)
                                                                 return row;
+                                                            // Update inherited modes for children based on this base's verb nodes.
+                                                            const nextInherited = { ...inherited };
+                                                            for (const c of node.children) {
+                                                                if (c.kind !== 'verb' || !c.group || !c.verb)
+                                                                    continue;
+                                                                const v = explicitValueForGroup(c.group);
+                                                                nextInherited[c.verb] = v ?? inherited[c.verb] ?? null;
                                                             }
-                                                            function renderBaseNode(node, depth, inherited) {
-                                                                const canExpand = node.children.length > 0;
-                                                                // Count overrides with inheritance awareness (explicit == inherited is NOT an override).
-                                                                function countOverridesWithInheritance(n, inh) {
-                                                                    let self = 0;
-                                                                    if (n.kind === 'verb' && n.group && n.verb) {
-                                                                        const v = explicitValueForGroup(n.group);
-                                                                        if (v && v !== inh[n.verb])
-                                                                            self = 1;
-                                                                        return self;
-                                                                    }
-                                                                    // base node: derive next inherited using its verb children (explicit overrides win)
-                                                                    const nextInherited = { ...inh };
-                                                                    for (const c of n.children) {
-                                                                        if (c.kind !== 'verb' || !c.group || !c.verb)
-                                                                            continue;
-                                                                        const v = explicitValueForGroup(c.group);
-                                                                        nextInherited[c.verb] = v ?? inh[c.verb] ?? null;
-                                                                    }
-                                                                    let total = 0;
-                                                                    for (const c of n.children) {
-                                                                        if (c.kind === 'verb')
-                                                                            total += countOverridesWithInheritance(c, inh);
-                                                                        else
-                                                                            total += countOverridesWithInheritance(c, nextInherited);
-                                                                    }
-                                                                    return total;
-                                                                }
-                                                                const overrideCount = countOverridesWithInheritance(node, inherited);
-                                                                function collectVerbGroups(n) {
-                                                                    const out = [];
-                                                                    const walk = (x) => {
-                                                                        if (x.kind === 'verb' && x.group)
-                                                                            out.push(x.group);
-                                                                        for (const c of x.children)
-                                                                            walk(c);
-                                                                    };
-                                                                    walk(n);
-                                                                    return out;
-                                                                }
-                                                                // Auto-expand root and nodes with overrides, but user can toggle
-                                                                const autoExpand = depth === 0 || overrideCount > 0;
-                                                                const userChoice = scopeNodeToggled.get(node.id);
-                                                                const isExpanded = canExpand && (userChoice !== undefined ? userChoice : autoExpand);
-                                                                // Compute effective summary (R/W/D) for this node, using:
-                                                                // - explicit selections on this node's verb children
-                                                                // - otherwise inherited from parent
-                                                                const effectiveByVerb = { ...inherited };
-                                                                for (const c of node.children) {
-                                                                    if (c.kind !== 'verb' || !c.group || !c.verb)
-                                                                        continue;
-                                                                    const v = explicitValueForGroup(c.group);
-                                                                    if (v)
-                                                                        effectiveByVerb[c.verb] = v;
-                                                                }
-                                                                const row = (_jsxs("div", { className: "flex items-center justify-between gap-3 px-3 py-1.5 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/20", style: { marginLeft: depth * 20 }, children: [_jsx("div", { className: `w-0.5 self-stretch rounded-full ${overrideCount > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'}` }), _jsxs("div", { className: "flex items-center gap-2 flex-1 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id, isExpanded), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { className: "w-4 shrink-0" })), _jsx("span", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label })] }), _jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", shortLabelForValue(effectiveByVerb.read, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", shortLabelForValue(effectiveByVerb.write, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", shortLabelForValue(effectiveByVerb.delete, defaultScopeMode)] }), overrideCount > 0 ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => {
-                                                                                        const gs = collectVerbGroups(node);
-                                                                                        for (const g of gs)
-                                                                                            setExclusiveActionModeLocal(g, null);
-                                                                                    }, title: "Clear all scope overrides under this branch (inherit/default).", children: "Clear branch" })) : null, overrideCount > 0 ? (_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/10 dark:text-blue-200 dark:border-blue-800", children: [overrideCount, " override", overrideCount === 1 ? '' : 's'] })) : null] })] }, node.id));
-                                                                if (!isExpanded)
-                                                                    return row;
-                                                                // Update inherited modes for children based on this base's verb nodes.
-                                                                const nextInherited = { ...inherited };
-                                                                for (const c of node.children) {
-                                                                    if (c.kind !== 'verb' || !c.group || !c.verb)
-                                                                        continue;
-                                                                    const v = explicitValueForGroup(c.group);
-                                                                    nextInherited[c.verb] = v ?? inherited[c.verb] ?? null;
-                                                                }
-                                                                const verbChildren = node.children.filter((c) => c.kind === 'verb');
-                                                                const baseChildren = node.children.filter((c) => c.kind === 'base');
-                                                                return (_jsxs(React.Fragment, { children: [row, verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb] ?? defaultScopeMode)), Array.isArray(node.actions) && node.actions.length > 0 && (_jsx("div", { style: { marginLeft: (depth + 1) * 20 }, className: "mt-2 space-y-1", children: node.actions.map((a) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
-                                                                                    ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
-                                                                                    : a.default_enabled
-                                                                                        ? 'bg-green-50/30 dark:bg-green-900/5'
-                                                                                        : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : null] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
-                                                                                                const explicitNow = isActionExplicitEffective(a.key);
-                                                                                                const effectiveNow = Boolean(explicitNow || a.default_enabled);
-                                                                                                const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                                                                                const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
-                                                                                                return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => {
-                                                                                                                const v = String(e.target.value || '');
-                                                                                                                setActionGrantLocal(a.key, v === 'on');
-                                                                                                            }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : explicitNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, explicitNow ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(a.key, false), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
-                                                                                            })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: anySaving })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key))) })), baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))] }, node.id));
-                                                            }
-                                                            return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-4 space-y-1", children: [_jsx("div", { className: "text-xs text-gray-500 mb-2", children: "Scope Policy Tree \u2014 override any branch; collapsed nodes inherit from parents" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), String(pack.name || '').toLowerCase() !== 'crm' && (_jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
-                                                                            return (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
-                                                                                    ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
-                                                                                    : a.default_enabled
-                                                                                        ? 'bg-green-50/30 dark:bg-green-900/5'
-                                                                                        : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : a.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "granted" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" }))] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
-                                                                                                const explicitNow = isActionExplicitEffective(a.key);
-                                                                                                const effectiveNow = Boolean(explicitNow || a.default_enabled);
-                                                                                                const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                                                                                const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
-                                                                                                return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
-                                                                                                                const v = String(e.target.value || '');
-                                                                                                                setActionGrantLocal(a.key, v === 'on');
-                                                                                                            }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : explicitNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, explicitNow ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => setActionGrantLocal(a.key, false), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
-                                                                                            })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: savingPagesActions || mutations.loading })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key));
-                                                                        }) }))] }));
-                                                        })()] })), pack.metrics.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(BarChart3, { size: 16, className: "text-orange-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Metrics" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.grantedMetrics, " selected)"] })] }), _jsx("div", { className: "space-y-1 ml-6", children: pack.metrics.map((m) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${m.hasPendingChange
+                                                            const verbChildren = node.children.filter((c) => c.kind === 'verb');
+                                                            const baseChildren = node.children.filter((c) => c.kind === 'base');
+                                                            return (_jsxs(React.Fragment, { children: [row, verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb] ?? defaultScopeMode)), Array.isArray(node.pages) && node.pages.length > 0 && (_jsxs("div", { style: { marginLeft: (depth + 1) * 20 }, className: "mt-2 space-y-1", children: [_jsx("div", { className: "text-xs font-semibold text-gray-500", children: "Derived Pages" }), node.pages.map((p) => (_jsxs("div", { className: "flex items-center justify-between gap-3 py-1 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("div", { className: "text-sm font-medium text-gray-700 dark:text-gray-200 truncate", children: spacePascalCase(p.label) }), _jsx("div", { className: "text-xs text-gray-500 truncate", children: p.path })] }), p.require_action ? ((() => {
+                                                                                        const k = String(p.require_action || '').trim();
+                                                                                        const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                                                                        const defaultOn = isAdminTemplate ? true : false;
+                                                                                        const effectiveNow = Boolean(k && (isActionExplicitEffective(k) || defaultOn));
+                                                                                        const isInherited = effectiveNow === defaultOn && !hasPendingActionChange(k);
+                                                                                        return (_jsxs("div", { className: "flex items-center gap-2 shrink-0", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Access:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => setActionGrantLocal(k, String(e.target.value) === 'on'), children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInherited ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(k) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(k) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(k, defaultOn), title: "Clear override (back to template default)", children: "Clear" })) : null] }));
+                                                                                    })()) : null] }, p.path)))] })), Array.isArray(node.actions) && node.actions.length > 0 && (_jsx("div", { style: { marginLeft: (depth + 1) * 20 }, className: "mt-2 space-y-1", children: node.actions.map((a) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
+                                                                                ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
+                                                                                : a.default_enabled
+                                                                                    ? 'bg-green-50/30 dark:bg-green-900/5'
+                                                                                    : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : null] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
+                                                                                            const explicitNow = isActionExplicitEffective(a.key);
+                                                                                            const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                                                                            const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                                                                            const effectiveNow = Boolean(explicitNow || createDefaultOn);
+                                                                                            const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                                                                            return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => {
+                                                                                                            const v = String(e.target.value || '');
+                                                                                                            setActionGrantLocal(a.key, v === 'on');
+                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(a.key) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(a.key, createDefaultOn), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
+                                                                                        })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: anySaving })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key))) })), baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))] }, node.id));
+                                                        }
+                                                        return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-4 space-y-1", children: [_jsx("div", { className: "text-xs text-gray-500 mb-2", children: "Scope Policy Tree \u2014 override any branch; collapsed nodes inherit from parents" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), String(pack.name || '').toLowerCase() !== 'crm' && (_jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
+                                                                        return (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
+                                                                                ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
+                                                                                : a.default_enabled
+                                                                                    ? 'bg-green-50/30 dark:bg-green-900/5'
+                                                                                    : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : a.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "granted" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" }))] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
+                                                                                            const explicitNow = isActionExplicitEffective(a.key);
+                                                                                            const effectiveNow = Boolean(explicitNow || a.default_enabled);
+                                                                                            const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                                                                            const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                                                                            const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                                                                            return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
+                                                                                                            const v = String(e.target.value || '');
+                                                                                                            setActionGrantLocal(a.key, v === 'on');
+                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(a.key) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => setActionGrantLocal(a.key, createDefaultOn), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
+                                                                                        })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: savingPagesActions || mutations.loading })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key));
+                                                                    }) }))] }));
+                                                    })() })), pack.metrics.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(BarChart3, { size: 16, className: "text-orange-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Metrics" }), _jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.grantedMetrics, " selected)"] })] }), _jsx("div", { className: "space-y-1 ml-6", children: pack.metrics.map((m) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${m.hasPendingChange
                                                                     ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
                                                                     : m.checked
                                                                         ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'

@@ -79,6 +79,43 @@ type ActionCatalogItem = {
 
 type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
 
+type GeneratedRoute = {
+  path: string;
+  packName: string;
+  packTitle?: string | null;
+  componentName: string;
+  shell: boolean;
+  authz?: {
+    entity: string;
+    verb: string;
+    require_mode?: string;
+    require_create?: boolean;
+    require_action?: string;
+    show_pages?: boolean;
+  };
+};
+
+async function loadFeaturePackRoutes(): Promise<GeneratedRoute[]> {
+  try {
+    const routesMod = await import('@/.hit/generated/routes').catch(() => null);
+    const featurePackRoutes: any[] = Array.isArray((routesMod as any)?.featurePackRoutes)
+      ? (routesMod as any).featurePackRoutes
+      : [];
+    return featurePackRoutes
+      .map((r) => ({
+        path: normalizePath(String(r?.path || '')),
+        packName: String(r?.packName || ''),
+        packTitle: typeof r?.packTitle === 'string' ? String(r.packTitle) : null,
+        componentName: String(r?.componentName || ''),
+        shell: Boolean(r?.shell),
+        authz: r?.authz ? (r.authz as any) : undefined,
+      }))
+      .filter((r) => Boolean(r.path) && Boolean(r.packName));
+  } catch {
+    return [];
+  }
+}
+
 type ExclusiveActionModeGroup = {
   groupKey: string; // e.g. "crm.read.scope" or "crm.contacts.read.scope"
   label: string; // UI label
@@ -125,6 +162,11 @@ function titleFromGroupKey(groupKey: string): string {
     : `${moduleLabel} ${verbLabel} Scope`;
 }
 
+function scopeValueForKey(key: string): ScopeModeValue | null {
+  const m = String(key || '').match(/\.scope\.(none|own|ldd|any)$/);
+  return m ? (m[1] as ScopeModeValue) : null;
+}
+
 // Pages are derived-gated from `authz` + actions and are not edited directly in the Security Groups UI.
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,6 +197,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Grants
   const [search, setSearch] = useState('');
   const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
+  const [routes, setRoutes] = useState<GeneratedRoute[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(true);
 
   // Scope tree UI state (Actions) - track user's explicit expand/collapse choices
   const [scopeNodeToggled, setScopeNodeToggled] = useState<Map<string, boolean>>(new Map());
@@ -178,6 +222,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     if (onNavigate) onNavigate(path);
     else if (typeof window !== 'undefined') window.location.href = path;
   };
+
+  // Load route metadata once (read-only) so we can show which pages are derived by a node.
+  useEffect(() => {
+    let cancelled = false;
+    setRoutesLoading(true);
+    loadFeaturePackRoutes()
+      .then((xs) => {
+        if (cancelled) return;
+        setRoutes(xs);
+      })
+      .finally(() => {
+        if (!cancelled) setRoutesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Root/default scope mode depends on whether this permission set is an "admin template".
   // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
@@ -257,6 +318,26 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     if (pending !== undefined) return pending;
     return actionGrantSet.has(key);
   }, [pendingActionChanges, actionGrantSet]);
+
+  const crmHeaderSummary = useMemo(() => {
+    const precedence: ScopeModeValue[] = ['none', 'own', 'ldd', 'any'];
+    const pick = (verb: 'read' | 'write' | 'delete'): ScopeModeValue => {
+      const candidates = actionCatalog
+        .filter((a) => String(a.key || '').toLowerCase().startsWith(`crm.${verb}.scope.`))
+        .map((a) => String(a.key));
+      // Choose the most restrictive explicitly granted mode if any exist; otherwise defaultScopeMode.
+      for (const mode of precedence) {
+        const key = `crm.${verb}.scope.${mode}`;
+        if (candidates.includes(key) && isActionExplicitEffective(key)) return mode;
+      }
+      return defaultScopeMode;
+    };
+    return {
+      read: pick('read'),
+      write: pick('write'),
+      delete: pick('delete'),
+    };
+  }, [actionCatalog, isActionExplicitEffective, defaultScopeMode]);
 
   const hasPendingActionChange = useCallback((actionKey: string): boolean => {
     const key = String(actionKey || '').trim();
@@ -461,8 +542,25 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const togglePack = (packName: string) => {
     setExpandedPacks((prev) => {
       const next = new Set(prev);
-      if (next.has(packName)) next.delete(packName);
+      const wasExpanded = next.has(packName);
+      if (wasExpanded) next.delete(packName);
       else next.add(packName);
+
+      // UX: expanding CRM should jump you directly into the CRM scope tree section.
+      if (!wasExpanded && String(packName || '').toLowerCase() === 'crm') {
+        setScopeNodeToggled((m) => {
+          const nm = new Map(m);
+          nm.set('crm', true);
+          return nm;
+        });
+        // Best-effort scroll to the CRM root node.
+        setTimeout(() => {
+          const el = document.getElementById('scope-node-crm');
+          if (el && typeof (el as any).scrollIntoView === 'function') {
+            (el as any).scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }
+        }, 0);
+      }
       return next;
     });
   };
@@ -688,7 +786,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (loading || actionsLoading || metricsLoading) {
+  if (loading || actionsLoading || metricsLoading || routesLoading) {
     return (
       <Page
         title="Loading..."
@@ -920,6 +1018,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
             const hasEffective = pack.effectiveActions > 0 || pack.grantedMetrics > 0;
+            const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -936,6 +1035,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     <span className="font-semibold">{pack.title || titleCase(pack.name)}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
+                    {isCrmPack && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">R: {crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">W: {crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">D: {crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'}</span>
+                      </div>
+                    )}
                     {pack.actionCount > 0 && (
                       <div className="flex items-center gap-1">
                         <KeyRound size={14} className="text-gray-400" />
@@ -961,17 +1067,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 {/* Pack Content */}
                 {isExpanded && (
                   <div className="border-t divide-y">
-                    {/* Actions */}
+                    {/* Scope / Actions (tree-first; no redundant section header) */}
                     {pack.actions.length > 0 && (
                       <div className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <KeyRound size={16} className="text-green-500" />
-                          <span className="text-sm font-medium text-gray-600">Actions</span>
-                          <span className="text-xs text-gray-400">
-                            ({pack.actions.filter((a: any) => a.default_enabled).length} default-on,{' '}
-                            {pack.actions.filter((a: any) => !a.default_enabled).length} default-off)
-                          </span>
-                        </div>
                         {(() => {
                           // Build "dropdown" groups for exclusive scope-mode action keys like:
                           //   crm.read.scope.{own,ldd_manager,ldd_lead,ldd_member,any}
@@ -1087,6 +1185,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               explicit: boolean;
                               effective: boolean;
                               via?: string;
+                              require_action?: string;
                             }>;
                             actions?: ActionRow[]; // non-scope actions attached to this base node (e.g. create)
                             children: ScopeNode[];
@@ -1143,6 +1242,34 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
                           }
 
+                          // Attach derived-gated pages (read-only) under nodes using route authz metadata.
+                          // Example: CRM Setup should show its 4 setup pages under `crm.setup`.
+                          for (const r of routes) {
+                            if (!r?.authz?.entity || !r?.authz?.verb) continue;
+                            // Only show pages that opt-in via YAML (keeps activities/contacts/etc clean; setup can show its 4 routes).
+                            if (!(r as any)?.authz?.show_pages) continue;
+                            const packName = String(r.packName || '').trim().toLowerCase();
+                            if (!packName || packName !== String(pack.name || '').trim().toLowerCase()) continue;
+                            const entity = String(r.authz.entity || '').trim().toLowerCase();
+                            if (!entity) continue;
+                            const baseId = `${packName}.${entity}`;
+                            const n = getOrCreateNode(baseId, 'base');
+                            if (!n.pages) n.pages = [];
+                            n.pages.push({
+                              path: String(r.path),
+                              label: r.componentName || r.path,
+                              default_enabled: false,
+                              explicit: false,
+                              effective: false,
+                              require_action: (r as any)?.authz?.require_action || (r as any)?.authz?.requireAction,
+                            });
+                          }
+                          for (const n of nodeById.values()) {
+                            if (n.pages && n.pages.length > 0) {
+                              n.pages.sort((a, b) => a.path.localeCompare(b.path));
+                            }
+                          }
+
                           // Ensure ancestors exist, and wire parent->child for base nodes only.
                           // Skip verb nodes (they were already attached under their base).
                           for (const id of Array.from(nodeById.keys())) {
@@ -1189,13 +1316,31 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           function renderVerbNode(node: ScopeNode, depth: number, inheritedMode: ScopeModeValue | null): React.ReactNode {
                             const group = node.group!;
                             const explicitValue = explicitValueForGroup(group);
-                            const baseDefault: ScopeModeValue = defaultScopeMode;
-                            const effectiveValue: ScopeModeValue = explicitValue ?? inheritedMode ?? baseDefault;
+                            const allowedModes = group.options
+                              .map((o) => o.value as ScopeModeValue)
+                              .filter((x) => ['none', 'own', 'ldd', 'any'].includes(String(x)));
+
+                            const isOnOffOnly =
+                              allowedModes.includes('none') &&
+                              allowedModes.includes('any') &&
+                              !allowedModes.includes('own') &&
+                              !allowedModes.includes('ldd');
+
+                            // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
+                            // Admin templates default to ANY (on). Non-admin templates default to NONE (off).
+                            const baseDefault: ScopeModeValue = isOnOffOnly
+                              ? (permissionSet?.template_role === 'admin' ? 'any' : 'none')
+                              : defaultScopeMode;
+
+                            const inheritedModeSafe: ScopeModeValue | null =
+                              inheritedMode && allowedModes.includes(inheritedMode) ? inheritedMode : null;
+
+                            const effectiveValue: ScopeModeValue = explicitValue ?? inheritedModeSafe ?? baseDefault;
                             const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
                             const status: 'override' | 'inherited' | 'default' | 'same' =
                               explicitValue
                                 ? (isSameAsInherited ? 'same' : 'override')
-                                : inheritedMode
+                                : inheritedModeSafe
                                   ? 'inherited'
                                   : 'default';
 
@@ -1234,7 +1379,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                     disabled={savingPagesActions || mutations.loading}
                                     onChange={(e) => {
                                       const v = e.target.value as ScopeModeValue | '';
-                                      const inheritedOrDefault = inheritedMode ?? baseDefault;
+                                      const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
                                       // If user picks the same value as inherited/default, treat it as "inherit" (no explicit override).
                                       if (v && v === inheritedOrDefault) {
                                         setExclusiveActionModeLocal(group, null);
@@ -1273,7 +1418,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
 
                           function renderBaseNode(node: ScopeNode, depth: number, inherited: InheritedByVerb): React.ReactNode {
-                            const canExpand = node.children.length > 0;
+                            const canExpand =
+                              node.children.length > 0 ||
+                              (Array.isArray(node.pages) && node.pages.length > 0) ||
+                              (Array.isArray(node.actions) && node.actions.length > 0);
                             // Count overrides with inheritance awareness (explicit == inherited is NOT an override).
                             function countOverridesWithInheritance(n: ScopeNode, inh: InheritedByVerb): number {
                               let self = 0;
@@ -1326,9 +1474,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               if (v) effectiveByVerb[c.verb] = v;
                             }
 
+                            const domId =
+                              depth === 0 ? `scope-node-${node.id.replace(/\./g, '-')}` : undefined;
                             const row = (
                               <div
                                 key={node.id}
+                                id={domId}
                                 className="flex items-center justify-between gap-3 px-3 py-1.5 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/20"
                                 style={{ marginLeft: depth * 20 }}
                               >
@@ -1400,6 +1551,60 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 {verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb as ScopeVerb] ?? defaultScopeMode))}
 
                                 {/* Page access is derived from scope/create actions; do not render per-page grant toggles here. */}
+                                {Array.isArray(node.pages) && node.pages.length > 0 && (
+                                  <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
+                                    <div className="text-xs font-semibold text-gray-500">Derived Pages</div>
+                                    {node.pages.map((p) => (
+                                      <div key={p.path} className="flex items-center justify-between gap-3 py-1 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
+                                            {spacePascalCase(p.label)}
+                                          </div>
+                                          <div className="text-xs text-gray-500 truncate">{p.path}</div>
+                                        </div>
+                                        {p.require_action ? (
+                                          (() => {
+                                            const k = String(p.require_action || '').trim();
+                                            const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                            const defaultOn = isAdminTemplate ? true : false;
+                                            const effectiveNow = Boolean(k && (isActionExplicitEffective(k) || defaultOn));
+                                            const isInherited = effectiveNow === defaultOn && !hasPendingActionChange(k);
+                                            return (
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                <span className="text-xs text-gray-400">Access:</span>
+                                                <select
+                                                  className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
+                                                  value={effectiveNow ? 'on' : 'off'}
+                                                  disabled={anySaving}
+                                                  onChange={(e) => setActionGrantLocal(k, String(e.target.value) === 'on')}
+                                                >
+                                                  <option value="on">On</option>
+                                                  <option value="off">Off</option>
+                                                </select>
+                                                {isInherited ? (
+                                                  <Badge variant="warning" className="text-xs">inherited</Badge>
+                                                ) : hasPendingActionChange(k) ? (
+                                                  <Badge variant="info" className="text-xs">override</Badge>
+                                                ) : null}
+                                                {hasPendingActionChange(k) ? (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={anySaving}
+                                                    onClick={() => setActionGrantLocal(k, defaultOn)}
+                                                    title="Clear override (back to template default)"
+                                                  >
+                                                    Clear
+                                                  </Button>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })()
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
 
                                 {Array.isArray(node.actions) && node.actions.length > 0 && (
                                   <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
@@ -1425,9 +1630,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                           {String(a.key || '').endsWith('.create') ? (
                                             (() => {
                                               const explicitNow = isActionExplicitEffective(a.key);
-                                              const effectiveNow = Boolean(explicitNow || a.default_enabled);
                                               const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                              const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
+                                              const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                              const effectiveNow = Boolean(explicitNow || createDefaultOn);
+                                              const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
                                               return (
                                                 <div className="flex items-center gap-2">
                                                   <span className="text-xs text-gray-400">Create:</span>
@@ -1445,15 +1651,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                   </select>
                                                   {isInheritedDefault ? (
                                                     <Badge variant="warning" className="text-xs">inherited</Badge>
-                                                  ) : explicitNow ? (
+                                                  ) : hasPendingActionChange(a.key) ? (
                                                     <Badge variant="info" className="text-xs">override</Badge>
                                                   ) : null}
-                                                  {explicitNow ? (
+                                                  {hasPendingActionChange(a.key) ? (
                                                     <Button
                                                       size="sm"
                                                       variant="ghost"
                                                       disabled={anySaving}
-                                                      onClick={() => setActionGrantLocal(a.key, false)}
+                                                      onClick={() => setActionGrantLocal(a.key, createDefaultOn)}
                                                       title="Clear override (back to system default)"
                                                     >
                                                       Clear
@@ -1531,7 +1737,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                       const explicitNow = isActionExplicitEffective(a.key);
                                       const effectiveNow = Boolean(explicitNow || a.default_enabled);
                                       const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                      const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
+                                      const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                      const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
                                       return (
                                         <div className="flex items-center gap-2">
                                           <span className="text-xs text-gray-400">Create:</span>
@@ -1549,15 +1756,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                           </select>
                                           {isInheritedDefault ? (
                                             <Badge variant="warning" className="text-xs">inherited</Badge>
-                                          ) : explicitNow ? (
+                                          ) : hasPendingActionChange(a.key) ? (
                                             <Badge variant="info" className="text-xs">override</Badge>
                                           ) : null}
-                                          {explicitNow ? (
+                                          {hasPendingActionChange(a.key) ? (
                                             <Button
                                               size="sm"
                                               variant="ghost"
                                               disabled={savingPagesActions || mutations.loading}
-                                              onClick={() => setActionGrantLocal(a.key, false)}
+                                              onClick={() => setActionGrantLocal(a.key, createDefaultOn)}
                                               title="Clear override (back to system default)"
                                             >
                                               Clear
