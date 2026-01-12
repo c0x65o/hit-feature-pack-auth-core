@@ -357,6 +357,7 @@ export interface PermissionActionDefinition {
     label: string;
     description: string | null;
     default_enabled: boolean;
+    scope_modes?: Array<'none' | 'own' | 'ldd' | 'any'> | null;
 }
 export interface RoleActionPermission {
     id: string;
@@ -491,6 +492,7 @@ export interface PermissionSet {
     id: string;
     name: string;
     description: string | null;
+    template_role?: 'admin' | 'user' | null;
     created_at: string;
     updated_at: string;
 }
@@ -548,6 +550,10 @@ export interface UserEffectivePermissions {
         actions: string[];
         metrics: string[];
     };
+    sources?: {
+        actions?: Record<string, string[]>;
+        metrics?: Record<string, string[]>;
+    };
     effective: {
         pages: string[];
         actions: string[];
@@ -583,10 +589,12 @@ export declare function usePermissionSetMutations(): {
     createPermissionSet: (data: {
         name: string;
         description?: string;
+        template_role?: "admin" | "user" | null;
     }) => Promise<PermissionSet>;
     updatePermissionSet: (id: string, data: {
         name?: string;
         description?: string;
+        template_role?: "admin" | "user" | null;
     }) => Promise<PermissionSet>;
     deletePermissionSet: (id: string) => Promise<void>;
     addAssignment: (psId: string, principalType: string, principalId: string) => Promise<void>;

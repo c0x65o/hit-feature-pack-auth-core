@@ -1579,6 +1579,7 @@ export interface PermissionActionDefinition {
   label: string;
   description: string | null;
   default_enabled: boolean;
+  scope_modes?: Array<'none' | 'own' | 'ldd' | 'any'> | null;
 }
 
 export interface RoleActionPermission {
@@ -1626,6 +1627,11 @@ export function usePermissionActions() {
           label: String(a?.label || a?.key || '').trim(),
           description: typeof a?.description === 'string' ? a.description : null,
           default_enabled: Boolean(a?.defaultEnabled),
+          scope_modes: Array.isArray((a as any)?.scopeModes)
+            ? ((a as any).scopeModes as any[])
+                .map((x) => String(x || '').trim().toLowerCase())
+                .filter((x) => ['none', 'own', 'ldd', 'any'].includes(x)) as any
+            : null,
         }))
         .filter((a: any) => Boolean(a.key));
       setData(normalized);
@@ -2158,6 +2164,7 @@ export interface PermissionSet {
   id: string;
   name: string;
   description: string | null;
+  template_role?: 'admin' | 'user' | null;
   created_at: string;
   updated_at: string;
 }
@@ -2221,6 +2228,10 @@ export interface UserEffectivePermissions {
     pages: string[];
     actions: string[];
     metrics: string[];
+  };
+  sources?: {
+    actions?: Record<string, string[]>;
+    metrics?: Record<string, string[]>;
   };
   effective: {
     pages: string[];
@@ -2327,7 +2338,8 @@ export function usePermissionSetMutations() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const createPermissionSet = useCallback(async (data: { name: string; description?: string }) => {
+  const createPermissionSet = useCallback(
+    async (data: { name: string; description?: string; template_role?: 'admin' | 'user' | null }) => {
     setLoading(true);
     setError(null);
     try {
@@ -2341,7 +2353,9 @@ export function usePermissionSetMutations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    },
+    []
+  );
 
   const deletePermissionSet = useCallback(async (id: string) => {
     setLoading(true);
@@ -2356,7 +2370,8 @@ export function usePermissionSetMutations() {
     }
   }, []);
 
-  const updatePermissionSet = useCallback(async (id: string, data: { name?: string; description?: string }) => {
+  const updatePermissionSet = useCallback(
+    async (id: string, data: { name?: string; description?: string; template_role?: 'admin' | 'user' | null }) => {
     setLoading(true);
     setError(null);
     try {
@@ -2370,7 +2385,9 @@ export function usePermissionSetMutations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    },
+    []
+  );
 
   const addAssignment = useCallback(async (psId: string, principalType: string, principalId: string) => {
     setLoading(true);

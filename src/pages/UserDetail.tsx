@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Shield,
@@ -22,6 +22,11 @@ import {
   Camera,
   Link2,
   Users,
+  ChevronDown,
+  ChevronRight,
+  Package,
+  KeyRound,
+  BarChart3,
 } from 'lucide-react';
 import type { BreadcrumbItem } from '@hit/ui-kit';
 import { useUi } from '@hit/ui-kit';
@@ -35,6 +40,8 @@ import {
   useAuthAdminConfig,
   useProfileFields,
   useUserEffectivePermissions,
+  usePermissionActions,
+  useMetricsCatalog,
 } from '../hooks/useAuthAdmin';
 import { ProfilePictureCropModal } from '../components/ProfilePictureCropModal';
 
@@ -70,6 +77,10 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const [availableRoles, setAvailableRoles] = useState<string[]>(['admin', 'user']);
   const [profileFields, setProfileFields] = useState<Record<string, unknown>>({});
   const [permissionsFilter, setPermissionsFilter] = useState<string>('');
+  const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainTitle, setExplainTitle] = useState<string>('Explain Why');
+  const [explainLines, setExplainLines] = useState<string[]>([]);
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
   const [resetPasswordMethod, setResetPasswordMethod] = useState<'email' | 'direct'>('email');
   const [newPassword, setNewPassword] = useState('');
@@ -88,6 +99,8 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     error: effectivePermsError,
     refresh: refreshEffectivePerms,
   } = useUserEffectivePermissions(userEmail);
+  const { data: actionDefs, loading: actionsLoading } = usePermissionActions();
+  const { data: metricsCatalog, loading: metricsLoading } = useMetricsCatalog();
   const { config: authConfig } = useAuthAdminConfig();
   const { data: profileFieldMetadata, loading: fieldsLoading } = useProfileFields();
   const profileFieldsList = profileFieldMetadata || [];
@@ -164,6 +177,154 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
       window.location.href = path;
     }
   };
+
+  type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
+
+  function parseExclusiveActionModeGroup(
+    actionKey: string
+  ): { groupKey: string; value: ScopeModeValue; basePrefix: string; verb: 'read' | 'write' | 'delete' } | null {
+    const m = String(actionKey || '').trim().match(
+      /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/
+    );
+    if (!m) return null;
+    return {
+      groupKey: `${m[1]}.${m[2]}.scope`,
+      value: m[3] as ScopeModeValue,
+      basePrefix: m[1],
+      verb: m[2] as any,
+    };
+  }
+
+  function baseIdFromActionKey(key: string): string | null {
+    const k = String(key || '').trim().toLowerCase();
+    if (!k) return null;
+    const mCreate = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.create$/);
+    if (mCreate) return `${mCreate[1]}.${mCreate[2]}`;
+    return null;
+  }
+
+  function titleCase(x: string): string {
+    const s = String(x || '').trim();
+    if (!s) return '';
+    return s
+      .split(/[\s._/-]+/)
+      .filter(Boolean)
+      .map((p) => p.slice(0, 1).toUpperCase() + p.slice(1))
+      .join(' ');
+  }
+
+  function shortLabelForValue(v: ScopeModeValue): string {
+    if (v === 'none') return 'None';
+    if (v === 'any') return 'Any';
+    if (v === 'own') return 'Own';
+    if (v === 'ldd') return 'LDD';
+    return String(v);
+  }
+
+  const permSetNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const ps of effectivePerms?.permission_sets || []) {
+      if (ps?.id) m.set(String(ps.id), String(ps.name || ps.id));
+    }
+    return m;
+  }, [effectivePerms]);
+
+  const defaultAccessPsId = useMemo(() => {
+    const ps = (effectivePerms?.permission_sets || []).find((x) => String(x?.name || '').toLowerCase() === 'default access');
+    return ps?.id ? String(ps.id) : null;
+  }, [effectivePerms]);
+
+  const actionCatalog = useMemo(() => {
+    const xs = Array.isArray(actionDefs) ? (actionDefs as any[]) : [];
+    return xs
+      .map((a: any) => ({
+        key: String(a?.key || '').trim(),
+        pack_name: typeof a?.pack_name === 'string' && a.pack_name.trim() ? a.pack_name.trim() : null,
+        pack_title: typeof a?.pack_title === 'string' && a.pack_title.trim() ? a.pack_title.trim() : null,
+        label: String(a?.label || a?.key || '').trim(),
+        description: typeof a?.description === 'string' ? a.description : null,
+        default_enabled: Boolean(a?.default_enabled),
+        scope_modes: Array.isArray(a?.scope_modes) ? (a.scope_modes as any[]) : null,
+      }))
+      .filter((a: any) => Boolean(a.key));
+  }, [actionDefs]);
+
+  const packs = useMemo(() => {
+    const effectiveActions = new Set<string>(effectivePerms?.effective?.actions || []);
+    const explicitActions = new Set<string>(effectivePerms?.explicit_grants?.actions || []);
+    const actionSources = (effectivePerms?.sources?.actions || {}) as Record<string, string[]>;
+    const metricSources = (effectivePerms?.sources?.metrics || {}) as Record<string, string[]>;
+    const effectiveMetrics = new Set<string>(effectivePerms?.effective?.metrics || []);
+    const explicitMetrics = new Set<string>(effectivePerms?.explicit_grants?.metrics || []);
+
+    const actionRows = actionCatalog
+      .map((a) => {
+        const effective = effectiveActions.has(a.key);
+        if (!effective) return null;
+        const explicit = explicitActions.has(a.key);
+        const sources = explicit ? (actionSources[a.key] || []) : [];
+        const isDefault = !explicit && Boolean(effectivePerms?.has_default_access) && Boolean(a.default_enabled);
+        return { ...a, effective, explicit, sources, isDefault };
+      })
+      .filter(Boolean) as any[];
+
+    const metricsRows = (metricsCatalog || [])
+      .map((m: any) => {
+        const key = String(m?.key || '').trim();
+        if (!key || !effectiveMetrics.has(key)) return null;
+        const explicit = explicitMetrics.has(key);
+        const sources = explicit ? (metricSources[key] || []) : [];
+        const label = String(m?.label || key);
+        const unit = String(m?.unit || '');
+        const ownerKind = String(m?.owner?.kind || 'app');
+        const ownerId = String(m?.owner?.id || (ownerKind === 'app' ? 'app' : ''));
+        const packId = ownerKind === 'feature_pack' && ownerId ? ownerId : '__app__';
+        return { key, label, unit, explicit, sources, packId };
+      })
+      .filter(Boolean) as any[];
+
+    const packMap = new Map<string, { id: string; name: string; title: string | null; actions: any[]; metrics: any[] }>();
+    function ensurePack(id: string, name: string, title: string | null) {
+      if (!packMap.has(id)) packMap.set(id, { id, name, title, actions: [], metrics: [] });
+      const p = packMap.get(id)!;
+      if (!p.title && title) p.title = title;
+      return p;
+    }
+
+    for (const a of actionRows) {
+      const pack = a.pack_name || String(a.key).split('.')[0] || 'unknown';
+      const p = ensurePack(pack, pack, a.pack_title || null);
+      p.actions.push(a);
+    }
+    for (const m of metricsRows) {
+      const p = ensurePack(m.packId, m.packId === '__app__' ? 'app' : m.packId, m.packId === '__app__' ? 'App' : null);
+      p.metrics.push(m);
+    }
+
+    for (const p of packMap.values()) {
+      p.actions.sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.key).localeCompare(String(b.key)));
+      p.metrics.sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.key).localeCompare(String(b.key)));
+    }
+
+    const out = Array.from(packMap.values());
+    out.sort((a, b) => {
+      if (a.id === '__app__') return -1;
+      if (b.id === '__app__') return 1;
+      return String(a.title || titleCase(a.name)).localeCompare(String(b.title || titleCase(b.name)));
+    });
+
+    const q = permissionsFilter.trim().toLowerCase();
+    if (!q) return out;
+    const match = (s: string) => s.toLowerCase().includes(q);
+    return out.filter((p) => {
+      if (match(String(p.title || p.name))) return true;
+      if (p.actions.some((a) => match(String(a.key)) || match(String(a.label)))) return true;
+      if (p.metrics.some((m) => match(String(m.key)) || match(String(m.label)) || match(String(m.unit)))) return true;
+      return false;
+    });
+  }, [effectivePerms, actionCatalog, metricsCatalog, permissionsFilter]);
+
+  const anyLoading = effectivePermsLoading || actionsLoading || metricsLoading;
 
   const handleStartImpersonation = async () => {
     const confirmed = await alertDialog.showConfirm(`Assume ${userEmail}?`, {
@@ -947,84 +1108,252 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-gray-400">Effective (Unioned) Permissions</div>
+                <div className="text-sm font-medium text-gray-400">Effective Permissions (V2)</div>
                 <div className="text-xs text-gray-500">
-                  Pages: {effectivePerms.effective.pages.length} • Actions: {effectivePerms.effective.actions.length} • Metrics:{' '}
-                  {effectivePerms.effective.metrics.length}
+                  Actions: {effectivePerms.effective.actions.length} • Metrics: {effectivePerms.effective.metrics.length}
                 </div>
               </div>
 
               <Input
                 value={permissionsFilter}
                 onChange={(e: any) => setPermissionsFilter(String(e?.target?.value || ''))}
-                placeholder="Filter pages/actions/metrics (substring match)…"
+                placeholder="Filter actions/metrics (substring match)…"
               />
 
-              {(() => {
-                const q = permissionsFilter.trim().toLowerCase();
-                const matches = (x: string) => (!q ? true : x.toLowerCase().includes(q));
-                const pages = (effectivePerms.effective.pages || []).filter(matches);
-                const actions = (effectivePerms.effective.actions || []).filter(matches);
-                const metrics = (effectivePerms.effective.metrics || []).filter(matches);
+              {anyLoading ? (
+                <div className="flex items-center gap-2 text-gray-400">
+                  <Spinner size="sm" />
+                  <span>Loading permission catalog…</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {packs.map((pack) => {
+                    const isExpanded = expandedPacks.has(pack.id);
+                    const hasAny = pack.actions.length > 0 || pack.metrics.length > 0;
+                    if (!hasAny) return null;
 
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm font-medium">Pages</div>
-                        <Badge variant="default">{pages.length}</Badge>
-                      </div>
-                      <div className="max-h-64 overflow-auto space-y-1">
-                        {pages.length ? (
-                          pages.map((p) => (
-                            <div key={p} className="text-xs font-mono text-gray-700 dark:text-gray-200">
-                              {p}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-gray-500">No matches</div>
+                    // Build scope groups for this pack
+                    type ActionRow = typeof pack.actions extends Array<infer T> ? T : any;
+                    type GroupBuild = { values: Map<string, any> };
+                    const grouped = new Map<string, GroupBuild>();
+                    const other: any[] = [];
+
+                    for (const a of pack.actions as any[]) {
+                      const parsed = parseExclusiveActionModeGroup(a.key);
+                      if (!parsed) {
+                        other.push(a);
+                        continue;
+                      }
+                      if (!grouped.has(parsed.groupKey)) grouped.set(parsed.groupKey, { values: new Map() });
+                      grouped.get(parsed.groupKey)!.values.set(parsed.value, { ...a, _parsed: parsed });
+                    }
+
+                    const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
+                      const precedence: ScopeModeValue[] = ['none', 'own', 'ldd', 'any'];
+                      const declared = (() => {
+                        const anyOpt = Array.from(g.values.values()).find((x: any) => Array.isArray(x?.scope_modes));
+                        const ms = anyOpt?.scope_modes;
+                        if (!Array.isArray(ms) || !ms.length) return null;
+                        const allowed = ms.map((x: any) => String(x || '').trim().toLowerCase()).filter((x: string) =>
+                          ['none', 'own', 'ldd', 'any'].includes(x)
+                        ) as ScopeModeValue[];
+                        return allowed.length ? allowed : null;
+                      })();
+                      const valuesToUse = declared || precedence;
+
+                      const effectiveValue = (() => {
+                        // most restrictive wins
+                        for (const v of precedence) {
+                          const row = g.values.get(v);
+                          if (row) return v;
+                        }
+                        return 'none' as ScopeModeValue;
+                      })();
+
+                      return { groupKey, values: g.values, valuesToUse, effectiveValue };
+                    });
+
+                    // Attach non-scope actions like create under base ids
+                    const attachedByBase = new Map<string, any[]>();
+                    for (const a of other) {
+                      const baseId = baseIdFromActionKey(a.key);
+                      if (!baseId) continue;
+                      if (!attachedByBase.has(baseId)) attachedByBase.set(baseId, []);
+                      attachedByBase.get(baseId)!.push(a);
+                    }
+
+                    const onTogglePack = () => {
+                      setExpandedPacks((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(pack.id)) next.delete(pack.id);
+                        else next.add(pack.id);
+                        return next;
+                      });
+                    };
+
+                    return (
+                      <div key={pack.id} className="border rounded-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={onTogglePack}
+                          className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                        >
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <Package size={16} className="text-gray-500" />
+                            <span className="font-semibold">{pack.title || titleCase(pack.name)}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <KeyRound size={14} className="text-gray-400" />
+                              {pack.actions.length}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <BarChart3 size={14} className="text-gray-400" />
+                              {pack.metrics.length}
+                            </span>
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="border-t p-3 space-y-4">
+                            {/* Scope groups */}
+                            {groups.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-gray-500">Scope</div>
+                                {groups.map((g) => {
+                                  const eff = g.effectiveValue;
+                                  const groupKeysByMode = (mode: ScopeModeValue) => {
+                                    const row = g.values.get(mode);
+                                    return row ? [String(row.key)] : [];
+                                  };
+                                  const explain = () => {
+                                    const lines: string[] = [];
+                                    lines.push(`Group: ${g.groupKey}`);
+                                    for (const mode of ['none', 'own', 'ldd', 'any'] as ScopeModeValue[]) {
+                                      const row = g.values.get(mode);
+                                      if (!row) continue;
+                                      const sources = (effectivePerms?.sources?.actions?.[String(row.key)] || []) as string[];
+                                      const named = sources.map((id: string) => permSetNameById.get(id) || id);
+                                      const implied =
+                                        !sources.length && Boolean(effectivePerms?.has_default_access) && Boolean(row.default_enabled) && defaultAccessPsId
+                                          ? [permSetNameById.get(defaultAccessPsId) || defaultAccessPsId]
+                                          : [];
+                                      const all = named.length ? named : implied;
+                                      lines.push(`${mode.toUpperCase()}: ${all.length ? all.join(', ') : '—'}`);
+                                    }
+                                    setExplainTitle(`Explain: ${g.groupKey} (effective=${eff.toUpperCase()})`);
+                                    setExplainLines(lines);
+                                    setExplainOpen(true);
+                                  };
+
+                                  return (
+                                    <div key={g.groupKey} className="flex items-center justify-between gap-3 px-2 py-2 rounded border border-gray-200 dark:border-gray-800">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{g.groupKey}</div>
+                                        <div className="text-xs text-gray-500">Effective: {shortLabelForValue(eff)}</div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default" className="text-xs">{shortLabelForValue(eff)}</Badge>
+                                        <Button size="sm" variant="ghost" onClick={explain}>
+                                          Explain why
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Create + other actions */}
+                            {other.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-gray-500">Actions</div>
+                                {other.map((a: any) => {
+                                  const sources = (a.sources || []) as string[];
+                                  const named = sources.map((id: string) => permSetNameById.get(id) || id);
+                                  const implied =
+                                    !sources.length && a.isDefault && defaultAccessPsId
+                                      ? [permSetNameById.get(defaultAccessPsId) || defaultAccessPsId]
+                                      : [];
+                                  const explain = () => {
+                                    setExplainTitle(`Explain: ${a.key}`);
+                                    setExplainLines([
+                                      `Action: ${a.key}`,
+                                      `Label: ${a.label}`,
+                                      `Source: ${named.length ? named.join(', ') : implied.length ? implied.join(', ') : '—'}`,
+                                    ]);
+                                    setExplainOpen(true);
+                                  };
+                                  return (
+                                    <div key={a.key} className="flex items-center justify-between gap-3 px-2 py-2 rounded border border-gray-200 dark:border-gray-800">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{a.label}</div>
+                                        <div className="text-xs font-mono text-gray-500 truncate">{a.key}</div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="success" className="text-xs">enabled</Badge>
+                                        <Button size="sm" variant="ghost" onClick={explain}>
+                                          Explain why
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Metrics */}
+                            {pack.metrics.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-gray-500">Metrics</div>
+                                {pack.metrics.map((m: any) => {
+                                  const sources = (m.sources || []) as string[];
+                                  const named = sources.map((id: string) => permSetNameById.get(id) || id);
+                                  const explain = () => {
+                                    setExplainTitle(`Explain: ${m.key}`);
+                                    setExplainLines([
+                                      `Metric: ${m.key}`,
+                                      `Label: ${m.label}`,
+                                      `Source: ${named.length ? named.join(', ') : m.explicit ? '—' : 'catalog default (unprotected)'}`,
+                                    ]);
+                                    setExplainOpen(true);
+                                  };
+                                  return (
+                                    <div key={m.key} className="flex items-center justify-between gap-3 px-2 py-2 rounded border border-gray-200 dark:border-gray-800">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{m.label}</div>
+                                        <div className="text-xs font-mono text-gray-500 truncate">{m.key}</div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default" className="text-xs">{m.unit || 'metric'}</Badge>
+                                        <Button size="sm" variant="ghost" onClick={explain}>
+                                          Explain why
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    </div>
+                    );
+                  })}
+                  {!packs.length ? <div className="text-sm text-gray-500 py-6 text-center">No matching items</div> : null}
+                </div>
+              )}
 
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm font-medium">Actions</div>
-                        <Badge variant="default">{actions.length}</Badge>
-                      </div>
-                      <div className="max-h-64 overflow-auto space-y-1">
-                        {actions.length ? (
-                          actions.map((a) => (
-                            <div key={a} className="text-xs font-mono text-gray-700 dark:text-gray-200">
-                              {a}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-gray-500">No matches</div>
-                        )}
-                      </div>
+              <Modal open={explainOpen} onClose={() => setExplainOpen(false)} title={explainTitle}>
+                <div className="space-y-2">
+                  {explainLines.map((l, idx) => (
+                    <div key={idx} className="text-sm text-gray-700 dark:text-gray-200 font-mono whitespace-pre-wrap">
+                      {l}
                     </div>
-
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm font-medium">Metrics</div>
-                        <Badge variant="default">{metrics.length}</Badge>
-                      </div>
-                      <div className="max-h-64 overflow-auto space-y-1">
-                        {metrics.length ? (
-                          metrics.map((m) => (
-                            <div key={m} className="text-xs font-mono text-gray-700 dark:text-gray-200">
-                              {m}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-gray-500">No matches</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+                  ))}
+                </div>
+              </Modal>
             </div>
           </div>
         )}

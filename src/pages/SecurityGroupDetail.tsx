@@ -14,7 +14,6 @@ import {
   Plus,
   Search,
   Package,
-  FileText,
   KeyRound,
   BarChart3,
   CheckCircle,
@@ -33,7 +32,6 @@ import {
   useGroups,
   useMetricsCatalog,
   type PermissionSetAssignment,
-  type PermissionSetPageGrant,
   type PermissionSetActionGrant,
   type PermissionSetMetricGrant,
 } from '../hooks/useAuthAdmin';
@@ -70,15 +68,6 @@ function normalizePath(p: string): string {
   return x.startsWith('/') ? x.replace(/\/+$/, '') : `/${x.replace(/\/+$/, '')}`;
 }
 
-type GeneratedRoute = {
-  path: string;
-  packName: string;
-  componentName: string;
-  shell: boolean;
-  roles?: string[];
-  defaultRolesAllow?: string[];
-};
-
 type ActionCatalogItem = {
   key: string;
   pack_name: string | null;
@@ -88,31 +77,7 @@ type ActionCatalogItem = {
   default_enabled: boolean; // indicates if enabled by default for all users
 };
 
-function isAdminishPath(path: string): boolean {
-  const p = String(path || '');
-  return p.startsWith('/admin') || p.startsWith('/setup') || p.startsWith('/settings');
-}
-
-function normalizeRoles(x: unknown): string[] | undefined {
-  if (!Array.isArray(x)) return undefined;
-  const roles = x
-    .map((r) => String(r || '').trim())
-    .filter(Boolean)
-    .map((r) => r.toLowerCase());
-  return roles.length ? roles : [];
-}
-
-function pageGrantCandidates(path: string): string[] {
-  const p = normalizePath(path);
-  const segs = p.split('/').filter(Boolean);
-  const out: string[] = [p, '/*'];
-  let cur = '';
-  for (const s of segs) {
-    cur += `/${s}`;
-    out.push(`${cur}/*`);
-  }
-  return Array.from(new Set(out));
-}
+type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
 
 type ExclusiveActionModeGroup = {
   groupKey: string; // e.g. "crm.read.scope" or "crm.contacts.read.scope"
@@ -121,32 +86,30 @@ type ExclusiveActionModeGroup = {
   precedenceKeys: string[]; // most restrictive -> least restrictive
 };
 
-function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; value: string } | null {
-  const m = String(actionKey || '').match(
-    /^(crm(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|any|own|ldd)$/
+function parseExclusiveActionModeGroup(
+  actionKey: string
+): { groupKey: string; value: 'none' | 'own' | 'ldd' | 'any'; basePrefix: string; verb: 'read' | 'write' | 'delete' } | null {
+  const m = String(actionKey || '').trim().match(
+    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/
   );
   if (!m) return null;
-  return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
+  const basePrefix = m[1];
+  const verb = m[2] as 'read' | 'write' | 'delete';
+  const value = m[3] as 'none' | 'own' | 'ldd' | 'any';
+  return { groupKey: `${basePrefix}.${verb}.scope`, value, basePrefix, verb };
 }
 
-function crmBaseIdFromPath(path: string): string {
-  const p = normalizePath(path);
-  if (p === '/crm') return 'crm';
-  const seg = p.split('/').filter(Boolean)[1]; // after "crm"
-  if (!seg) return 'crm';
-  // setup routes grouped under crm.setup
-  if (seg === 'setup') return 'crm.setup';
-  return `crm.${seg}`;
+function baseIdFromScopeBasePrefix(prefix: string): string {
+  return String(prefix || '').trim().toLowerCase();
 }
 
-function crmBaseIdFromActionKey(key: string): string {
-  const k = String(key || '').trim();
-  if (!k.startsWith('crm')) return 'crm';
-  // scope keys already parsed elsewhere, but treat global scope keys as crm
-  if (/^crm\.(read|write|delete)\.scope\./.test(k)) return 'crm';
-  const m = k.match(/^crm\.([a-z0-9_-]+)\./);
-  if (m && m[1]) return `crm.${m[1]}`;
-  return 'crm';
+function baseIdFromActionKey(key: string): string | null {
+  const k = String(key || '').trim().toLowerCase();
+  if (!k) return null;
+  // {pack}.{entity}.create -> attach to pack.entity
+  const mCreate = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.create$/);
+  if (mCreate) return `${mCreate[1]}.${mCreate[2]}`;
+  return null;
 }
 
 function titleFromGroupKey(groupKey: string): string {
@@ -162,45 +125,7 @@ function titleFromGroupKey(groupKey: string): string {
     : `${moduleLabel} ${verbLabel} Scope`;
 }
 
-async function loadShellPages(): Promise<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>> {
-  try {
-    const routesMod = await import('@/.hit/generated/routes');
-    const featurePackRoutes: GeneratedRoute[] = (routesMod as any).featurePackRoutes || [];
-    const authRoutes: string[] = (routesMod as any).authRoutes || [];
-
-    const pages = featurePackRoutes
-      .filter((r) => r && typeof r.path === 'string')
-      .filter((r) => Boolean((r as any).shell))
-      .filter((r) => !authRoutes.includes(String(r.path)))
-      .filter((r) => String(r.path) !== '/')
-      .map((r) => ({
-        path: normalizePath(r.path),
-        label: r.componentName,
-        packName: r.packName,
-        packTitle: typeof (r as any)?.packTitle === 'string' ? String((r as any).packTitle) : null,
-        // Must mirror `/api/permissions/catalog` policy:
-        // - If defaultRolesAllow is provided, honor it.
-        // - Otherwise, use non-adminish shell page heuristic.
-        defaultEnabled: (() => {
-          const dra = normalizeRoles((r as any).defaultRolesAllow);
-          const hasExplicit = Array.isArray(dra) && dra.length > 0;
-          const roles = normalizeRoles((r as any).roles) || [];
-          const hasRoleRequirements = roles.length > 0;
-          if (hasExplicit) {
-            return Boolean((r as any).shell) && dra.includes('user');
-          }
-          return Boolean((r as any).shell) && !isAdminishPath(String(r.path)) && !hasRoleRequirements;
-        })(),
-      }));
-
-    return Array.from(new Map(pages.map((p) => [p.path, p])).values()).sort((a, b) =>
-      a.path.localeCompare(b.path)
-    );
-  } catch (e) {
-    console.warn('Could not load generated routes:', e);
-    return [];
-  }
-}
+// Pages are derived-gated from `authz` + actions and are not edited directly in the Security Groups UI.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -230,15 +155,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // Grants
   const [search, setSearch] = useState('');
   const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
-  const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>>([]);
-  const [pagesLoading, setPagesLoading] = useState(true);
 
   // Scope tree UI state (Actions) - track user's explicit expand/collapse choices
   const [scopeNodeToggled, setScopeNodeToggled] = useState<Map<string, boolean>>(new Map());
 
-  // Pending page/action changes (batch editing like Metrics)
+  // Pending action changes (batch editing like Metrics)
   // Map of key -> desired explicit grant (true=grant, false=revoke)
-  const [pendingPageChanges, setPendingPageChanges] = useState<Map<string, boolean>>(new Map());
   const [pendingActionChanges, setPendingActionChanges] = useState<Map<string, boolean>>(new Map());
   const [savingPagesActions, setSavingPagesActions] = useState(false);
 
@@ -249,7 +171,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   const permissionSet = detail?.permission_set ?? null;
   const assignments: PermissionSetAssignment[] = (detail?.assignments ?? []) as PermissionSetAssignment[];
-  const pageGrants: PermissionSetPageGrant[] = (detail?.page_grants ?? []) as PermissionSetPageGrant[];
   const actionGrants: PermissionSetActionGrant[] = (detail?.action_grants ?? []) as PermissionSetActionGrant[];
   const metricGrants: PermissionSetMetricGrant[] = (detail?.metric_grants ?? []) as PermissionSetMetricGrant[];
 
@@ -258,22 +179,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     else if (typeof window !== 'undefined') window.location.href = path;
   };
 
-  // Load pages on mount
-  useEffect(() => {
-    let cancelled = false;
-    setPagesLoading(true);
-    loadShellPages()
-      .then((xs) => {
-        if (cancelled) return;
-        setPages(xs);
-      })
-      .finally(() => {
-        if (!cancelled) setPagesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Root/default scope mode depends on whether this permission set is an "admin template".
+  // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
+  const defaultScopeMode: ScopeModeValue = permissionSet?.template_role === 'admin' ? 'own' : 'none';
 
   // ─────────────────────────────────────────────────────────────────────────
   // DERIVED DATA
@@ -314,18 +222,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   }, [actionDefs]);
 
   // Grant lookups
-  const pageGrantSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const g of pageGrants) s.add(String((g as any).page_path));
-    return s;
-  }, [pageGrants]);
-
-  const pageGrantIdByPath = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const g of pageGrants) m.set(String((g as any).page_path), String((g as any).id));
-    return m;
-  }, [pageGrants]);
-
   const actionGrantSet = useMemo(() => {
     const s = new Set<string>();
     for (const g of actionGrants) s.add(String((g as any).action_key));
@@ -344,15 +240,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return m;
   }, [metricGrants]);
 
-  const pendingPageChangeCount = useMemo(() => {
-    let n = 0;
-    for (const [path, desired] of pendingPageChanges.entries()) {
-      const cur = pageGrantSet.has(path);
-      if (cur !== desired) n++;
-    }
-    return n;
-  }, [pendingPageChanges, pageGrantSet]);
-
   const pendingActionChangeCount = useMemo(() => {
     let n = 0;
     for (const [key, desired] of pendingActionChanges.entries()) {
@@ -362,14 +249,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return n;
   }, [pendingActionChanges, actionGrantSet]);
 
-  const pendingPagesActionsChangeCount = pendingPageChangeCount + pendingActionChangeCount;
-
-  const isPageExplicitEffective = useCallback((pagePath: string): boolean => {
-    const normalized = normalizePath(pagePath);
-    const pending = pendingPageChanges.get(normalized);
-    if (pending !== undefined) return pending;
-    return pageGrantSet.has(normalized);
-  }, [pendingPageChanges, pageGrantSet]);
+  const pendingPagesActionsChangeCount = pendingActionChangeCount;
 
   const isActionExplicitEffective = useCallback((actionKey: string): boolean => {
     const key = String(actionKey || '').trim();
@@ -378,13 +258,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return actionGrantSet.has(key);
   }, [pendingActionChanges, actionGrantSet]);
 
-  const hasPendingPageChange = useCallback((pagePath: string): boolean => {
-    const normalized = normalizePath(pagePath);
-    const pending = pendingPageChanges.get(normalized);
-    if (pending === undefined) return false;
-    return pageGrantSet.has(normalized) !== pending;
-  }, [pendingPageChanges, pageGrantSet]);
-
   const hasPendingActionChange = useCallback((actionKey: string): boolean => {
     const key = String(actionKey || '').trim();
     const pending = pendingActionChanges.get(key);
@@ -392,50 +265,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return actionGrantSet.has(key) !== pending;
   }, [pendingActionChanges, actionGrantSet]);
 
-  // Group pages and actions by feature pack (metrics are separate)
+  // Group actions by feature pack (pages are derived-gated and not edited here)
   const packData = useMemo(() => {
     const packs = new Map<string, {
       title: string | null;
-      pages: Array<{ path: string; label: string; default_enabled: boolean; explicit: boolean; effective: boolean; via?: string }>;
       actions: Array<ActionCatalogItem & { explicit: boolean; effective: boolean }>;
     }>();
-
-    // Add pages
-    for (const p of pages) {
-      const pack = p.packName || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { title: p.packTitle, pages: [], actions: [] });
-      else if (!packs.get(pack)!.title && p.packTitle) packs.get(pack)!.title = p.packTitle;
-      const candidates = pageGrantCandidates(p.path);
-      let explicit = false;
-      let effective = false;
-      let via: string | undefined;
-
-      // Explicit grants in this permission set (exact/subtree + inherited subtrees)
-      for (const c of candidates) {
-        if (isPageExplicitEffective(c)) {
-          effective = true;
-          via = c;
-          // explicit if it's exactly this node (exact or node subtree), not inherited from ancestor
-          const norm = normalizePath(p.path);
-          explicit = (c === norm) || (c === `${norm}/*`) || (c === '/*' && norm === '/');
-          break;
-        }
-      }
-
-      packs.get(pack)!.pages.push({
-        path: p.path,
-        label: p.label,
-        default_enabled: p.defaultEnabled,
-        explicit,
-        effective,
-        via,
-      });
-    }
 
     // Add actions
     for (const a of actionCatalog) {
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
-      if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, pages: [], actions: [] });
+      if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, actions: [] });
       else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
       const explicit = isActionExplicitEffective(a.key);
       const effective = Boolean(explicit);
@@ -444,13 +284,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
     // Sort packs and filter out empty ones
     return Array.from(packs.entries())
-      .filter(([, data]) => data.pages.length > 0 || data.actions.length > 0)
+      .filter(([, data]) => data.actions.length > 0)
       .map(([name, data]) => ({
         name,
         ...data,
-        pageCount: data.pages.length,
-        effectivePages: data.pages.filter((p) => p.effective).length,
-        explicitPages: data.pages.filter((p) => p.explicit).length,
         actionCount: data.actions.length,
         effectiveActions: data.actions.filter((a) => a.effective).length,
         explicitActions: data.actions.filter((a) => a.explicit).length,
@@ -461,7 +298,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         const titleB = b.title || titleCase(b.name);
         return titleA.localeCompare(titleB);
       });
-  }, [pages, actionCatalog, isPageExplicitEffective, isActionExplicitEffective]);
+  }, [actionCatalog, isActionExplicitEffective]);
 
   // Metrics organized by owner type (App vs Feature Pack)
   const metricRowsByPack = useMemo(() => {
@@ -529,7 +366,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
     function ensurePack(id: string, name: string, title: string | null) {
       if (!packById.has(id)) {
-        packById.set(id, { id, name, title, pages: [], actions: [], metrics: [] as MetricRow[] });
+        packById.set(id, { id, name, title, actions: [], metrics: [] as MetricRow[] });
       } else if (!packById.get(id)!.title && title) {
         packById.get(id)!.title = title;
       }
@@ -539,11 +376,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     // App root first
     ensurePack(APP_PACK_ID, 'app', 'App');
 
-    // Pages/actions (existing)
+    // Actions (existing)
     for (const p of packData) {
       const pid = p.name || 'unknown';
       const node = ensurePack(pid, p.name, p.title || null);
-      node.pages = p.pages;
       node.actions = p.actions;
     }
 
@@ -556,16 +392,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     let merged = Array.from(packById.values())
       .map((p) => ({
         ...p,
-        pageCount: p.pages.length,
-        effectivePages: p.pages.filter((x: any) => x.effective).length,
-        explicitPages: p.pages.filter((x: any) => x.explicit).length,
         actionCount: p.actions.length,
         effectiveActions: p.actions.filter((x: any) => x.effective).length,
         explicitActions: p.actions.filter((x: any) => x.explicit).length,
         metricCount: p.metrics.length,
         grantedMetrics: p.metrics.filter((x: any) => x.checked).length,
       }))
-      .filter((p) => p.pageCount > 0 || p.actionCount > 0 || p.metricCount > 0);
+      .filter((p) => p.actionCount > 0 || p.metricCount > 0);
 
     // Sort: App first, then title/name alpha.
     merged.sort((a, b) => {
@@ -579,7 +412,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     if (!q) return merged;
     return merged.filter((pack) => {
       if (String(pack.title || pack.name).toLowerCase().includes(q)) return true;
-      if (pack.pages.some((p: any) => p.path.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))) return true;
       if (pack.actions.some((a: any) => a.key.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))) return true;
       if (pack.metrics.some((m: any) => m.key.toLowerCase().includes(q) || m.label.toLowerCase().includes(q) || (m.category || '').toLowerCase().includes(q))) return true;
       return false;
@@ -643,20 +475,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     setExpandedPacks(new Set());
   };
 
-  const togglePageGrantLocal = (path: string) => {
-    const normalized = normalizePath(path);
-    setPendingPageChanges((prev) => {
-      const next = new Map(prev);
-      const current = pageGrantSet.has(normalized);
-      const pending = next.get(normalized);
-      const effective = pending !== undefined ? pending : current;
-      const desired = !effective;
-      if (desired === current) next.delete(normalized);
-      else next.set(normalized, desired);
-      return next;
-    });
-  };
-
   const toggleActionGrantLocal = (actionKey: string) => {
     const key = String(actionKey || '').trim();
     if (!key) return;
@@ -666,6 +484,18 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const pending = next.get(key);
       const effective = pending !== undefined ? pending : current;
       const desired = !effective;
+      if (desired === current) next.delete(key);
+      else next.set(key, desired);
+      return next;
+    });
+  };
+
+  const setActionGrantLocal = (actionKey: string, desired: boolean) => {
+    const key = String(actionKey || '').trim();
+    if (!key) return;
+    setPendingActionChanges((prev) => {
+      const next = new Map(prev);
+      const current = actionGrantSet.has(key);
       if (desired === current) next.delete(key);
       else next.set(key, desired);
       return next;
@@ -686,7 +516,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   };
 
   const discardPagesActionsChanges = () => {
-    setPendingPageChanges(new Map());
     setPendingActionChanges(new Map());
   };
 
@@ -694,18 +523,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     if (savingPagesActions) return;
     setSavingPagesActions(true);
     try {
-      // Pages
-      for (const [path, desired] of pendingPageChanges.entries()) {
-        const current = pageGrantSet.has(path);
-        if (current === desired) continue;
-        if (desired) {
-          await mutations.addPageGrant(id, path);
-        } else {
-          const gid = pageGrantIdByPath.get(path);
-          if (gid) await mutations.removePageGrant(id, gid);
-        }
-      }
-
       // Actions
       for (const [key, desired] of pendingActionChanges.entries()) {
         const current = actionGrantSet.has(key);
@@ -718,7 +535,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         }
       }
 
-      setPendingPageChanges(new Map());
       setPendingActionChanges(new Map());
       refresh();
     } finally {
@@ -829,6 +645,33 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const pendingTotalChangeCount = pendingPagesActionsChangeCount + pendingMetricChangeCount;
   const anySaving = savingPagesActions || savingMetrics || mutations.loading;
 
+  const templateRole = (permissionSet as any)?.template_role as 'admin' | 'user' | null | undefined;
+  const isTemplate = templateRole === 'admin' || templateRole === 'user';
+
+  // QoL: for template groups, quickly clear scope overrides (e.g. accidental `.scope.none`) back to defaults.
+  // This only changes pending state; user still clicks Save.
+  const clearScopeOverridesByPrefix = useCallback((prefix: string) => {
+    const pfx = String(prefix || '').trim();
+    if (!pfx) return;
+    const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|ldd|any)$`, 'i');
+    setPendingActionChanges((prev) => {
+      const next = new Map(prev);
+      // Revoke any currently granted scope-mode key matching the prefix
+      for (const k of actionGrantSet) {
+        if (!re.test(String(k))) continue;
+        next.set(String(k), false);
+      }
+      // If user had pending changes on those keys, clear them too (let the revoke win)
+      for (const [k] of Array.from(next.entries())) {
+        if (re.test(String(k)) && !actionGrantSet.has(String(k))) {
+          // key wasn't granted; pending revoke is unnecessary
+          next.delete(String(k));
+        }
+      }
+      return next;
+    });
+  }, [actionGrantSet]);
+
   const discardAllChanges = () => {
     discardPagesActionsChanges();
     discardMetricChanges();
@@ -845,7 +688,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (loading || pagesLoading || actionsLoading || metricsLoading) {
+  if (loading || actionsLoading || metricsLoading) {
     return (
       <Page
         title="Loading..."
@@ -919,6 +762,41 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         </div>
       }
     >
+      {isTemplate ? (
+        <Card className="mb-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <Crown size={18} className="text-amber-600 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="font-semibold">Template Security Group</div>
+                  <Badge variant="warning" className="text-xs">
+                    {templateRole === 'admin' ? 'admin defaults' : 'user defaults'}
+                  </Badge>
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  This group is treated as the default template for <strong>{templateRole}</strong>. Any explicit scope
+                  overrides here can break large parts of the app (e.g. setting a pack scope to <code>None</code>).
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 items-end">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={anySaving}
+                onClick={() => clearScopeOverridesByPrefix('crm')}
+                title="Clear all CRM scope overrides (Read/Write/Delete) back to defaults (no explicit scope mode grants)."
+              >
+                Clear CRM scope overrides
+              </Button>
+              <div className="text-xs text-gray-500">
+                This updates pending changes only — click <strong>Save Changes</strong> to apply.
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       {isEditing ? (
         <Card className="mb-6">
           <div className="space-y-3">
@@ -1041,7 +919,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.grantedMetrics > 0;
+            const hasEffective = pack.effectiveActions > 0 || pack.grantedMetrics > 0;
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -1058,17 +936,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     <span className="font-semibold">{pack.title || titleCase(pack.name)}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
-                    {pack.pageCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <FileText size={14} className="text-gray-400" />
-                        <span className={pack.effectivePages > 0 ? 'text-blue-600 font-medium' : 'text-gray-500'}>
-                          {pack.effectivePages}/{pack.pageCount}
-                        </span>
-                        {pack.explicitPages > 0 ? (
-                          <span className="text-gray-400">({pack.explicitPages} explicit)</span>
-                        ) : null}
-                      </div>
-                    )}
                     {pack.actionCount > 0 && (
                       <div className="flex items-center gap-1">
                         <KeyRound size={14} className="text-gray-400" />
@@ -1094,62 +961,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                 {/* Pack Content */}
                 {isExpanded && (
                   <div className="border-t divide-y">
-                    {/* Pages */}
-                    {pack.pages.length > 0 && (
-                      <div className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <FileText size={16} className="text-blue-500" />
-                          <span className="text-sm font-medium text-gray-600">Pages</span>
-                          <span className="text-xs text-gray-400">
-                            ({pack.pages.filter((p: any) => p.default_enabled).length} default-on,{' '}
-                            {pack.pages.filter((p: any) => !p.default_enabled).length} default-off)
-                          </span>
-                        </div>
-                        <div className="space-y-1 ml-6">
-                          {pack.pages.map((p: any) => (
-                            <div
-                              key={p.path}
-                              className={`flex items-center justify-between py-1.5 px-2 rounded ${
-                                p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''
-                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-medium text-sm truncate">{spacePascalCase(p.label)}</span>
-                                <span className="text-xs text-gray-500 truncate">{p.path}</span>
-                                {p.default_enabled ? (
-                                  <Badge variant="success" className="text-xs">default</Badge>
-                                ) : (
-                                  <Badge variant="warning" className="text-xs">restricted</Badge>
-                                )}
-                                {p.explicit ? (
-                                  <Badge variant="info" className="text-xs">explicit</Badge>
-                                ) : (p.effective && p.via && p.via !== 'default') ? (
-                                  <Badge variant="default" className="text-xs">via {p.via}</Badge>
-                                ) : null}
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">Effective:</span>
-                                  <Checkbox checked={Boolean(p.effective)} disabled={true} onChange={() => void 0} />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">Grant:</span>
-                                <Checkbox
-                                  checked={p.explicit}
-                                  onChange={() => togglePageGrantLocal(p.path)}
-                                  disabled={savingPagesActions || mutations.loading}
-                                />
-                                </div>
-                                {hasPendingPageChange(p.path) ? (
-                                  <Badge variant="warning" className="text-xs">unsaved</Badge>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Actions */}
                     {pack.actions.length > 0 && (
                       <div className="p-4">
@@ -1186,8 +997,19 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
                             // Fixed precedence (most restrictive -> least restrictive)
                             const precedenceValues = ['none', 'own', 'ldd', 'any'] as const;
-                            const options = precedenceValues
-                              .map((v) => {
+                            // Optional: restrict options based on action metadata (scope_modes on any option wins).
+                            const declaredModes = (() => {
+                              const anyOpt = Array.from(g.values.values()).find((x: any) => Array.isArray((x as any).scope_modes));
+                              const ms = (anyOpt as any)?.scope_modes;
+                              if (!Array.isArray(ms) || ms.length === 0) return null;
+                              const norm = ms.map((x: any) => String(x || '').trim().toLowerCase()).filter(Boolean);
+                              const allowed = norm.filter((x: string) => ['none', 'own', 'ldd', 'any'].includes(x));
+                              return allowed.length ? (allowed as Array<'none'|'own'|'ldd'|'any'>) : null;
+                            })();
+                            const valuesToUse = declaredModes ? declaredModes : (precedenceValues as any);
+
+                            const options = valuesToUse
+                              .map((v: ScopeModeValue) => {
                                 const item = g.values.get(v);
                                 if (!item) return null;
                                 return { key: item.key, value: v, label: item.label };
@@ -1229,8 +1051,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             return v;
                           }
 
-                          function shortLabelForValue(v: ScopeModeValue | null): string {
-                            if (!v) return '—';
+                          function shortLabelForValue(v: ScopeModeValue | null, fallback: ScopeModeValue): string {
+                            if (!v) return shortLabelForValue(fallback, fallback);
                             if (v === 'none') return 'None';
                             if (v === 'any') return 'Any';
                             if (v === 'own') return 'Own';
@@ -1307,54 +1129,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
                           }
 
-                          // Attach CRM pages + non-scope actions into the same CRM tree so everything is in one place:
-                          // CRM -> Activities -> { Read/Write/Delete scope dropdowns, Pages, Create, ... }
-                          const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
-                          if (isCrmPack) {
-                            // Attach pages under derived base nodes.
-                            for (const p of (pack.pages || []) as any[]) {
-                              const baseId = crmBaseIdFromPath(String(p?.path || ''));
-                              const n = getOrCreateNode(baseId, 'base');
-                              if (!n.pages) n.pages = [];
-                              n.pages.push({
-                                path: String(p.path),
-                                label: String(p.label),
-                                default_enabled: Boolean(p.default_enabled),
-                                explicit: Boolean(p.explicit),
-                                effective: Boolean(p.effective),
-                                via: p.via ? String(p.via) : undefined,
-                              });
-                            }
-                            for (const n of nodeById.values()) {
-                              if (n.pages && n.pages.length > 0) {
-                                n.pages.sort((a, b) => a.path.localeCompare(b.path));
-                              }
-                            }
-
-                            // Attach non-scope actions (like create) under derived base nodes.
-                            for (const a of other) {
-                              const baseId = crmBaseIdFromActionKey(a.key);
-                              const n = getOrCreateNode(baseId, 'base');
-                              if (!n.actions) n.actions = [];
-                              n.actions.push(a);
-                            }
-                            for (const n of nodeById.values()) {
-                              if (n.actions && n.actions.length > 0) {
-                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-                              }
-                            }
-
-                            // Create parent chain for nodes that exist only due to attachments.
-                            for (const id of Array.from(nodeById.keys())) {
-                              if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete')) continue;
-                              const parts = id.split('.');
-                              if (parts.length <= 1) continue;
-                              const parentId = parts.slice(0, -1).join('.');
-                              const parent = getOrCreateNode(parentId, 'base');
-                              const child = getOrCreateNode(id, 'base');
-                              if (!parent.children.some((c) => c.id === child.id)) {
-                                parent.children.push(child);
-                              }
+                          // Attach non-scope actions (like create) under derived base nodes for ALL packs.
+                          for (const a of other) {
+                            const baseId = baseIdFromActionKey(a.key);
+                            if (!baseId) continue;
+                            const n = getOrCreateNode(baseId, 'base');
+                            if (!n.actions) n.actions = [];
+                            n.actions.push(a);
+                          }
+                          for (const n of nodeById.values()) {
+                            if (n.actions && n.actions.length > 0) {
+                              n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
                             }
                           }
 
@@ -1404,6 +1189,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           function renderVerbNode(node: ScopeNode, depth: number, inheritedMode: ScopeModeValue | null): React.ReactNode {
                             const group = node.group!;
                             const explicitValue = explicitValueForGroup(group);
+                            const baseDefault: ScopeModeValue = defaultScopeMode;
+                            const effectiveValue: ScopeModeValue = explicitValue ?? inheritedMode ?? baseDefault;
                             const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
                             const status: 'override' | 'inherited' | 'default' | 'same' =
                               explicitValue
@@ -1443,12 +1230,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 <div className="flex items-center gap-2">
                                   <select
                                     className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[140px]"
-                                    value={explicitValue ?? ''}
+                                    value={effectiveValue}
                                     disabled={savingPagesActions || mutations.loading}
                                     onChange={(e) => {
                                       const v = e.target.value as ScopeModeValue | '';
-                                      // If user picks the same value as inherited, treat it as "inherit" (no explicit override).
-                                      if (v && inheritedMode && v === inheritedMode) {
+                                      const inheritedOrDefault = inheritedMode ?? baseDefault;
+                                      // If user picks the same value as inherited/default, treat it as "inherit" (no explicit override).
+                                      if (v && v === inheritedOrDefault) {
                                         setExclusiveActionModeLocal(group, null);
                                         return;
                                       }
@@ -1456,15 +1244,21 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                       setExclusiveActionModeLocal(group, nextKey);
                                     }}
                                   >
-                                    <option value="">
-                                      {inheritedMode ? `Inherit (${labelForValue(inheritedMode)})` : 'Default'}
-                                    </option>
                                     {group.options.map((o) => (
                                       <option key={o.key} value={o.value}>
                                         {labelForValue(o.value)}
                                       </option>
                                     ))}
                                   </select>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={savingPagesActions || mutations.loading || !explicitValue}
+                                    onClick={() => setExclusiveActionModeLocal(group, null)}
+                                    title="Clear this override (inherit/default)."
+                                  >
+                                    Clear
+                                  </Button>
                                   <Badge
                                     variant={status === 'override' ? 'info' : status === 'inherited' ? 'warning' : 'default'}
                                     className="text-xs w-16 justify-center"
@@ -1506,6 +1300,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
 
                             const overrideCount = countOverridesWithInheritance(node, inherited);
+
+                            function collectVerbGroups(n: ScopeNode): ExclusiveActionModeGroup[] {
+                              const out: ExclusiveActionModeGroup[] = [];
+                              const walk = (x: ScopeNode) => {
+                                if (x.kind === 'verb' && x.group) out.push(x.group);
+                                for (const c of x.children) walk(c);
+                              };
+                              walk(n);
+                              return out;
+                            }
 
                             // Auto-expand root and nodes with overrides, but user can toggle
                             const autoExpand = depth === 0 || overrideCount > 0;
@@ -1551,9 +1355,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
-                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">R: {shortLabelForValue(effectiveByVerb.read)}</span>
-                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">W: {shortLabelForValue(effectiveByVerb.write)}</span>
-                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">D: {shortLabelForValue(effectiveByVerb.delete)}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">R: {shortLabelForValue(effectiveByVerb.read, defaultScopeMode)}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">W: {shortLabelForValue(effectiveByVerb.write, defaultScopeMode)}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">D: {shortLabelForValue(effectiveByVerb.delete, defaultScopeMode)}</span>
+                                  {overrideCount > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={savingPagesActions || mutations.loading}
+                                      onClick={() => {
+                                        const gs = collectVerbGroups(node);
+                                        for (const g of gs) setExclusiveActionModeLocal(g, null);
+                                      }}
+                                      title="Clear all scope overrides under this branch (inherit/default)."
+                                    >
+                                      Clear branch
+                                    </Button>
+                                  ) : null}
                                   {overrideCount > 0 ? (
                                     <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/10 dark:text-blue-200 dark:border-blue-800">
                                       {overrideCount} override{overrideCount === 1 ? '' : 's'}
@@ -1579,53 +1397,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             return (
                               <React.Fragment key={node.id}>
                                 {row}
-                                {verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb as ScopeVerb] ?? null))}
+                                {verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb as ScopeVerb] ?? defaultScopeMode))}
 
-                                {/* CRM: show attached pages/actions inside the same scope tree branch */}
-                                {Array.isArray(node.pages) && node.pages.length > 0 && (
-                                  <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
-                                    {node.pages.map((p) => (
-                                      <div
-                                        key={p.path}
-                                        className={`flex items-center justify-between py-1.5 px-2 rounded ${
-                                          p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''
-                                        } hover:bg-gray-50 dark:hover:bg-gray-800`}
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <span className="font-medium text-sm truncate">{spacePascalCase(p.label)}</span>
-                                          <span className="text-xs text-gray-500 truncate">{p.path}</span>
-                                          {p.default_enabled ? (
-                                            <Badge variant="success" className="text-xs">default</Badge>
-                                          ) : (
-                                            <Badge variant="warning" className="text-xs">restricted</Badge>
-                                          )}
-                                          {p.explicit ? (
-                                            <Badge variant="info" className="text-xs">explicit</Badge>
-                                          ) : (p.effective && p.via && p.via !== 'default') ? (
-                                            <Badge variant="default" className="text-xs">via {p.via}</Badge>
-                                          ) : null}
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-400">Effective:</span>
-                                            <Checkbox checked={Boolean(p.effective)} disabled={true} onChange={() => void 0} />
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-400">Grant:</span>
-                                            <Checkbox
-                                              checked={Boolean(p.explicit)}
-                                              onChange={() => togglePageGrantLocal(p.path)}
-                                              disabled={anySaving}
-                                            />
-                                          </div>
-                                          {hasPendingPageChange(p.path) ? (
-                                            <Badge variant="warning" className="text-xs">unsaved</Badge>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                {/* Page access is derived from scope/create actions; do not render per-page grant toggles here. */}
 
                                 {Array.isArray(node.actions) && node.actions.length > 0 && (
                                   <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
@@ -1645,25 +1419,59 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                           <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
                                           {a.default_enabled ? (
                                             <Badge variant="success" className="text-xs">default</Badge>
-                                          ) : a.explicit ? (
-                                            <Badge variant="info" className="text-xs">granted</Badge>
-                                          ) : (
-                                            <Badge variant="warning" className="text-xs">restricted</Badge>
-                                          )}
+                                          ) : null}
                                         </div>
                                         <div className="flex items-center gap-4">
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-400">Effective:</span>
-                                            <Checkbox checked={Boolean(a.effective)} disabled={true} onChange={() => void 0} />
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-400">Grant:</span>
-                                            <Checkbox
-                                              checked={Boolean(a.explicit)}
-                                              onChange={() => toggleActionGrantLocal(a.key)}
-                                              disabled={anySaving}
-                                            />
-                                          </div>
+                                          {String(a.key || '').endsWith('.create') ? (
+                                            (() => {
+                                              const explicitNow = isActionExplicitEffective(a.key);
+                                              const effectiveNow = Boolean(explicitNow || a.default_enabled);
+                                              const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                              const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
+                                              return (
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-xs text-gray-400">Create:</span>
+                                                  <select
+                                                    className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
+                                                    value={effectiveNow ? 'on' : 'off'}
+                                                    disabled={anySaving}
+                                                    onChange={(e) => {
+                                                      const v = String(e.target.value || '');
+                                                      setActionGrantLocal(a.key, v === 'on');
+                                                    }}
+                                                  >
+                                                    <option value="on">On</option>
+                                                    <option value="off">Off</option>
+                                                  </select>
+                                                  {isInheritedDefault ? (
+                                                    <Badge variant="warning" className="text-xs">inherited</Badge>
+                                                  ) : explicitNow ? (
+                                                    <Badge variant="info" className="text-xs">override</Badge>
+                                                  ) : null}
+                                                  {explicitNow ? (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      disabled={anySaving}
+                                                      onClick={() => setActionGrantLocal(a.key, false)}
+                                                      title="Clear override (back to system default)"
+                                                    >
+                                                      Clear
+                                                    </Button>
+                                                  ) : null}
+                                                </div>
+                                              );
+                                            })()
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs text-gray-400">Enabled:</span>
+                                              <Checkbox
+                                                checked={Boolean(a.explicit || a.default_enabled)}
+                                                onChange={() => toggleActionGrantLocal(a.key)}
+                                                disabled={anySaving}
+                                              />
+                                            </div>
+                                          )}
                                           {hasPendingActionChange(a.key) ? (
                                             <Badge variant="warning" className="text-xs">unsaved</Badge>
                                           ) : null}
@@ -1718,18 +1526,56 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   )}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-400">Effective:</span>
-                                    <Checkbox checked={Boolean(a.effective)} disabled={true} onChange={() => void 0} />
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-400">Grant:</span>
-                                  <Checkbox
-                                    checked={a.explicit}
-                                    onChange={() => toggleActionGrantLocal(a.key)}
-                                    disabled={savingPagesActions || mutations.loading}
-                                  />
-                                  </div>
+                                  {String(a.key || '').endsWith('.create') ? (
+                                    (() => {
+                                      const explicitNow = isActionExplicitEffective(a.key);
+                                      const effectiveNow = Boolean(explicitNow || a.default_enabled);
+                                      const isAdminTemplate = permissionSet?.template_role === 'admin';
+                                      const isInheritedDefault = effectiveNow && !hasPendingActionChange(a.key) && (Boolean(a.default_enabled) || isAdminTemplate);
+                                      return (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs text-gray-400">Create:</span>
+                                          <select
+                                            className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
+                                            value={effectiveNow ? 'on' : 'off'}
+                                            disabled={savingPagesActions || mutations.loading}
+                                            onChange={(e) => {
+                                              const v = String(e.target.value || '');
+                                              setActionGrantLocal(a.key, v === 'on');
+                                            }}
+                                          >
+                                            <option value="on">On</option>
+                                            <option value="off">Off</option>
+                                          </select>
+                                          {isInheritedDefault ? (
+                                            <Badge variant="warning" className="text-xs">inherited</Badge>
+                                          ) : explicitNow ? (
+                                            <Badge variant="info" className="text-xs">override</Badge>
+                                          ) : null}
+                                          {explicitNow ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              disabled={savingPagesActions || mutations.loading}
+                                              onClick={() => setActionGrantLocal(a.key, false)}
+                                              title="Clear override (back to system default)"
+                                            >
+                                              Clear
+                                            </Button>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-400">Enabled:</span>
+                                      <Checkbox
+                                        checked={Boolean(a.explicit || a.default_enabled)}
+                                        onChange={() => toggleActionGrantLocal(a.key)}
+                                        disabled={savingPagesActions || mutations.loading}
+                                      />
+                                    </div>
+                                  )}
                                   {hasPendingActionChange(a.key) ? (
                                     <Badge variant="warning" className="text-xs">unsaved</Badge>
                                   ) : null}
@@ -1785,7 +1631,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                       </div>
                     )}
 
-                    {pack.pages.length === 0 && pack.actions.length === 0 && pack.metrics.length === 0 && (
+                    {pack.actions.length === 0 && pack.metrics.length === 0 && (
                       <div className="p-4 text-sm text-gray-500">No items in this pack</div>
                     )}
                   </div>

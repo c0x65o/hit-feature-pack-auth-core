@@ -1307,6 +1307,11 @@ export function usePermissionActions() {
                 label: String(a?.label || a?.key || '').trim(),
                 description: typeof a?.description === 'string' ? a.description : null,
                 default_enabled: Boolean(a?.defaultEnabled),
+                scope_modes: Array.isArray(a?.scopeModes)
+                    ? a.scopeModes
+                        .map((x) => String(x || '').trim().toLowerCase())
+                        .filter((x) => ['none', 'own', 'ldd', 'any'].includes(x))
+                    : null,
             }))
                 .filter((a) => Boolean(a.key));
             setData(normalized);
