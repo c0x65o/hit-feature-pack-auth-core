@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, asc } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { requireAuthCoreAction } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -12,9 +12,9 @@ export const runtime = "nodejs";
  */
 export async function GET(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        if (gate)
+            return gate;
         const db = getDb();
         const items = await db.select().from(locationTypes).orderBy(asc(locationTypes.name));
         return NextResponse.json({ items });
@@ -30,9 +30,9 @@ export async function GET(request) {
  */
 export async function POST(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        if (gate)
+            return gate;
         const db = getDb();
         const body = await request.json();
         // Validate required fields

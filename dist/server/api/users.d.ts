@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 export declare const dynamic = "force-dynamic";
 export declare const runtime = "nodejs";
 /**
@@ -15,5 +15,5 @@ export declare const runtime = "nodejs";
  * - pageSize: max items to return (default 25, max 100)
  * - id: email to resolve (optional)
  */
-export declare function GET(request: NextRequest): Promise<Response>;
+export declare function GET(request: NextRequest): Promise<NextResponse<unknown>>;
 //# sourceMappingURL=users.d.ts.map

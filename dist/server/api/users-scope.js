@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { eq } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { requireAuthCoreAction } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -25,9 +25,9 @@ function extractUserKey(request) {
  */
 export async function GET(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        if (gate)
+            return gate;
         const userKey = extractUserKey(request);
         if (!userKey) {
             return NextResponse.json({ error: "User key is required" }, { status: 400 });

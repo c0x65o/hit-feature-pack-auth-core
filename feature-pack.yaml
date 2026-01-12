@@ -72,47 +72,64 @@ routes:
   - path: /admin
     page: Dashboard
     roles: [admin]
+    default_roles_allow: [admin]
   - path: /admin/users
     page: Users
     roles: [admin]
+    default_roles_allow: [admin]
   - path: /admin/users/[email]
     page: UserDetail
     roles: [admin]
+    default_roles_allow: [admin]
   - path: /admin/sessions
     page: Sessions
     roles: [admin]
+    default_roles_allow: [admin]
   - path: /admin/audit-log
     page: AuditLog
     roles: [admin]
+    default_roles_allow: [admin]
     featureFlag: auth.audit_log
   - path: /admin/invites
     page: Invites
     roles: [admin]
+    default_roles_allow: [admin]
     featureFlag: auth.allow_invited
   - path: /admin/groups
     page: Groups
     roles: [admin]
+    default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/security-groups
     page: SecurityGroupsList
     roles: [admin]
+    default_roles_allow: [admin]
   - path: /admin/security-groups/[id]
     page: SecurityGroupDetail
     roles: [admin]
+    default_roles_allow: [admin]
 
   # Org Structure routes
   - path: /admin/org/locations
     page: Locations
     roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: locations, verb: read }
   - path: /admin/org/divisions
     page: Divisions
     roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: divisions, verb: read }
   - path: /admin/org/departments
     page: Departments
     roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: departments, verb: read }
   - path: /admin/org/assignments
     page: OrgAssignments
     roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: assignments, verb: read }
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects
@@ -311,3 +328,304 @@ metrics:
       entity_kinds: [user]
       time_kind: none
       description: "User-list metric: users who have not verified their email."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PERMISSIONS - Action definitions (for admin-core permissions UI + runtime checks)
+# ─────────────────────────────────────────────────────────────────────────────
+permissions:
+  actions:
+    - key: auth-core.admin.access
+      label: Auth Core Admin Access
+      description: "Access auth-core admin-only helper endpoints (e.g., directory user list, org scope lookup, location type management)."
+      default_enabled: false
+
+    # Scope Policy Tree: auth-core (global) -> entity overrides.
+    #
+    # Scope modes:
+    # - none: deny all access for this verb/entity (hide pages + block APIs)
+    # - any: ignore scope (read everything) - admin can see/edit all org dimensions
+    # - own: deny access (org dimensions don't have ownership fields)
+    # - ldd: deny access (org dimensions don't have LDD fields)
+    #
+    # These are mutually exclusive per node; the Security Groups UI renders them as dropdowns.
+    # Note: Org dimensions (locations, divisions, departments, assignments) are admin-only
+    # system configuration. They don't have ownership or LDD fields, so `own` and `ldd`
+    # modes deny access (only `any` mode allows access).
+    - key: auth-core.read.scope.none
+      label: "Auth-Core Read Scope = None"
+      description: "Deny all auth-core read access."
+      default_enabled: false
+    - key: auth-core.read.scope.any
+      label: "Auth-Core Read Scope = Any"
+      description: "Read all auth-core entities regardless of scope."
+      default_enabled: false
+    - key: auth-core.read.scope.own
+      label: "Auth-Core Read Scope = Own"
+      description: "Read only auth-core entities you own (not applicable for org dimensions)."
+      default_enabled: false
+    - key: auth-core.read.scope.ldd
+      label: "Auth-Core Read Scope = LDD"
+      description: "Read auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
+      default_enabled: false
+
+    - key: auth-core.write.scope.none
+      label: "Auth-Core Write Scope = None"
+      description: "Deny all auth-core write access."
+      default_enabled: false
+    - key: auth-core.write.scope.any
+      label: "Auth-Core Write Scope = Any"
+      description: "Edit auth-core entities regardless of scope."
+      default_enabled: false
+    - key: auth-core.write.scope.own
+      label: "Auth-Core Write Scope = Own"
+      description: "Edit only auth-core entities you own (not applicable for org dimensions)."
+      default_enabled: false
+    - key: auth-core.write.scope.ldd
+      label: "Auth-Core Write Scope = LDD"
+      description: "Edit auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
+      default_enabled: false
+
+    - key: auth-core.delete.scope.none
+      label: "Auth-Core Delete Scope = None"
+      description: "Deny all auth-core delete access."
+      default_enabled: false
+    - key: auth-core.delete.scope.any
+      label: "Auth-Core Delete Scope = Any"
+      description: "Delete auth-core entities regardless of scope."
+      default_enabled: false
+    - key: auth-core.delete.scope.own
+      label: "Auth-Core Delete Scope = Own"
+      description: "Delete only auth-core entities you own (not applicable for org dimensions)."
+      default_enabled: false
+    - key: auth-core.delete.scope.ldd
+      label: "Auth-Core Delete Scope = LDD"
+      description: "Delete auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
+      default_enabled: false
+
+    # Locations override (optional): if set, overrides auth-core.read.scope.* for locations only.
+    - key: auth-core.locations.read.scope.none
+      label: "Auth-Core Locations Read Scope = None"
+      description: "Deny all location read access."
+      default_enabled: false
+    - key: auth-core.locations.read.scope.any
+      label: "Auth-Core Locations Read Scope = Any"
+      description: "Read locations regardless of scope."
+      default_enabled: false
+    - key: auth-core.locations.read.scope.own
+      label: "Auth-Core Locations Read Scope = Own"
+      description: "Read only locations you own (not applicable - locations don't have ownership)."
+      default_enabled: false
+    - key: auth-core.locations.read.scope.ldd
+      label: "Auth-Core Locations Read Scope = LDD"
+      description: "Read locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.locations.write.scope.none
+      label: "Auth-Core Locations Write Scope = None"
+      description: "Deny all location write access."
+      default_enabled: false
+    - key: auth-core.locations.write.scope.any
+      label: "Auth-Core Locations Write Scope = Any"
+      description: "Edit locations regardless of scope."
+      default_enabled: false
+    - key: auth-core.locations.write.scope.own
+      label: "Auth-Core Locations Write Scope = Own"
+      description: "Edit only locations you own (not applicable - locations don't have ownership)."
+      default_enabled: false
+    - key: auth-core.locations.write.scope.ldd
+      label: "Auth-Core Locations Write Scope = LDD"
+      description: "Edit locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.locations.delete.scope.none
+      label: "Auth-Core Locations Delete Scope = None"
+      description: "Deny all location delete access."
+      default_enabled: false
+    - key: auth-core.locations.delete.scope.any
+      label: "Auth-Core Locations Delete Scope = Any"
+      description: "Delete locations regardless of scope."
+      default_enabled: false
+    - key: auth-core.locations.delete.scope.own
+      label: "Auth-Core Locations Delete Scope = Own"
+      description: "Delete only locations you own (not applicable - locations don't have ownership)."
+      default_enabled: false
+    - key: auth-core.locations.delete.scope.ldd
+      label: "Auth-Core Locations Delete Scope = LDD"
+      description: "Delete locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.locations.create
+      label: Create Location
+      description: "Create a new location."
+      default_enabled: false
+
+    # Divisions override
+    - key: auth-core.divisions.read.scope.none
+      label: "Auth-Core Divisions Read Scope = None"
+      description: "Deny all division read access."
+      default_enabled: false
+    - key: auth-core.divisions.read.scope.any
+      label: "Auth-Core Divisions Read Scope = Any"
+      description: "Read divisions regardless of scope."
+      default_enabled: false
+    - key: auth-core.divisions.read.scope.own
+      label: "Auth-Core Divisions Read Scope = Own"
+      description: "Read only divisions you own (not applicable - divisions don't have ownership)."
+      default_enabled: false
+    - key: auth-core.divisions.read.scope.ldd
+      label: "Auth-Core Divisions Read Scope = LDD"
+      description: "Read divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.divisions.write.scope.none
+      label: "Auth-Core Divisions Write Scope = None"
+      description: "Deny all division write access."
+      default_enabled: false
+    - key: auth-core.divisions.write.scope.any
+      label: "Auth-Core Divisions Write Scope = Any"
+      description: "Edit divisions regardless of scope."
+      default_enabled: false
+    - key: auth-core.divisions.write.scope.own
+      label: "Auth-Core Divisions Write Scope = Own"
+      description: "Edit only divisions you own (not applicable - divisions don't have ownership)."
+      default_enabled: false
+    - key: auth-core.divisions.write.scope.ldd
+      label: "Auth-Core Divisions Write Scope = LDD"
+      description: "Edit divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.divisions.delete.scope.none
+      label: "Auth-Core Divisions Delete Scope = None"
+      description: "Deny all division delete access."
+      default_enabled: false
+    - key: auth-core.divisions.delete.scope.any
+      label: "Auth-Core Divisions Delete Scope = Any"
+      description: "Delete divisions regardless of scope."
+      default_enabled: false
+    - key: auth-core.divisions.delete.scope.own
+      label: "Auth-Core Divisions Delete Scope = Own"
+      description: "Delete only divisions you own (not applicable - divisions don't have ownership)."
+      default_enabled: false
+    - key: auth-core.divisions.delete.scope.ldd
+      label: "Auth-Core Divisions Delete Scope = LDD"
+      description: "Delete divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.divisions.create
+      label: Create Division
+      description: "Create a new division."
+      default_enabled: false
+
+    # Departments override
+    - key: auth-core.departments.read.scope.none
+      label: "Auth-Core Departments Read Scope = None"
+      description: "Deny all department read access."
+      default_enabled: false
+    - key: auth-core.departments.read.scope.any
+      label: "Auth-Core Departments Read Scope = Any"
+      description: "Read departments regardless of scope."
+      default_enabled: false
+    - key: auth-core.departments.read.scope.own
+      label: "Auth-Core Departments Read Scope = Own"
+      description: "Read only departments you own (not applicable - departments don't have ownership)."
+      default_enabled: false
+    - key: auth-core.departments.read.scope.ldd
+      label: "Auth-Core Departments Read Scope = LDD"
+      description: "Read departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.departments.write.scope.none
+      label: "Auth-Core Departments Write Scope = None"
+      description: "Deny all department write access."
+      default_enabled: false
+    - key: auth-core.departments.write.scope.any
+      label: "Auth-Core Departments Write Scope = Any"
+      description: "Edit departments regardless of scope."
+      default_enabled: false
+    - key: auth-core.departments.write.scope.own
+      label: "Auth-Core Departments Write Scope = Own"
+      description: "Edit only departments you own (not applicable - departments don't have ownership)."
+      default_enabled: false
+    - key: auth-core.departments.write.scope.ldd
+      label: "Auth-Core Departments Write Scope = LDD"
+      description: "Edit departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.departments.delete.scope.none
+      label: "Auth-Core Departments Delete Scope = None"
+      description: "Deny all department delete access."
+      default_enabled: false
+    - key: auth-core.departments.delete.scope.any
+      label: "Auth-Core Departments Delete Scope = Any"
+      description: "Delete departments regardless of scope."
+      default_enabled: false
+    - key: auth-core.departments.delete.scope.own
+      label: "Auth-Core Departments Delete Scope = Own"
+      description: "Delete only departments you own (not applicable - departments don't have ownership)."
+      default_enabled: false
+    - key: auth-core.departments.delete.scope.ldd
+      label: "Auth-Core Departments Delete Scope = LDD"
+      description: "Delete departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
+      default_enabled: false
+
+    - key: auth-core.departments.create
+      label: Create Department
+      description: "Create a new department."
+      default_enabled: false
+
+    # Assignments override
+    - key: auth-core.assignments.read.scope.none
+      label: "Auth-Core Assignments Read Scope = None"
+      description: "Deny all assignment read access."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.any
+      label: "Auth-Core Assignments Read Scope = Any"
+      description: "Read assignments regardless of scope."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.own
+      label: "Auth-Core Assignments Read Scope = Own"
+      description: "Read only assignments you own (your own assignment)."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.ldd
+      label: "Auth-Core Assignments Read Scope = LDD"
+      description: "Read assignments you own, or that match your L/D/D scope."
+      default_enabled: false
+
+    - key: auth-core.assignments.write.scope.none
+      label: "Auth-Core Assignments Write Scope = None"
+      description: "Deny all assignment write access."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.any
+      label: "Auth-Core Assignments Write Scope = Any"
+      description: "Edit assignments regardless of scope."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.own
+      label: "Auth-Core Assignments Write Scope = Own"
+      description: "Edit only assignments you own (your own assignment)."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.ldd
+      label: "Auth-Core Assignments Write Scope = LDD"
+      description: "Edit assignments you own, or that match your L/D/D scope."
+      default_enabled: false
+
+    - key: auth-core.assignments.delete.scope.none
+      label: "Auth-Core Assignments Delete Scope = None"
+      description: "Deny all assignment delete access."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.any
+      label: "Auth-Core Assignments Delete Scope = Any"
+      description: "Delete assignments regardless of scope."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.own
+      label: "Auth-Core Assignments Delete Scope = Own"
+      description: "Delete only assignments you own (your own assignment)."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.ldd
+      label: "Auth-Core Assignments Delete Scope = LDD"
+      description: "Delete assignments you own, or that match your L/D/D scope."
+      default_enabled: false
+
+    - key: auth-core.assignments.create
+      label: Create Assignment
+      description: "Create a new user org assignment."
+      default_enabled: false

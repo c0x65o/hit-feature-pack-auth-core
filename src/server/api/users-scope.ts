@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { eq } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { requireAuthCoreAction } from "../lib/require-action";
 import type { OrgScope } from "../../schema/org-dimensions";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +29,8 @@ function extractUserKey(request: NextRequest): string | null {
  */
 export async function GET(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
+    const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+    if (gate) return gate;
 
     const userKey = extractUserKey(request);
     if (!userKey) {

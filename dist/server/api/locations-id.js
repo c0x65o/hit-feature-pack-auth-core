@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { locations, locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -25,9 +25,21 @@ function extractId(request) {
  */
 export async function GET(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        // Check read permission with explicit scope mode branching
+        const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'read' });
+        if (mode === 'none') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'own' || mode === 'ldd') {
+            // Locations don't have ownership or LDD fields, so these modes deny access
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'any') {
+            // Allow access - proceed with query
+        }
+        else {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
         const id = extractId(request);
         if (!id) {
             return NextResponse.json({ error: "Location ID is required" }, { status: 400 });
@@ -75,9 +87,21 @@ export async function GET(request) {
  */
 export async function PUT(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        // Check write permission with explicit scope mode branching
+        const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'write' });
+        if (mode === 'none') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'own' || mode === 'ldd') {
+            // Locations don't have ownership or LDD fields, so these modes deny access
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'any') {
+            // Allow access - proceed with update
+        }
+        else {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
         const id = extractId(request);
         if (!id) {
             return NextResponse.json({ error: "Location ID is required" }, { status: 400 });
@@ -155,9 +179,21 @@ export async function PUT(request) {
  */
 export async function DELETE(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        // Check delete permission with explicit scope mode branching
+        const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'delete' });
+        if (mode === 'none') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'own' || mode === 'ldd') {
+            // Locations don't have ownership or LDD fields, so these modes deny access
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'any') {
+            // Allow access - proceed with delete
+        }
+        else {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
         const id = extractId(request);
         if (!id) {
             return NextResponse.json({ error: "Location ID is required" }, { status: 400 });

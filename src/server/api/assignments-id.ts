@@ -2,8 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments, divisions, departments, locations } from "@/lib/feature-pack-schemas";
-import { eq } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { eq, or, inArray } from "drizzle-orm";
+import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
+import { extractUserFromRequest } from "../auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,15 +23,84 @@ function extractId(request: NextRequest): string | null {
   return null;
 }
 
+async function fetchUserOrgScopeIds(db: any, userKey: string): Promise<{
+  divisionIds: string[];
+  departmentIds: string[];
+  locationIds: string[];
+}> {
+  const rows = await db
+    .select({
+      divisionId: userOrgAssignments.divisionId,
+      departmentId: userOrgAssignments.departmentId,
+      locationId: userOrgAssignments.locationId,
+    })
+    .from(userOrgAssignments)
+    .where(eq(userOrgAssignments.userKey, userKey));
+
+  const divisionIds: string[] = [];
+  const departmentIds: string[] = [];
+  const locationIds: string[] = [];
+
+  for (const r of rows as any[]) {
+    if (r.divisionId && !divisionIds.includes(r.divisionId)) divisionIds.push(r.divisionId);
+    if (r.departmentId && !departmentIds.includes(r.departmentId)) departmentIds.push(r.departmentId);
+    if (r.locationId && !locationIds.includes(r.locationId)) locationIds.push(r.locationId);
+  }
+
+  return { divisionIds, departmentIds, locationIds };
+}
+
+async function canAccessAssignment(
+  db: any,
+  request: NextRequest,
+  assignmentUserKey: string,
+  assignmentDivisionId: string | null,
+  assignmentDepartmentId: string | null,
+  assignmentLocationId: string | null,
+  verb: 'read' | 'write' | 'delete'
+): Promise<boolean> {
+  const user = extractUserFromRequest(request);
+  if (!user?.sub || !user?.email) return false;
+
+  const mode = await resolveAuthCoreScopeMode(request, { entity: 'assignments', verb });
+  
+  if (mode === 'none') {
+    return false;
+  } else if (mode === 'own') {
+    return assignmentUserKey.toLowerCase() === user.email.toLowerCase();
+  } else if (mode === 'any') {
+    return true;
+  } else if (mode === 'ldd') {
+    // Check if assignment is the current user's own
+    if (assignmentUserKey.toLowerCase() === user.email.toLowerCase()) {
+      return true;
+    }
+    
+    // Check if assignment's division/department/location matches user's LDD scope
+    const scopeIds = await fetchUserOrgScopeIds(db, user.sub);
+    
+    if (assignmentDivisionId && scopeIds.divisionIds.includes(assignmentDivisionId)) {
+      return true;
+    }
+    if (assignmentDepartmentId && scopeIds.departmentIds.includes(assignmentDepartmentId)) {
+      return true;
+    }
+    if (assignmentLocationId && scopeIds.locationIds.includes(assignmentLocationId)) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  return false;
+}
+
 /**
  * GET /api/org/assignments/[id]
  * Get a single assignment by ID
  */
 export async function GET(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
-
     const id = extractId(request);
     if (!id) {
       return NextResponse.json({ error: "Assignment ID is required" }, { status: 400 });
@@ -61,6 +131,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
     }
 
+    // Check access permission
+    const canAccess = await canAccessAssignment(
+      db,
+      request,
+      assignment.userKey,
+      assignment.divisionId || null,
+      assignment.departmentId || null,
+      assignment.locationId || null,
+      'read'
+    );
+
+    if (!canAccess) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     return NextResponse.json(assignment);
   } catch (error) {
     console.error("[org] Get assignment error:", error);
@@ -74,9 +159,6 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
-
     const id = extractId(request);
     if (!id) {
       return NextResponse.json({ error: "Assignment ID is required" }, { status: 400 });
@@ -93,6 +175,21 @@ export async function PUT(request: NextRequest) {
       .limit(1);
     if (!existing) {
       return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+    }
+
+    // Check access permission
+    const canAccess = await canAccessAssignment(
+      db,
+      request,
+      existing.userKey,
+      existing.divisionId || null,
+      existing.departmentId || null,
+      existing.locationId || null,
+      'write'
+    );
+
+    if (!canAccess) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Validate division exists if being changed
@@ -162,9 +259,6 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
-
     const id = extractId(request);
     if (!id) {
       return NextResponse.json({ error: "Assignment ID is required" }, { status: 400 });
@@ -180,6 +274,21 @@ export async function DELETE(request: NextRequest) {
       .limit(1);
     if (!existing) {
       return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+    }
+
+    // Check access permission
+    const canAccess = await canAccessAssignment(
+      db,
+      request,
+      existing.userKey,
+      existing.divisionId || null,
+      existing.departmentId || null,
+      existing.locationId || null,
+      'delete'
+    );
+
+    if (!canAccess) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     await db.delete(userOrgAssignments).where(eq(userOrgAssignments.id, id));

@@ -124,9 +124,6 @@ export function canAccessByRule(args: {
 }): boolean {
   const { entityOwnerUserKey, entityScopes, rule, ctx } = args;
 
-  // Admin bypass if provided
-  if (ctx.roles?.includes("admin")) return true;
-
   if (rule.type === "owner") {
     return isOwner(entityOwnerUserKey, ctx.userKey);
   }

@@ -77,9 +77,6 @@ function scopeMatchesAssignment(scope, a) {
 }
 export function canAccessByRule(args) {
     const { entityOwnerUserKey, entityScopes, rule, ctx } = args;
-    // Admin bypass if provided
-    if (ctx.roles?.includes("admin"))
-        return true;
     if (rule.type === "owner") {
         return isOwner(entityOwnerUserKey, ctx.userKey);
     }

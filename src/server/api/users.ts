@@ -1,6 +1,6 @@
 // src/server/api/users.ts
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "../auth";
+import { requireAuthCoreAction } from "../lib/require-action";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,8 +25,8 @@ function getAuthUrl(): string {
  */
 export async function GET(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
+    const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+    if (gate) return gate;
 
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get("search") || "").trim().toLowerCase();

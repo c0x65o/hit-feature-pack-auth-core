@@ -2,8 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments, divisions, departments, locations } from "@/lib/feature-pack-schemas";
-import { eq, desc, and } from "drizzle-orm";
-import { requireAdmin, getUserId, isAdmin } from "../auth";
+import { eq, desc, and, or, sql, inArray } from "drizzle-orm";
+import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
+import { requireAuthCoreAction } from "../lib/require-action";
+import { extractUserFromRequest } from "../auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,8 +20,43 @@ export const runtime = "nodejs";
  * - departmentId: filter by department
  * - locationId: filter by location
  */
+async function fetchUserOrgScopeIds(db: any, userKey: string): Promise<{
+  divisionIds: string[];
+  departmentIds: string[];
+  locationIds: string[];
+}> {
+  const rows = await db
+    .select({
+      divisionId: userOrgAssignments.divisionId,
+      departmentId: userOrgAssignments.departmentId,
+      locationId: userOrgAssignments.locationId,
+    })
+    .from(userOrgAssignments)
+    .where(eq(userOrgAssignments.userKey, userKey));
+
+  const divisionIds: string[] = [];
+  const departmentIds: string[] = [];
+  const locationIds: string[] = [];
+
+  for (const r of rows as any[]) {
+    if (r.divisionId && !divisionIds.includes(r.divisionId)) divisionIds.push(r.divisionId);
+    if (r.departmentId && !departmentIds.includes(r.departmentId)) departmentIds.push(r.departmentId);
+    if (r.locationId && !locationIds.includes(r.locationId)) locationIds.push(r.locationId);
+  }
+
+  return { divisionIds, departmentIds, locationIds };
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const user = extractUserFromRequest(request);
+    if (!user?.sub || !user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check read permission with explicit scope mode branching
+    const mode = await resolveAuthCoreScopeMode(request, { entity: 'assignments', verb: 'read' });
+    
     const db = getDb();
     const { searchParams } = new URL(request.url);
 
@@ -28,30 +65,51 @@ export async function GET(request: NextRequest) {
     const departmentId = searchParams.get("departmentId");
     const locationId = searchParams.get("locationId");
 
-    // Non-admins can only see their own assignments
-    const currentUserId = getUserId(request);
-    const userIsAdmin = isAdmin(request);
-
-    if (!userIsAdmin && !userKeyFilter) {
-      // Default to current user's assignments
-      if (!currentUserId) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-    }
-
     // Build conditions
-    const conditions = [];
+    const conditions: any[] = [];
 
-    if (userKeyFilter) {
-      // Non-admins can only see their own
-      if (!userIsAdmin && userKeyFilter !== currentUserId) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Apply scope-based filtering (explicit branching on none/own/ldd/any)
+    if (mode === 'none') {
+      // Explicit deny: return empty results (fail-closed but non-breaking for list UI)
+      conditions.push(sql<boolean>`false`);
+    } else if (mode === 'own') {
+      // Only show the current user's own assignment
+      conditions.push(eq(userOrgAssignments.userKey, user.email));
+    } else if (mode === 'ldd') {
+      // Show assignments where:
+      // 1. The assignment is the current user's own (own)
+      // 2. The assignment's division/department/location matches the user's LDD scope
+      const scopeIds = await fetchUserOrgScopeIds(db, user.sub);
+      
+      const ownCondition = eq(userOrgAssignments.userKey, user.email);
+      
+      // For LDD matching, check if assignment's division/department/location matches user's scope
+      const lddParts: any[] = [];
+      if (scopeIds.divisionIds.length) {
+        lddParts.push(inArray(userOrgAssignments.divisionId, scopeIds.divisionIds));
       }
-      conditions.push(eq(userOrgAssignments.userKey, userKeyFilter));
-    } else if (!userIsAdmin && currentUserId) {
-      conditions.push(eq(userOrgAssignments.userKey, currentUserId));
+      if (scopeIds.departmentIds.length) {
+        lddParts.push(inArray(userOrgAssignments.departmentId, scopeIds.departmentIds));
+      }
+      if (scopeIds.locationIds.length) {
+        lddParts.push(inArray(userOrgAssignments.locationId, scopeIds.locationIds));
+      }
+      
+      if (lddParts.length > 0) {
+        conditions.push(or(ownCondition, or(...lddParts)!)!);
+      } else {
+        conditions.push(ownCondition);
+      }
+    } else if (mode === 'any') {
+      // Allow access - no additional filtering based on scope
+    } else {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Apply additional filters
+    if (userKeyFilter) {
+      conditions.push(eq(userOrgAssignments.userKey, userKeyFilter));
+    }
     if (divisionId) {
       conditions.push(eq(userOrgAssignments.divisionId, divisionId));
     }
@@ -100,12 +158,29 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const forbidden = requireAdmin(request);
-    if (forbidden) return forbidden;
+    // Check create permission
+    const createCheck = await requireAuthCoreAction(request, 'auth-core.assignments.create');
+    if (createCheck) return createCheck;
+
+    // Check write permission with explicit scope mode branching
+    const mode = await resolveAuthCoreScopeMode(request, { entity: 'assignments', verb: 'write' });
+    
+    if (mode === 'none') {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    } else if (mode === 'own' || mode === 'ldd') {
+      // For write, we need to check if user can write their own assignment or matching LDD
+      // This is handled at the individual assignment level, so we allow creation here
+      // but the assignment will be checked when accessed
+    } else if (mode === 'any') {
+      // Allow access - proceed with creation
+    } else {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const db = getDb();
     const body = await request.json();
-    const currentUserId = getUserId(request);
+    const user = extractUserFromRequest(request);
+    const currentUserId = user?.sub || null;
 
     // Validate required fields
     if (!body.userKey) {

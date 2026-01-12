@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { divisions } from "@/lib/feature-pack-schemas";
 import { eq, desc, asc, like, and, or, isNull, sql } from "drizzle-orm";
-import { requireAdmin } from "../auth";
+import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
+import { requireAuthCoreAction } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -12,10 +13,21 @@ export const runtime = "nodejs";
  */
 export async function GET(request) {
     try {
-        // Divisions are admin-only for now
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        // Check read permission with explicit scope mode branching
+        const mode = await resolveAuthCoreScopeMode(request, { entity: 'divisions', verb: 'read' });
+        if (mode === 'none') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'own' || mode === 'ldd') {
+            // Divisions don't have ownership or LDD fields, so these modes deny access
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'any') {
+            // Allow access - proceed with query
+        }
+        else {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
         const db = getDb();
         const { searchParams } = new URL(request.url);
         // Pagination
@@ -88,9 +100,25 @@ export async function GET(request) {
  */
 export async function POST(request) {
     try {
-        const forbidden = requireAdmin(request);
-        if (forbidden)
-            return forbidden;
+        // Check create permission
+        const createCheck = await requireAuthCoreAction(request, 'auth-core.divisions.create');
+        if (createCheck)
+            return createCheck;
+        // Check write permission with explicit scope mode branching
+        const mode = await resolveAuthCoreScopeMode(request, { entity: 'divisions', verb: 'write' });
+        if (mode === 'none') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'own' || mode === 'ldd') {
+            // Divisions don't have ownership or LDD fields, so these modes deny access
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+        else if (mode === 'any') {
+            // Allow access - proceed with creation
+        }
+        else {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
         const db = getDb();
         const body = await request.json();
         // Validate required fields
