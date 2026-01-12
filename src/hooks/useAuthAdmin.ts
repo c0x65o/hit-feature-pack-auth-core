@@ -2221,8 +2221,13 @@ export interface UserEffectivePermissions {
     id: string;
     name: string;
     description: string | null;
+    template_role?: string | null;
     assigned_via: EffectivePrincipalRef[];
   }>;
+  templates?: {
+    has_admin?: boolean;
+    has_user?: boolean;
+  };
   has_default_access: boolean;
   explicit_grants: {
     pages: string[];
