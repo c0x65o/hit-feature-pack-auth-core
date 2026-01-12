@@ -206,10 +206,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const [pages, setPages] = useState<Array<{ path: string; label: string; packName: string; packTitle: string | null; defaultEnabled: boolean }>>([]);
   const [pagesLoading, setPagesLoading] = useState(true);
 
-  // Tab state for switching between Pages/Actions and Metrics
-  const [activeTab, setActiveTab] = useState<'pages_actions' | 'metrics'>('pages_actions');
-  const [metricsSearch, setMetricsSearch] = useState('');
-
   // Scope tree UI state (Actions) - track user's explicit expand/collapse choices
   const [scopeNodeToggled, setScopeNodeToggled] = useState<Map<string, boolean>>(new Map());
 
@@ -441,12 +437,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   }, [pages, actionCatalog, isPageExplicitEffective, isActionExplicitEffective]);
 
   // Metrics organized by owner type (App vs Feature Pack)
-  const metricsData = useMemo(() => {
-    const appMetrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean }> = [];
-    const fpMetrics = new Map<string, {
-      packId: string;
-      metrics: Array<{ key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean }>;
-    }>();
+  const metricRowsByPack = useMemo(() => {
+    type MetricRow = {
+      key: string;
+      label: string;
+      unit: string;
+      category?: string;
+      description?: string;
+      checked: boolean;
+      hasPendingChange: boolean;
+      ownerKind: 'feature_pack' | 'app' | 'user';
+      ownerId: string;
+    };
+    const byPack = new Map<string, MetricRow[]>();
+    const APP_PACK_ID = '__app__';
 
     for (const m of metricsCatalog || []) {
       const currentlyGranted = metricGrantIdByKey.has(m.key);
@@ -454,7 +458,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const effectiveState = pendingState !== undefined ? pendingState : currentlyGranted;
       const hasPendingChange = pendingState !== undefined && pendingState !== currentlyGranted;
 
-      const metricEntry = {
+      const ownerKind = (m.owner?.kind || 'app') as any;
+      const ownerId =
+        ownerKind === 'feature_pack'
+          ? String(m.owner?.id || '')
+          : ownerKind === 'user'
+            ? String(m.owner?.id || 'user')
+            : 'app';
+
+      const packId = ownerKind === 'feature_pack' && ownerId ? ownerId : APP_PACK_ID;
+      if (!byPack.has(packId)) byPack.set(packId, []);
+      byPack.get(packId)!.push({
         key: m.key,
         label: m.label,
         unit: m.unit,
@@ -462,72 +476,88 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         description: m.description,
         checked: effectiveState,
         hasPendingChange,
-      };
-
-      if (m.owner?.kind === 'feature_pack' && m.owner.id) {
-        const packId = m.owner.id;
-        if (!fpMetrics.has(packId)) {
-          fpMetrics.set(packId, { packId, metrics: [] });
-        }
-        fpMetrics.get(packId)!.metrics.push(metricEntry);
-      } else {
-        // App-level or user-defined metrics
-        appMetrics.push(metricEntry);
-      }
+        ownerKind,
+        ownerId,
+      });
     }
 
-    // Count based on effective state (including pending)
-    let effectiveGrantedCount = 0;
-    for (const m of metricsCatalog || []) {
-      const currentlyGranted = metricGrantIdByKey.has(m.key);
-      const pendingState = pendingMetricChanges.get(m.key);
-      if (pendingState !== undefined ? pendingState : currentlyGranted) {
-        effectiveGrantedCount++;
-      }
+    // stable sort
+    for (const [k, arr] of byPack.entries()) {
+      arr.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+      byPack.set(k, arr);
     }
 
-    return {
-      appMetrics,
-      featurePackMetrics: Array.from(fpMetrics.values()).sort((a, b) => a.packId.localeCompare(b.packId)),
-      totalCount: (metricsCatalog || []).length,
-      grantedCount: effectiveGrantedCount,
-    };
+    return { byPack, APP_PACK_ID };
   }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges]);
-
-  // Filter metrics by search
-  const filteredMetricsData = useMemo(() => {
-    const q = metricsSearch.trim().toLowerCase();
-    if (!q) return metricsData;
-
-    type MetricEntry = { key: string; label: string; unit: string; category?: string; description?: string; checked: boolean; hasPendingChange: boolean };
-    const filterMetrics = (arr: MetricEntry[]) =>
-      arr.filter((m) =>
-        m.key.toLowerCase().includes(q) ||
-        m.label.toLowerCase().includes(q) ||
-        (m.category || '').toLowerCase().includes(q)
-      );
-
-    return {
-      appMetrics: filterMetrics(metricsData.appMetrics),
-      featurePackMetrics: metricsData.featurePackMetrics
-        .map((fp) => ({ ...fp, metrics: filterMetrics(fp.metrics) }))
-        .filter((fp) => fp.metrics.length > 0),
-      totalCount: metricsData.totalCount,
-      grantedCount: metricsData.grantedCount,
-    };
-  }, [metricsData, metricsSearch]);
 
   // Filter by search (pages and actions only)
   const filteredPacks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return packData;
-    return packData.filter((pack) => {
-      if (pack.name.toLowerCase().includes(q)) return true;
-      if (pack.pages.some((p) => p.path.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))) return true;
-      if (pack.actions.some((a) => a.key.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))) return true;
+    const APP_PACK_ID = metricRowsByPack.APP_PACK_ID;
+    const metricsByPack = metricRowsByPack.byPack;
+
+    // Merge pages/actions with metrics into one "pack" shape.
+    type MetricRow = NonNullable<ReturnType<typeof metricsByPack.get>> extends Array<infer T> ? T : never;
+    const packById = new Map<string, any>();
+
+    function ensurePack(id: string, name: string, title: string | null) {
+      if (!packById.has(id)) {
+        packById.set(id, { id, name, title, pages: [], actions: [], metrics: [] as MetricRow[] });
+      } else if (!packById.get(id)!.title && title) {
+        packById.get(id)!.title = title;
+      }
+      return packById.get(id)!;
+    }
+
+    // App root first
+    ensurePack(APP_PACK_ID, 'app', 'App');
+
+    // Pages/actions (existing)
+    for (const p of packData) {
+      const pid = p.name || 'unknown';
+      const node = ensurePack(pid, p.name, p.title || null);
+      node.pages = p.pages;
+      node.actions = p.actions;
+    }
+
+    // Metrics
+    for (const [packId, rows] of metricsByPack.entries()) {
+      const node = ensurePack(packId, packId === APP_PACK_ID ? 'app' : packId, packId === APP_PACK_ID ? 'App' : null);
+      node.metrics = rows;
+    }
+
+    let merged = Array.from(packById.values())
+      .map((p) => ({
+        ...p,
+        pageCount: p.pages.length,
+        effectivePages: p.pages.filter((x: any) => x.effective).length,
+        explicitPages: p.pages.filter((x: any) => x.explicit).length,
+        actionCount: p.actions.length,
+        effectiveActions: p.actions.filter((x: any) => x.effective).length,
+        explicitActions: p.actions.filter((x: any) => x.explicit).length,
+        metricCount: p.metrics.length,
+        grantedMetrics: p.metrics.filter((x: any) => x.checked).length,
+      }))
+      .filter((p) => p.pageCount > 0 || p.actionCount > 0 || p.metricCount > 0);
+
+    // Sort: App first, then title/name alpha.
+    merged.sort((a, b) => {
+      if (a.id === APP_PACK_ID) return -1;
+      if (b.id === APP_PACK_ID) return 1;
+      const ta = a.title || titleCase(a.name);
+      const tb = b.title || titleCase(b.name);
+      return ta.localeCompare(tb);
+    });
+
+    if (!q) return merged;
+    return merged.filter((pack) => {
+      if (String(pack.title || pack.name).toLowerCase().includes(q)) return true;
+      if (pack.pages.some((p: any) => p.path.toLowerCase().includes(q) || p.label.toLowerCase().includes(q))) return true;
+      if (pack.actions.some((a: any) => a.key.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))) return true;
+      if (pack.metrics.some((m: any) => m.key.toLowerCase().includes(q) || m.label.toLowerCase().includes(q) || (m.category || '').toLowerCase().includes(q))) return true;
       return false;
     });
-  }, [packData, search]);
+  }, [packData, metricRowsByPack, search]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HANDLERS
@@ -769,6 +799,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return count;
   }, [pendingMetricChanges, metricGrantIdByKey]);
 
+  const pendingTotalChangeCount = pendingPagesActionsChangeCount + pendingMetricChangeCount;
+  const anySaving = savingPagesActions || savingMetrics || mutations.loading;
+
+  const discardAllChanges = () => {
+    discardPagesActionsChanges();
+    discardMetricChanges();
+  };
+
+  const saveAllChanges = async () => {
+    if (anySaving) return;
+    // Save pages/actions first (uses sequential calls), then metrics (batched).
+    await savePagesActionsChanges();
+    await saveMetricChanges();
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -910,97 +954,67 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         )}
       </Card>
 
-      {/* ─────────────────────────────────────────────────────────────────────
-          TABS: Pages & Actions | Metrics
-      ───────────────────────────────────────────────────────────────────── */}
       <Card>
-        {/* Tab Header */}
-        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4">
-          <button
-            className={`flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'pages_actions' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'
-            }`}
-            onClick={() => setActiveTab('pages_actions')}
-          >
-            <Package size={16} />
-            Pages & Actions
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 text-sm rounded-md transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'metrics' ? 'bg-white dark:bg-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'
-            }`}
-            onClick={() => setActiveTab('metrics')}
-          >
-            <BarChart3 size={16} />
-            Metrics
-            {metricsData.grantedCount > 0 && (
-              <Badge variant="info" className="text-xs">{metricsData.grantedCount}/{metricsData.totalCount}</Badge>
-            )}
-          </button>
-        </div>
-
-        {activeTab === 'pages_actions' && (
-          <>
-            {/* Legend */}
-            <Alert variant="info" className="mb-4">
-              <div className="text-sm space-y-1">
-                <div><strong>Legend:</strong></div>
-                <div className="flex flex-wrap gap-4 mt-2">
-                  <div className="flex items-center gap-1">
-                    <span className="text-green-500">●</span> <span>Default On</span> <span className="text-gray-500">- enabled for all users by default</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-orange-500">●</span> <span>Default Off</span> <span className="text-gray-500">- requires explicit grant</span>
-                  </div>
-                </div>
-                <div className="text-gray-500 text-xs mt-2">
-                  "Effective" is read-only (includes inherited subtree grants like <code>/*</code>). "Grant" toggles the explicit grant from THIS security group.
-                </div>
+        {/* Legend */}
+        <Alert variant="info" className="mb-4">
+          <div className="text-sm space-y-1">
+            <div><strong>Legend:</strong></div>
+            <div className="flex flex-wrap gap-4 mt-2">
+              <div className="flex items-center gap-1">
+                <span className="text-green-500">●</span> <span>Default On</span> <span className="text-gray-500">- enabled for all users by default</span>
               </div>
-            </Alert>
-
-            {/* Actions Bar */}
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                  placeholder="Search pages, actions..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={expandAll} disabled={savingPagesActions || mutations.loading}>Expand All</Button>
-                <Button variant="ghost" size="sm" onClick={collapseAll} disabled={savingPagesActions || mutations.loading}>Collapse</Button>
-                {pendingPagesActionsChangeCount > 0 && (
-                  <>
-                    <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-                    <Badge variant="warning" className="text-xs">
-                      {pendingPagesActionsChangeCount} unsaved change{pendingPagesActionsChangeCount !== 1 ? 's' : ''}
-                    </Badge>
-                    <Button variant="ghost" size="sm" onClick={discardPagesActionsChanges} disabled={savingPagesActions}>
-                      Discard
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => savePagesActionsChanges().catch(() => void 0)}
-                      loading={savingPagesActions}
-                    >
-                      <Save size={14} className="mr-1" /> Save
-                    </Button>
-                  </>
-                )}
+              <div className="flex items-center gap-1">
+                <span className="text-orange-500">●</span> <span>Default Off</span> <span className="text-gray-500">- requires explicit grant</span>
               </div>
             </div>
+            <div className="text-gray-500 text-xs mt-2">
+              "Effective" is read-only (includes inherited subtree grants like <code>/*</code>). "Grant" toggles the explicit grant from THIS security group.
+            </div>
+          </div>
+        </Alert>
+
+        {/* Global Actions Bar */}
+        <div className="flex items-center justify-between mb-4 gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+              placeholder="Search pages, actions, metrics..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={expandAll} disabled={anySaving}>Expand All</Button>
+            <Button variant="ghost" size="sm" onClick={collapseAll} disabled={anySaving}>Collapse</Button>
+            {pendingTotalChangeCount > 0 && (
+              <>
+                <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+                <Badge variant="warning" className="text-xs">
+                  {pendingTotalChangeCount} unsaved change{pendingTotalChangeCount !== 1 ? 's' : ''}
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={discardAllChanges} disabled={anySaving}>
+                  Discard
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => saveAllChanges().catch(() => void 0)}
+                  loading={anySaving}
+                >
+                  <Save size={14} className="mr-1" /> Save
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* Feature Pack List */}
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0;
+            const hasEffective = pack.effectivePages > 0 || pack.effectiveActions > 0 || pack.grantedMetrics > 0;
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -1039,6 +1053,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         ) : null}
                       </div>
                     )}
+                    {pack.metricCount > 0 && (
+                      <div className="flex items-center gap-1">
+                        <BarChart3 size={14} className="text-gray-400" />
+                        <span className={pack.grantedMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500'}>
+                          {pack.grantedMetrics}/{pack.metricCount}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
 
@@ -1052,12 +1074,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           <FileText size={16} className="text-blue-500" />
                           <span className="text-sm font-medium text-gray-600">Pages</span>
                           <span className="text-xs text-gray-400">
-                            ({pack.pages.filter(p => p.default_enabled).length} default-on,{' '}
-                            {pack.pages.filter(p => !p.default_enabled).length} default-off)
+                            ({pack.pages.filter((p: any) => p.default_enabled).length} default-on,{' '}
+                            {pack.pages.filter((p: any) => !p.default_enabled).length} default-off)
                           </span>
                         </div>
                         <div className="space-y-1 ml-6">
-                          {pack.pages.map((p) => (
+                          {pack.pages.map((p: any) => (
                             <div
                               key={p.path}
                               className={`flex items-center justify-between py-1.5 px-2 rounded ${
@@ -1108,8 +1130,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           <KeyRound size={16} className="text-green-500" />
                           <span className="text-sm font-medium text-gray-600">Actions</span>
                           <span className="text-xs text-gray-400">
-                            ({pack.actions.filter(a => a.default_enabled).length} default-on,{' '}
-                            {pack.actions.filter(a => !a.default_enabled).length} default-off)
+                            ({pack.actions.filter((a: any) => a.default_enabled).length} default-on,{' '}
+                            {pack.actions.filter((a: any) => !a.default_enabled).length} default-off)
                           </span>
                         </div>
                         {(() => {
@@ -1527,7 +1549,47 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                       </div>
                     )}
 
-                    {pack.pages.length === 0 && pack.actions.length === 0 && (
+                    {/* Metrics */}
+                    {pack.metrics.length > 0 && (
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <BarChart3 size={16} className="text-orange-500" />
+                          <span className="text-sm font-medium text-gray-600">Metrics</span>
+                          <span className="text-xs text-gray-400">
+                            ({pack.grantedMetrics} selected)
+                          </span>
+                        </div>
+                        <div className="space-y-1 ml-6">
+                          {pack.metrics.map((m: any) => (
+                            <div
+                              key={m.key}
+                              className={`flex items-center justify-between py-1.5 px-2 rounded ${
+                                m.hasPendingChange
+                                  ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
+                                  : m.checked
+                                    ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'
+                                    : ''
+                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="font-medium text-sm truncate">{m.label}</span>
+                                <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
+                                <Badge variant="default" className="text-xs">{m.unit}</Badge>
+                                {m.category ? <Badge variant="default" className="text-xs">{m.category}</Badge> : null}
+                                {m.hasPendingChange ? <Badge variant="warning" className="text-xs">unsaved</Badge> : null}
+                              </div>
+                              <Checkbox
+                                checked={Boolean(m.checked)}
+                                onChange={() => toggleMetricLocal(m.key)}
+                                disabled={anySaving}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {pack.pages.length === 0 && pack.actions.length === 0 && pack.metrics.length === 0 && (
                       <div className="p-4 text-sm text-gray-500">No items in this pack</div>
                     )}
                   </div>
@@ -1542,163 +1604,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             </div>
           )}
         </div>
-          </>
-        )}
-
-        {activeTab === 'metrics' && (
-          <>
-            {/* Metrics Legend */}
-            <Alert variant="info" className="mb-4">
-              <div className="text-sm">
-                <strong>All metrics are default-deny.</strong> Toggle checkboxes to select which metrics this security group can access, then click Save.
-                <div className="text-gray-500 text-xs mt-1">
-                  Tip: the built-in <strong>System Admin</strong> security group has access to all metrics by default.
-                </div>
-              </div>
-            </Alert>
-
-            {/* Metrics Actions Bar */}
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={metricsSearch}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMetricsSearch(e.target.value)}
-                  placeholder="Search metrics..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={enableAllMetrics} disabled={savingMetrics}>
-                  Enable All
-                </Button>
-                <Button variant="ghost" size="sm" onClick={disableAllMetrics} disabled={savingMetrics}>
-                  Disable All
-                </Button>
-                {pendingMetricChangeCount > 0 && (
-                  <>
-                    <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-                    <Badge variant="warning" className="text-xs">
-                      {pendingMetricChangeCount} unsaved change{pendingMetricChangeCount !== 1 ? 's' : ''}
-                    </Badge>
-                    <Button variant="ghost" size="sm" onClick={discardMetricChanges} disabled={savingMetrics}>
-                      Discard
-                    </Button>
-                    <Button variant="primary" size="sm" onClick={() => saveMetricChanges().catch(() => void 0)} loading={savingMetrics}>
-                      <Save size={14} className="mr-1" /> Save
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* App Metrics */}
-            {filteredMetricsData.appMetrics.length > 0 && (
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <BarChart3 size={18} className="text-orange-500" />
-                  <h4 className="font-semibold">App Metrics</h4>
-                  <Badge variant="default" className="text-xs">
-                    {metricsData.appMetrics.filter((m) => m.checked).length}/{metricsData.appMetrics.length} selected
-                  </Badge>
-                </div>
-                <div className="space-y-1 border rounded-lg p-3">
-                  {filteredMetricsData.appMetrics.map((m) => (
-                    <div
-                      key={m.key}
-                      className={`flex items-center justify-between py-2 px-3 rounded ${
-                        m.hasPendingChange
-                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
-                          : m.checked
-                            ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'
-                            : ''
-                      } hover:bg-gray-50 dark:hover:bg-gray-800`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="font-medium text-sm truncate">{m.label}</span>
-                        <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
-                        <Badge variant="default" className="text-xs">{m.unit}</Badge>
-                        {m.hasPendingChange && <Badge variant="warning" className="text-xs">unsaved</Badge>}
-                      </div>
-                      <Checkbox
-                        checked={m.checked}
-                        onChange={() => toggleMetricLocal(m.key)}
-                        disabled={savingMetrics}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Feature Pack Metrics */}
-            {filteredMetricsData.featurePackMetrics.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Package size={18} className="text-blue-500" />
-                  <h4 className="font-semibold">Feature Pack Metrics</h4>
-                </div>
-                <div className="space-y-4">
-                  {filteredMetricsData.featurePackMetrics.map((fp) => {
-                    const selectedInPack = fp.metrics.filter((m) => m.checked).length;
-                    return (
-                      <div key={fp.packId} className="border rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800">
-                          <div className="flex items-center gap-2">
-                            <Package size={16} className="text-gray-500" />
-                            <span className="font-medium">{titleCase(fp.packId)}</span>
-                          </div>
-                          <Badge variant={selectedInPack > 0 ? 'info' : 'default'} className="text-xs">
-                            {selectedInPack}/{fp.metrics.length} selected
-                          </Badge>
-                        </div>
-                        <div className="p-3 space-y-1">
-                          {fp.metrics.map((m) => (
-                            <div
-                              key={m.key}
-                              className={`flex items-center justify-between py-2 px-3 rounded ${
-                                m.hasPendingChange
-                                  ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700'
-                                  : m.checked
-                                    ? 'bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800'
-                                    : ''
-                              } hover:bg-gray-50 dark:hover:bg-gray-800`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <span className="font-medium text-sm truncate">{m.label}</span>
-                                <span className="text-xs text-gray-500 font-mono truncate">{m.key}</span>
-                                <Badge variant="default" className="text-xs">{m.unit}</Badge>
-                                {m.hasPendingChange && <Badge variant="warning" className="text-xs">unsaved</Badge>}
-                              </div>
-                              <Checkbox
-                                checked={m.checked}
-                                onChange={() => toggleMetricLocal(m.key)}
-                                disabled={savingMetrics}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Empty State */}
-            {filteredMetricsData.appMetrics.length === 0 && filteredMetricsData.featurePackMetrics.length === 0 && (
-              <div className="py-12 text-center text-gray-500">
-                {metricsSearch ? 'No matching metrics' : (
-                  <div>
-                    <div className="mb-2">No metrics available.</div>
-                    <div className="text-xs">Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">hit run</code> to generate the metrics catalog.</div>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
       </Card>
 
       {/* ─────────────────────────────────────────────────────────────────────
