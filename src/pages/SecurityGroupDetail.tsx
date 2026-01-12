@@ -128,6 +128,26 @@ function parseExclusiveActionModeGroup(actionKey: string): { groupKey: string; v
   return { groupKey: `${m[1]}.${m[2]}.scope`, value: m[3] };
 }
 
+function crmBaseIdFromPath(path: string): string {
+  const p = normalizePath(path);
+  if (p === '/crm') return 'crm';
+  const seg = p.split('/').filter(Boolean)[1]; // after "crm"
+  if (!seg) return 'crm';
+  // setup routes grouped under crm.setup
+  if (seg === 'setup') return 'crm.setup';
+  return `crm.${seg}`;
+}
+
+function crmBaseIdFromActionKey(key: string): string {
+  const k = String(key || '').trim();
+  if (!k.startsWith('crm')) return 'crm';
+  // scope keys already parsed elsewhere, but treat global scope keys as crm
+  if (/^crm\.(read|write|delete)\.scope\./.test(k)) return 'crm';
+  const m = k.match(/^crm\.([a-z0-9_-]+)\./);
+  if (m && m[1]) return `crm.${m[1]}`;
+  return 'crm';
+}
+
 function titleFromGroupKey(groupKey: string): string {
   // Parse patterns like: crm.read.scope, crm.contacts.read.scope, crm.activities.write.scope
   const m = groupKey.match(/^(crm)(?:\.([a-z]+))?\.(read|write|delete)\.scope$/);
@@ -1180,9 +1200,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           });
 
                           // Determine explicit selection for a group (first explicit in precedence order; otherwise null).
+                          // IMPORTANT: use the effective local state (includes pending changes), not just persisted grants.
                           function getExplicitSelectedKey(g: ExclusiveActionModeGroup): string | null {
                             for (const k of g.precedenceKeys) {
-                              if (actionGrantSet.has(k)) return k;
+                              if (isActionExplicitEffective(k)) return k;
                             }
                             return null;
                           }
@@ -1228,6 +1249,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             verb?: ScopeVerb;
                             label: string;
                             group?: ExclusiveActionModeGroup; // only for verb nodes (dropdown)
+                            pages?: Array<{
+                              path: string;
+                              label: string;
+                              default_enabled: boolean;
+                              explicit: boolean;
+                              effective: boolean;
+                              via?: string;
+                            }>;
+                            actions?: ActionRow[]; // non-scope actions attached to this base node (e.g. create)
                             children: ScopeNode[];
                           };
 
@@ -1268,6 +1298,57 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
                           }
 
+                          // Attach CRM pages + non-scope actions into the same CRM tree so everything is in one place:
+                          // CRM -> Activities -> { Read/Write/Delete scope dropdowns, Pages, Create, ... }
+                          const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
+                          if (isCrmPack) {
+                            // Attach pages under derived base nodes.
+                            for (const p of (pack.pages || []) as any[]) {
+                              const baseId = crmBaseIdFromPath(String(p?.path || ''));
+                              const n = getOrCreateNode(baseId, 'base');
+                              if (!n.pages) n.pages = [];
+                              n.pages.push({
+                                path: String(p.path),
+                                label: String(p.label),
+                                default_enabled: Boolean(p.default_enabled),
+                                explicit: Boolean(p.explicit),
+                                effective: Boolean(p.effective),
+                                via: p.via ? String(p.via) : undefined,
+                              });
+                            }
+                            for (const n of nodeById.values()) {
+                              if (n.pages && n.pages.length > 0) {
+                                n.pages.sort((a, b) => a.path.localeCompare(b.path));
+                              }
+                            }
+
+                            // Attach non-scope actions (like create) under derived base nodes.
+                            for (const a of other) {
+                              const baseId = crmBaseIdFromActionKey(a.key);
+                              const n = getOrCreateNode(baseId, 'base');
+                              if (!n.actions) n.actions = [];
+                              n.actions.push(a);
+                            }
+                            for (const n of nodeById.values()) {
+                              if (n.actions && n.actions.length > 0) {
+                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+                              }
+                            }
+
+                            // Create parent chain for nodes that exist only due to attachments.
+                            for (const id of Array.from(nodeById.keys())) {
+                              if (id.endsWith('.read') || id.endsWith('.write') || id.endsWith('.delete')) continue;
+                              const parts = id.split('.');
+                              if (parts.length <= 1) continue;
+                              const parentId = parts.slice(0, -1).join('.');
+                              const parent = getOrCreateNode(parentId, 'base');
+                              const child = getOrCreateNode(id, 'base');
+                              if (!parent.children.some((c) => c.id === child.id)) {
+                                parent.children.push(child);
+                              }
+                            }
+                          }
+
                           // Ensure ancestors exist, and wire parent->child for base nodes only.
                           // Skip verb nodes (they were already attached under their base).
                           for (const id of Array.from(nodeById.keys())) {
@@ -1305,45 +1386,31 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           }
                           roots.sort((a, b) => a.label.localeCompare(b.label));
 
-                          // Compute if a node has any explicit override (itself or descendants)
-                          const explicitOverrideCache = new Map<string, boolean>();
-                          function nodeHasExplicitOverride(node: ScopeNode): boolean {
-                            const cached = explicitOverrideCache.get(node.id);
-                            if (cached !== undefined) return cached;
-                            const selfExplicit = node.group ? Boolean(getExplicitSelectedKey(node.group)) : false;
-                            const childExplicit = node.children.some(nodeHasExplicitOverride);
-                            const v = selfExplicit || childExplicit;
-                            explicitOverrideCache.set(node.id, v);
-                            return v;
-                          }
-
-                          // Count explicit overrides within a subtree (used for closed-node summary)
-                          const explicitOverrideCountCache = new Map<string, number>();
-                          function countExplicitOverrides(node: ScopeNode): number {
-                            const cached = explicitOverrideCountCache.get(node.id);
-                            if (cached !== undefined) return cached;
-                            const self = node.group ? (getExplicitSelectedKey(node.group) ? 1 : 0) : 0;
-                            const children = node.children.reduce((acc, c) => acc + countExplicitOverrides(c), 0);
-                            const v = self + children;
-                            explicitOverrideCountCache.set(node.id, v);
-                            return v;
+                          function explicitValueForGroup(g: ExclusiveActionModeGroup): ScopeModeValue | null {
+                            const k = getExplicitSelectedKey(g);
+                            return k ? (optionValueForKey(g, k) as ScopeModeValue) : null;
                           }
 
                           // Render
                           function renderVerbNode(node: ScopeNode, depth: number, inheritedMode: ScopeModeValue | null): React.ReactNode {
                             const group = node.group!;
-                            const explicitKey = getExplicitSelectedKey(group);
-                            const explicitValue = explicitKey ? (optionValueForKey(group, explicitKey) as ScopeModeValue) : null;
+                            const explicitValue = explicitValueForGroup(group);
                             const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
-                            const status: 'override' | 'inherited' | 'default' =
-                              explicitValue && !isSameAsInherited ? 'override' : inheritedMode ? 'inherited' : 'default';
+                            const status: 'override' | 'inherited' | 'default' | 'same' =
+                              explicitValue
+                                ? (isSameAsInherited ? 'same' : 'override')
+                                : inheritedMode
+                                  ? 'inherited'
+                                  : 'default';
 
                             const rowStyle =
                               status === 'override'
                                 ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10'
                                 : status === 'inherited'
                                 ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-900/10'
-                                : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
+                                : status === 'same'
+                                  ? 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20'
+                                  : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20';
 
                             const stripeStyle =
                               status === 'override'
@@ -1390,10 +1457,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                     ))}
                                   </select>
                                   <Badge
-                                    variant={explicitValue ? 'info' : inheritedMode ? 'warning' : 'default'}
+                                    variant={status === 'override' ? 'info' : status === 'inherited' ? 'warning' : 'default'}
                                     className="text-xs w-16 justify-center"
                                   >
-                                    {explicitValue ? (isSameAsInherited ? 'same' : 'override') : inheritedMode ? 'inherited' : 'default'}
+                                    {status === 'override' ? 'override' : status === 'same' ? 'same' : status === 'inherited' ? 'inherited' : 'default'}
                                   </Badge>
                                 </div>
                               </div>
@@ -1404,11 +1471,37 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           function renderBaseNode(node: ScopeNode, depth: number, inherited: InheritedByVerb): React.ReactNode {
                             const canExpand = node.children.length > 0;
+                            // Count overrides with inheritance awareness (explicit == inherited is NOT an override).
+                            function countOverridesWithInheritance(n: ScopeNode, inh: InheritedByVerb): number {
+                              let self = 0;
+                              if (n.kind === 'verb' && n.group && n.verb) {
+                                const v = explicitValueForGroup(n.group);
+                                if (v && v !== inh[n.verb]) self = 1;
+                                return self;
+                              }
+
+                              // base node: derive next inherited using its verb children (explicit overrides win)
+                              const nextInherited: InheritedByVerb = { ...inh };
+                              for (const c of n.children) {
+                                if (c.kind !== 'verb' || !c.group || !c.verb) continue;
+                                const v = explicitValueForGroup(c.group);
+                                nextInherited[c.verb] = v ?? inh[c.verb] ?? null;
+                              }
+
+                              let total = 0;
+                              for (const c of n.children) {
+                                if (c.kind === 'verb') total += countOverridesWithInheritance(c, inh);
+                                else total += countOverridesWithInheritance(c, nextInherited);
+                              }
+                              return total;
+                            }
+
+                            const overrideCount = countOverridesWithInheritance(node, inherited);
+
                             // Auto-expand root and nodes with overrides, but user can toggle
-                            const autoExpand = depth === 0 || nodeHasExplicitOverride(node);
+                            const autoExpand = depth === 0 || overrideCount > 0;
                             const userChoice = scopeNodeToggled.get(node.id);
                             const isExpanded = canExpand && (userChoice !== undefined ? userChoice : autoExpand);
-                            const overrideCount = countExplicitOverrides(node);
 
                             // Compute effective summary (R/W/D) for this node, using:
                             // - explicit selections on this node's verb children
@@ -1416,9 +1509,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const effectiveByVerb: InheritedByVerb = { ...inherited };
                             for (const c of node.children) {
                               if (c.kind !== 'verb' || !c.group || !c.verb) continue;
-                              const explicitKey = getExplicitSelectedKey(c.group);
-                              const explicitValue = explicitKey ? (optionValueForKey(c.group, explicitKey) as ScopeModeValue) : null;
-                              if (explicitValue) effectiveByVerb[c.verb] = explicitValue;
+                              const v = explicitValueForGroup(c.group);
+                              if (v) effectiveByVerb[c.verb] = v;
                             }
 
                             const row = (
@@ -1468,9 +1560,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const nextInherited: InheritedByVerb = { ...inherited };
                             for (const c of node.children) {
                               if (c.kind !== 'verb' || !c.group || !c.verb) continue;
-                              const explicitKey = getExplicitSelectedKey(c.group);
-                              const explicitValue = explicitKey ? (optionValueForKey(c.group, explicitKey) as ScopeModeValue) : null;
-                              nextInherited[c.verb] = explicitValue ?? inherited[c.verb] ?? null;
+                              const v = explicitValueForGroup(c.group);
+                              nextInherited[c.verb] = v ?? inherited[c.verb] ?? null;
                             }
 
                             const verbChildren = node.children.filter((c) => c.kind === 'verb');
@@ -1480,6 +1571,99 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               <React.Fragment key={node.id}>
                                 {row}
                                 {verbChildren.map((c) => renderVerbNode(c, depth + 1, inherited[c.verb as ScopeVerb] ?? null))}
+
+                                {/* CRM: show attached pages/actions inside the same scope tree branch */}
+                                {Array.isArray(node.pages) && node.pages.length > 0 && (
+                                  <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
+                                    {node.pages.map((p) => (
+                                      <div
+                                        key={p.path}
+                                        className={`flex items-center justify-between py-1.5 px-2 rounded ${
+                                          p.explicit ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800' : ''
+                                        } hover:bg-gray-50 dark:hover:bg-gray-800`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="font-medium text-sm truncate">{spacePascalCase(p.label)}</span>
+                                          <span className="text-xs text-gray-500 truncate">{p.path}</span>
+                                          {p.default_enabled ? (
+                                            <Badge variant="success" className="text-xs">default</Badge>
+                                          ) : (
+                                            <Badge variant="warning" className="text-xs">restricted</Badge>
+                                          )}
+                                          {p.explicit ? (
+                                            <Badge variant="info" className="text-xs">explicit</Badge>
+                                          ) : (p.effective && p.via && p.via !== 'default') ? (
+                                            <Badge variant="default" className="text-xs">via {p.via}</Badge>
+                                          ) : null}
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400">Effective:</span>
+                                            <Checkbox checked={Boolean(p.effective)} disabled={true} onChange={() => void 0} />
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400">Grant:</span>
+                                            <Checkbox
+                                              checked={Boolean(p.explicit)}
+                                              onChange={() => togglePageGrantLocal(p.path)}
+                                              disabled={anySaving}
+                                            />
+                                          </div>
+                                          {hasPendingPageChange(p.path) ? (
+                                            <Badge variant="warning" className="text-xs">unsaved</Badge>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {Array.isArray(node.actions) && node.actions.length > 0 && (
+                                  <div style={{ marginLeft: (depth + 1) * 20 }} className="mt-2 space-y-1">
+                                    {node.actions.map((a) => (
+                                      <div
+                                        key={a.key}
+                                        className={`flex items-center justify-between py-1.5 px-2 rounded ${
+                                          a.explicit && !a.default_enabled
+                                            ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
+                                            : a.default_enabled
+                                              ? 'bg-green-50/30 dark:bg-green-900/5'
+                                              : ''
+                                        } hover:bg-gray-50 dark:hover:bg-gray-800`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <span className="font-medium text-sm truncate">{a.label}</span>
+                                          <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
+                                          {a.default_enabled ? (
+                                            <Badge variant="success" className="text-xs">default</Badge>
+                                          ) : a.explicit ? (
+                                            <Badge variant="info" className="text-xs">granted</Badge>
+                                          ) : (
+                                            <Badge variant="warning" className="text-xs">restricted</Badge>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400">Effective:</span>
+                                            <Checkbox checked={Boolean(a.effective)} disabled={true} onChange={() => void 0} />
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400">Grant:</span>
+                                            <Checkbox
+                                              checked={Boolean(a.explicit)}
+                                              onChange={() => toggleActionGrantLocal(a.key)}
+                                              disabled={anySaving}
+                                            />
+                                          </div>
+                                          {hasPendingActionChange(a.key) ? (
+                                            <Badge variant="warning" className="text-xs">unsaved</Badge>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
                                 {baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))}
                               </React.Fragment>
                             );
@@ -1498,8 +1682,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 </div>
                               )}
 
-                              <div className="space-y-1 ml-6">
-                                {other.map((a) => {
+                              {/* For CRM, "other" actions are attached into the tree above. Keep flat list for non-CRM packs. */}
+                              {String(pack.name || '').toLowerCase() !== 'crm' && (
+                                <div className="space-y-1 ml-6">
+                                  {other.map((a) => {
                             return (
                               <div
                                 key={a.key}
@@ -1541,8 +1727,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 </div>
                               </div>
                             );
-                                })}
-                              </div>
+                                  })}
+                                </div>
+                              )}
                             </>
                           );
                         })()}
