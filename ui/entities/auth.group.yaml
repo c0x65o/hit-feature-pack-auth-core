@@ -47,23 +47,12 @@ entities:
         created_at: false
         updated_at: true
       columns:
-        - key: name
-          label: Name
-          sortable: true
-          filterType: string
-        - key: kind
-          label: Type
-        - key: description
-          label: Description
-        - key: user_count
-          label: Members
-          sortable: true
-        - key: created_at
-          label: Created
-          sortable: true
-        - key: updated_at
-          label: Updated
-          sortable: true
+        - name
+        - kind
+        - description
+        - user_count
+        - created_at
+        - updated_at
         - key: actions
           label: ""
           sortable: false
