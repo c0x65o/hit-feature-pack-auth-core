@@ -34,6 +34,9 @@ export { Sessions, default as SessionsPage } from './pages/Sessions';
 export { AuditLog, default as AuditLogPage } from './pages/AuditLog';
 export { Invites, default as InvitesPage } from './pages/Invites';
 export { Groups, default as GroupsPage } from './pages/Groups';
+export { EntityList, default as EntityListPage } from './pages/EntityList';
+export { EntityDetail, default as EntityDetailPage } from './pages/EntityDetail';
+export { EntityEdit, default as EntityEditPage } from './pages/EntityEdit';
 
 // Security Groups
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './pages/SecurityGroupsList';

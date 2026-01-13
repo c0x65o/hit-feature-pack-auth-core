@@ -1,0 +1,105 @@
+version: 1
+
+entities:
+  auth.user:
+    meta:
+      titleSingular: User
+      titlePlural: Users
+      descriptionPlural: Manage user accounts
+      routes:
+        root: /admin
+        list: /admin/users
+        new: /admin/users/new
+        detail: /admin/users/{id}
+        edit: /admin/users/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Users, href: /admin/users }
+      actions:
+        createLabel: Add User
+        editLabel: Edit User
+        saveCreateLabel: Create User
+        saveUpdateLabel: Update User
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete User
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
+      headerActions:
+        - kind: email
+          label: Email
+          field: email
+
+    storage:
+      kind: remote
+
+    list:
+      tableId: admin.users
+      platforms: [web, mobile]
+      uiStateVersion: 1
+      defaultVisibleOnly: true
+      mobileColumnKeys: [email, role, last_login]
+      pageSize: 25
+      initialSort:
+        sortBy: created_at
+        sortOrder: desc
+      sortWhitelist: [email, created_at, last_login]
+      initialColumnVisibility:
+        email: true
+        role: true
+        status: true
+        email_verified: false
+        two_factor_enabled: false
+        created_at: false
+        last_login: true
+      columns:
+        - key: email
+          label: Email
+          sortable: true
+          filterType: string
+        - key: role
+          label: Role
+        - key: status
+          label: Status
+        - key: email_verified
+          label: Verified
+        - key: two_factor_enabled
+          label: 2FA
+        - key: created_at
+          label: Created
+          sortable: true
+        - key: last_login
+          label: Last Login
+          sortable: true
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+
+    detail:
+      summaryFields: [email, role, status, email_verified, two_factor_enabled, created_at, last_login]
+
+    form:
+      sections:
+        - id: account
+          title: Account
+          layout: { columns: 2 }
+          fields: [email, password, role]
+        - id: profile
+          title: Profile
+          layout: { columns: 2 }
+          fields: [first_name, last_name]
+
+    fields:
+      id: { type: text, label: ID, readOnly: true }
+      email: { type: email, label: Email, required: true }
+      password: { type: text, label: Password, placeholder: "Set an initial password (create only)" }
+      role: { type: select, label: Role, optionSource: auth.availableRoles }
+      first_name: { type: text, label: First Name }
+      last_name: { type: text, label: Last Name }
+      email_verified: { type: text, label: Email Verified, readOnly: true }
+      two_factor_enabled: { type: text, label: Two Factor Enabled, readOnly: true }
+      status: { type: text, label: Status, readOnly: true }
+      created_at: { type: datetime, label: Created, readOnly: true }
+      last_login: { type: datetime, label: Last Login, readOnly: true }
+

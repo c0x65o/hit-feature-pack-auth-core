@@ -74,11 +74,23 @@ routes:
     roles: [admin]
     default_roles_allow: [admin]
   - path: /admin/users
-    page: Users
+    page: EntityList
+    params: { entityKey: auth.user }
     roles: [admin]
     default_roles_allow: [admin]
   - path: /admin/users/[email]
-    page: UserDetail
+    page: EntityDetail
+    params: { entityKey: auth.user }
+    roles: [admin]
+    default_roles_allow: [admin]
+  - path: /admin/users/new
+    page: EntityEdit
+    params: { entityKey: auth.user }
+    roles: [admin]
+    default_roles_allow: [admin]
+  - path: /admin/users/[email]/edit
+    page: EntityEdit
+    params: { entityKey: auth.user }
     roles: [admin]
     default_roles_allow: [admin]
   - path: /admin/sessions
@@ -96,7 +108,26 @@ routes:
     default_roles_allow: [admin]
     featureFlag: auth.allow_invited
   - path: /admin/groups
-    page: Groups
+    page: EntityList
+    params: { entityKey: auth.group }
+    roles: [admin]
+    default_roles_allow: [admin]
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/new
+    page: EntityEdit
+    params: { entityKey: auth.group }
+    roles: [admin]
+    default_roles_allow: [admin]
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/[id]
+    page: EntityDetail
+    params: { entityKey: auth.group }
+    roles: [admin]
+    default_roles_allow: [admin]
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/[id]/edit
+    page: EntityEdit
+    params: { entityKey: auth.group }
     roles: [admin]
     default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled

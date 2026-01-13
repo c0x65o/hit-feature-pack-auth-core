@@ -22,6 +22,9 @@ export { Sessions, default as SessionsPage } from './Sessions';
 export { AuditLog, default as AuditLogPage } from './AuditLog';
 export { Invites, default as InvitesPage } from './Invites';
 export { Groups, default as GroupsPage } from './Groups';
+export { EntityList, default as EntityListPage } from './EntityList';
+export { EntityDetail, default as EntityDetailPage } from './EntityDetail';
+export { EntityEdit, default as EntityEditPage } from './EntityEdit';
 
 // Security Groups
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './SecurityGroupsList';
