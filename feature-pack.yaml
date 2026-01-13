@@ -114,17 +114,17 @@ routes:
     page: Locations
     roles: [admin]
     default_roles_allow: [admin]
-    authz: { entity: locations, verb: read }
+    authz: { entity: locations, verb: read, require_mode: any }
   - path: /admin/org/divisions
     page: Divisions
     roles: [admin]
     default_roles_allow: [admin]
-    authz: { entity: divisions, verb: read }
+    authz: { entity: divisions, verb: read, require_mode: any }
   - path: /admin/org/departments
     page: Departments
     roles: [admin]
     default_roles_allow: [admin]
-    authz: { entity: departments, verb: read }
+    authz: { entity: departments, verb: read, require_mode: any }
   - path: /admin/org/assignments
     page: OrgAssignments
     roles: [admin]
