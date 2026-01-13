@@ -1206,8 +1206,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             function countOverridesWithInheritance(n, inh) {
                                                                 let self = 0;
                                                                 if (n.kind === 'verb' && n.group && n.verb) {
-                                                                    const v = explicitValueForGroup(n.group);
-                                                                    if (v && v !== inh[n.verb])
+                                                                    const group = n.group;
+                                                                    const verb = n.verb;
+                                                                    const explicit = explicitValueForGroup(group);
+                                                                    const allowedModes = group.options
+                                                                        .map((o) => o.value)
+                                                                        .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                    const isOnOffOnly = allowedModes.includes('none') &&
+                                                                        allowedModes.includes('any') &&
+                                                                        !allowedModes.includes('own') &&
+                                                                        !allowedModes.includes('ldd');
+                                                                    const baseDefault = isOnOffOnly
+                                                                        ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                        : defaultScopeMode;
+                                                                    const inheritedModeSafe = inh[verb] && allowedModes.includes(inh[verb]) ? inh[verb] : null;
+                                                                    const baseline = inheritedModeSafe ?? baseDefault;
+                                                                    if (explicit && explicit !== baseline)
                                                                         self = 1;
                                                                     return self;
                                                                 }
@@ -1216,8 +1230,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 for (const c of n.children) {
                                                                     if (c.kind !== 'verb' || !c.group || !c.verb)
                                                                         continue;
-                                                                    const v = explicitValueForGroup(c.group);
-                                                                    nextInherited[c.verb] = v ?? inh[c.verb] ?? null;
+                                                                    const explicit = explicitValueForGroup(c.group);
+                                                                    const group = c.group;
+                                                                    const verb = c.verb;
+                                                                    const allowedModes = group.options
+                                                                        .map((o) => o.value)
+                                                                        .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                    const isOnOffOnly = allowedModes.includes('none') &&
+                                                                        allowedModes.includes('any') &&
+                                                                        !allowedModes.includes('own') &&
+                                                                        !allowedModes.includes('ldd');
+                                                                    const baseDefault = isOnOffOnly
+                                                                        ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                        : defaultScopeMode;
+                                                                    const inheritedModeSafe = inh[verb] && allowedModes.includes(inh[verb]) ? inh[verb] : null;
+                                                                    const baseline = inheritedModeSafe ?? baseDefault;
+                                                                    nextInherited[verb] = explicit ?? baseline;
                                                                 }
                                                                 let total = 0;
                                                                 for (const c of n.children) {
@@ -1251,9 +1279,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             for (const c of node.children) {
                                                                 if (c.kind !== 'verb' || !c.group || !c.verb)
                                                                     continue;
-                                                                const v = explicitValueForGroup(c.group);
-                                                                if (v)
-                                                                    effectiveByVerb[c.verb] = v;
+                                                                const explicit = explicitValueForGroup(c.group);
+                                                                const group = c.group;
+                                                                const verb = c.verb;
+                                                                const allowedModes = group.options
+                                                                    .map((o) => o.value)
+                                                                    .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                const isOnOffOnly = allowedModes.includes('none') &&
+                                                                    allowedModes.includes('any') &&
+                                                                    !allowedModes.includes('own') &&
+                                                                    !allowedModes.includes('ldd');
+                                                                const baseDefault = isOnOffOnly
+                                                                    ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                    : defaultScopeMode;
+                                                                const inheritedModeSafe = inherited[verb] && allowedModes.includes(inherited[verb]) ? inherited[verb] : null;
+                                                                const baseline = inheritedModeSafe ?? baseDefault;
+                                                                effectiveByVerb[verb] = explicit ?? baseline;
                                                             }
                                                             const domId = depth === 0 ? `scope-node-${node.id.replace(/\./g, '-')}` : undefined;
                                                             const row = (_jsxs("div", { id: domId, className: "flex items-center justify-between gap-3 px-3 py-1.5 rounded border border-gray-200 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/20", style: { marginLeft: depth * 20 }, children: [_jsx("div", { className: `w-0.5 self-stretch rounded-full ${overrideCount > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'}` }), _jsxs("div", { className: "flex items-center gap-2 flex-1 min-w-0", children: [canExpand ? (_jsx("button", { type: "button", onClick: () => toggleScopeNode(node.id, isExpanded), className: "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0", "aria-label": isExpanded ? 'Collapse' : 'Expand', children: isExpanded ? _jsx(ChevronDown, { size: 16 }) : _jsx(ChevronRight, { size: 16 }) })) : (_jsx("div", { className: "w-4 shrink-0" })), _jsx("span", { className: "text-sm font-semibold text-gray-700 dark:text-gray-200 truncate", children: node.label })] }), _jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", shortLabelForValue(effectiveByVerb.read, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", shortLabelForValue(effectiveByVerb.write, defaultScopeMode)] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", shortLabelForValue(effectiveByVerb.delete, defaultScopeMode)] }), overrideCount > 0 ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => {
