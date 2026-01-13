@@ -111,7 +111,7 @@ export function renderEntityFormField({
     );
   }
 
-  const inputType = type === 'email' ? 'email' : type === 'password' ? 'password' : 'text';
+  const inputType = type === 'email' ? 'email' : type === 'password' || type === 'secret' ? 'password' : 'text';
   return (
     <ui.Input
       key={keyName}

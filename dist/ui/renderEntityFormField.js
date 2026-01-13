@@ -36,7 +36,7 @@ export function renderEntityFormField({ keyName, fieldSpec, value, setValue, cle
                 clearFieldError(keyName);
             }, placeholder: placeholder, error: error, required: Boolean(required) }, keyName));
     }
-    const inputType = type === 'email' ? 'email' : type === 'password' ? 'password' : 'text';
+    const inputType = type === 'email' ? 'email' : type === 'password' || type === 'secret' ? 'password' : 'text';
     return (_jsx(ui.Input, { label: label, type: inputType, value: value, onChange: (v) => {
             setValue(v);
             clearFieldError(keyName);
