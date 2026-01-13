@@ -81,7 +81,6 @@ entities:
       platforms: [web, mobile]
       uiStateVersion: 1
       defaultVisibleOnly: true
-      mobileColumnKeys: [email, role, last_login]
       pageSize: 25
       initialSort:
         sortBy: created_at

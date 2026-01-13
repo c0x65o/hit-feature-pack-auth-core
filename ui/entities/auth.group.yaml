@@ -33,7 +33,6 @@ entities:
       platforms: [web, mobile]
       uiStateVersion: 1
       defaultVisibleOnly: true
-      mobileColumnKeys: [name, user_count, updated_at]
       pageSize: 50
       initialSort:
         sortBy: updated_at
