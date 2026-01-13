@@ -2586,7 +2586,11 @@ export function useMetricsCatalog() {
             ? (m.default_roles_allow as any[])
                 .map((x) => String(x || '').trim().toLowerCase())
                 .filter(Boolean)
-            : undefined,
+            : Array.isArray(m?.defaultRolesAllow)
+              ? (m.defaultRolesAllow as any[])
+                  .map((x) => String(x || '').trim().toLowerCase())
+                  .filter(Boolean)
+              : undefined,
           pointsCount: typeof m?.pointsCount === 'number' ? m.pointsCount : 0,
         }))
       );

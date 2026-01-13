@@ -414,6 +414,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         ? ((m as any).default_roles_allow as any[])
             .map((x: any) => String(x || '').trim().toLowerCase())
             .filter(Boolean)
+        : Array.isArray((m as any)?.defaultRolesAllow)
+          ? ((m as any).defaultRolesAllow as any[])
+              .map((x: any) => String(x || '').trim().toLowerCase())
+              .filter(Boolean)
         : [];
       const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
       const defaultOn =

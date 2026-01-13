@@ -304,7 +304,11 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 ? m.default_roles_allow
                     .map((x) => String(x || '').trim().toLowerCase())
                     .filter(Boolean)
-                : [];
+                : Array.isArray(m?.defaultRolesAllow)
+                    ? m.defaultRolesAllow
+                        .map((x) => String(x || '').trim().toLowerCase())
+                        .filter(Boolean)
+                    : [];
             const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
             const defaultOn = roleKey === 'admin'
                 ? dra.includes('admin')
