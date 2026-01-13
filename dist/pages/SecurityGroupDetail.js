@@ -158,11 +158,9 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             cancelled = true;
         };
     }, []);
-    // Root/default scope mode depends on whether this permission set is an "admin template".
-    // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
     // Template default for scope-mode dropdowns:
-    // - User template: OWN by default (matches auth module bootstrap semantics)
-    // - Admin template: OWN by default (strict `require_mode` may force ANY in specific places)
+    // - Admin template: ANY by default (admins are full-access by default; overrides restrict)
+    // - User template: OWN by default
     // - Non-template groups: NONE until explicitly granted
     const templateRoleEffective = (() => {
         const tr = String(permissionSet?.template_role || '').trim().toLowerCase();
@@ -175,7 +173,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             return 'user';
         return null;
     })();
-    const defaultScopeMode = templateRoleEffective ? 'own' : 'none';
+    const defaultScopeMode = templateRoleEffective === 'admin' ? 'any' : templateRoleEffective === 'user' ? 'own' : 'none';
     // ─────────────────────────────────────────────────────────────────────────
     // DERIVED DATA
     // ─────────────────────────────────────────────────────────────────────────
