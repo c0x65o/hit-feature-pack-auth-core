@@ -143,6 +143,9 @@ function baseIdFromScopeBasePrefix(prefix: string): string {
 function baseIdFromActionKey(key: string): string | null {
   const k = String(key || '').trim().toLowerCase();
   if (!k) return null;
+  // {pack}.create -> attach to pack root
+  const mPackCreate = k.match(/^([a-z][a-z0-9_-]*)\.create$/);
+  if (mPackCreate) return `${mPackCreate[1]}`;
   // {pack}.{entity}.create -> attach to pack.entity
   const mCreate = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.create$/);
   if (mCreate) return `${mCreate[1]}.${mCreate[2]}`;
