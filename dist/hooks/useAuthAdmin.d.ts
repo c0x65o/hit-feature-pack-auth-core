@@ -623,6 +623,7 @@ export interface MetricCatalogItem {
         kind: 'feature_pack' | 'app' | 'user';
         id: string;
     };
+    default_roles_allow?: string[];
     pointsCount: number;
 }
 /**

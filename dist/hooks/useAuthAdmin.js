@@ -2090,6 +2090,11 @@ export function useMetricsCatalog() {
                 category: typeof m?.category === 'string' ? m.category : undefined,
                 description: typeof m?.description === 'string' ? m.description : undefined,
                 owner: m?.owner && typeof m.owner === 'object' ? m.owner : undefined,
+                default_roles_allow: Array.isArray(m?.default_roles_allow)
+                    ? m.default_roles_allow
+                        .map((x) => String(x || '').trim().toLowerCase())
+                        .filter(Boolean)
+                    : undefined,
                 pointsCount: typeof m?.pointsCount === 'number' ? m.pointsCount : 0,
             })));
         }

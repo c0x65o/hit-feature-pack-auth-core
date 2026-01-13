@@ -296,6 +296,18 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             const pendingState = pendingMetricChanges.get(m.key);
             const effectiveState = pendingState !== undefined ? pendingState : currentlyGranted;
             const hasPendingChange = pendingState !== undefined && pendingState !== currentlyGranted;
+            const dra = Array.isArray(m?.default_roles_allow)
+                ? m.default_roles_allow
+                    .map((x) => String(x || '').trim().toLowerCase())
+                    .filter(Boolean)
+                : [];
+            const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
+            const defaultOn = roleKey === 'admin'
+                ? dra.includes('admin')
+                : roleKey === 'user'
+                    ? dra.includes('user')
+                    : false;
+            const isOverride = Boolean(effectiveState) !== Boolean(defaultOn);
             const ownerKind = (m.owner?.kind || 'app');
             const ownerId = ownerKind === 'feature_pack'
                 ? String(m.owner?.id || '')
@@ -312,7 +324,8 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 category: m.category,
                 description: m.description,
                 checked: effectiveState,
-                explicit: currentlyGranted,
+                defaultOn,
+                isOverride,
                 hasPendingChange,
                 ownerKind,
                 ownerId,
@@ -361,7 +374,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             explicitActions: p.actions.filter((x) => x.explicit).length,
             metricCount: p.metrics.length,
             grantedMetrics: p.metrics.filter((x) => x.checked).length,
-            metricOverrides: p.metrics.filter((x) => x.explicit).length,
+            metricOverrides: p.metrics.filter((x) => x.isOverride).length,
         }))
             .filter((p) => p.actionCount > 0 || p.metricCount > 0);
         // Sort: App first, then title/name alpha.
@@ -386,6 +399,195 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             return false;
         });
     }, [packData, metricRowsByPack, search]);
+    // V2 header counts:
+    // - total: number of user-facing "items" (scope dropdown groups + create toggles + derived-page access toggles)
+    // - effective: how many are effectively allowed (direct or inherited/template default)
+    // - overrides: how many differ from the default/inherited value (not "explicit rows exist")
+    const computePackAccessSummary = useCallback((pack) => {
+        const packName = String(pack?.name || '').trim().toLowerCase();
+        if (!packName)
+            return { total: 0, effective: 0, overrides: 0 };
+        const isAdminTemplate = permissionSet?.template_role === 'admin';
+        const grouped = new Map();
+        const other = [];
+        for (const a of (pack.actions || [])) {
+            const parsed = parseExclusiveActionModeGroup(a.key);
+            if (!parsed) {
+                other.push(a);
+                continue;
+            }
+            if (!grouped.has(parsed.groupKey))
+                grouped.set(parsed.groupKey, { actions: [], values: new Map() });
+            grouped.get(parsed.groupKey).actions.push(a);
+            grouped.get(parsed.groupKey).values.set(parsed.value, a);
+        }
+        const precedenceValues = ['none', 'own', 'ldd', 'any'];
+        function getDeclaredModes(rows) {
+            const out = new Set();
+            let saw = false;
+            for (const r of rows) {
+                const ms = r?.scope_modes;
+                if (!Array.isArray(ms))
+                    continue;
+                saw = true;
+                for (const x of ms) {
+                    const v = String(x || '').trim().toLowerCase();
+                    if (v === 'none' || v === 'own' || v === 'ldd' || v === 'any')
+                        out.add(v);
+                }
+            }
+            return saw ? Array.from(out.values()) : null;
+        }
+        function buildGroup(groupKey, g) {
+            const declaredModes = getDeclaredModes(g.actions);
+            const allowedValues = declaredModes && declaredModes.length ? declaredModes : Array.from(precedenceValues);
+            const precedenceKeys = allowedValues.map((v) => g.values.get(v)?.key).filter(Boolean);
+            return { groupKey, values: g.values, actions: g.actions, allowedValues, precedenceKeys };
+        }
+        const groups = Array.from(grouped.entries()).map(([groupKey, g]) => buildGroup(groupKey, g));
+        function splitGroupKey(groupKey) {
+            const m = String(groupKey || '').match(/^(.*)\.(read|write|delete)\.scope$/);
+            if (!m)
+                return null;
+            return { base: m[1], verb: m[2] };
+        }
+        function effectiveModeForGroupKey(groupKey) {
+            const g = groups.find((x) => x.groupKey === groupKey);
+            if (!g)
+                return 'none';
+            // Explicit selection (first in precedence order; local state includes pending changes)
+            let explicitKey = null;
+            for (const k of g.precedenceKeys) {
+                if (isActionExplicitEffective(k)) {
+                    explicitKey = k;
+                    break;
+                }
+            }
+            const explicitMode = (() => {
+                if (!explicitKey)
+                    return null;
+                for (const v of precedenceValues) {
+                    if (g.values.get(v)?.key === explicitKey)
+                        return v;
+                }
+                return null;
+            })();
+            const parts = splitGroupKey(groupKey);
+            const verb = parts?.verb;
+            const base = parts?.base || '';
+            const isOnOffOnly = g.allowedValues.includes('none') &&
+                g.allowedValues.includes('any') &&
+                !g.allowedValues.includes('own') &&
+                !g.allowedValues.includes('ldd');
+            const baseDefault = isOnOffOnly
+                ? (isAdminTemplate ? 'any' : 'none')
+                : defaultScopeMode;
+            // Walk up base ancestry to find inherited value for this verb (pack-root -> entity -> ...).
+            const findInherited = () => {
+                if (!verb || !base)
+                    return null;
+                const segs = base.split('.');
+                for (let i = segs.length - 1; i >= 1; i--) {
+                    const parentBase = segs.slice(0, i).join('.');
+                    const k = `${parentBase}.${verb}.scope`;
+                    if (groups.some((x) => x.groupKey === k))
+                        return effectiveModeForGroupKey(k);
+                }
+                return null;
+            };
+            const inherited = findInherited();
+            const inheritedOrDefault = inherited ?? baseDefault;
+            return (explicitMode ?? inheritedOrDefault);
+        }
+        function isOverrideForGroupKey(groupKey) {
+            const g = groups.find((x) => x.groupKey === groupKey);
+            if (!g)
+                return false;
+            let explicitKey = null;
+            for (const k of g.precedenceKeys) {
+                if (isActionExplicitEffective(k)) {
+                    explicitKey = k;
+                    break;
+                }
+            }
+            if (!explicitKey)
+                return false;
+            const explicitMode = (() => {
+                for (const v of precedenceValues) {
+                    if (g.values.get(v)?.key === explicitKey)
+                        return v;
+                }
+                return null;
+            })();
+            if (!explicitMode)
+                return false;
+            const parts = splitGroupKey(groupKey);
+            const verb = parts?.verb;
+            const base = parts?.base || '';
+            const isOnOffOnly = g.allowedValues.includes('none') &&
+                g.allowedValues.includes('any') &&
+                !g.allowedValues.includes('own') &&
+                !g.allowedValues.includes('ldd');
+            const baseDefault = isOnOffOnly
+                ? (isAdminTemplate ? 'any' : 'none')
+                : defaultScopeMode;
+            const findInherited = () => {
+                if (!verb || !base)
+                    return null;
+                const segs = base.split('.');
+                for (let i = segs.length - 1; i >= 1; i--) {
+                    const parentBase = segs.slice(0, i).join('.');
+                    const k = `${parentBase}.${verb}.scope`;
+                    if (groups.some((x) => x.groupKey === k))
+                        return effectiveModeForGroupKey(k);
+                }
+                return null;
+            };
+            const inherited = findInherited();
+            const inheritedOrDefault = inherited ?? baseDefault;
+            return explicitMode !== inheritedOrDefault;
+        }
+        // Scope dropdowns (one per groupKey)
+        const scopeTotal = groups.length;
+        const scopeEffective = groups.filter((g) => effectiveModeForGroupKey(g.groupKey) !== 'none').length;
+        const scopeOverrides = groups.filter((g) => isOverrideForGroupKey(g.groupKey)).length;
+        // Create toggles: treat {pack}.{entity}.create as one item each (template-aware default).
+        const createActions = other.filter((a) => baseIdFromActionKey(a.key) !== null);
+        const createTotal = createActions.length;
+        const createEffective = createActions.filter((a) => {
+            const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+            return Boolean(isActionExplicitEffective(a.key) || defaultOn);
+        }).length;
+        const createOverrides = createActions.filter((a) => {
+            const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+            const effectiveNow = Boolean(isActionExplicitEffective(a.key) || defaultOn);
+            return effectiveNow !== defaultOn;
+        }).length;
+        // Derived-page access toggles (require_action + show_pages)
+        const derivedToggleKeys = [];
+        for (const r of routes) {
+            const pn = String(r?.packName || '').trim().toLowerCase();
+            if (pn !== packName)
+                continue;
+            if (!r?.authz?.show_pages)
+                continue;
+            const req = String(r?.authz?.require_action || r?.authz?.requireAction || '').trim();
+            if (req)
+                derivedToggleKeys.push(req);
+        }
+        const derivedTotal = derivedToggleKeys.length;
+        const derivedEffective = derivedToggleKeys.filter((k) => Boolean(isActionExplicitEffective(k) || (isAdminTemplate ? true : false))).length;
+        const derivedOverrides = derivedToggleKeys.filter((k) => {
+            const defaultOn = isAdminTemplate ? true : false;
+            const effectiveNow = Boolean(isActionExplicitEffective(k) || defaultOn);
+            return effectiveNow !== defaultOn;
+        }).length;
+        return {
+            total: scopeTotal + createTotal + derivedTotal,
+            effective: scopeEffective + createEffective + derivedEffective,
+            overrides: scopeOverrides + createOverrides + derivedOverrides,
+        };
+    }, [defaultScopeMode, isActionExplicitEffective, permissionSet?.template_role, routes]);
     // ─────────────────────────────────────────────────────────────────────────
     // HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
@@ -698,9 +900,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                             return (_jsxs("div", { className: "flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border rounded-lg text-sm group", children: [_jsx(Icon, { size: 14, className: "text-gray-500" }), _jsx(Badge, { variant: variant, className: "text-xs", children: a.principal_type }), _jsx("span", { className: "font-medium", children: displayName }), _jsx("button", { onClick: () => handleRemoveAssignment(a.id).catch(() => void 0), className: "opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity", children: _jsx(X, { size: 14 }) })] }, a.id));
                         }) }))] }), _jsxs(Card, { children: [_jsx(Alert, { variant: "info", className: "mb-4", children: _jsxs("div", { className: "text-sm space-y-1", children: [_jsx("div", { children: _jsx("strong", { children: "Legend:" }) }), _jsxs("div", { className: "flex flex-wrap gap-4 mt-2", children: [_jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-green-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default On" }), " ", _jsx("span", { className: "text-gray-500", children: "- enabled for all users by default" })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx("span", { className: "text-orange-500", children: "\u25CF" }), " ", _jsx("span", { children: "Default Off" }), " ", _jsx("span", { className: "text-gray-500", children: "- requires explicit grant" })] })] }), _jsxs("div", { className: "text-gray-500 text-xs mt-2", children: ["\"Effective\" is read-only (includes inherited subtree grants like ", _jsx("code", { children: "/*" }), "). \"Grant\" toggles the explicit grant from THIS security group."] })] }) }), _jsxs("div", { className: "flex items-center justify-between mb-4 gap-4", children: [_jsxs("div", { className: "relative flex-1 max-w-md", children: [_jsx(Search, { size: 18, className: "absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" }), _jsx("input", { type: "text", value: search, onChange: (e) => setSearch(e.target.value), placeholder: "Search pages, actions, metrics...", className: "w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Button, { variant: "ghost", size: "sm", onClick: expandAll, disabled: anySaving, children: "Expand All" }), _jsx(Button, { variant: "ghost", size: "sm", onClick: collapseAll, disabled: anySaving, children: "Collapse" }), pendingTotalChangeCount > 0 && (_jsxs(_Fragment, { children: [_jsx("div", { className: "h-4 w-px bg-gray-300 dark:bg-gray-600" }), _jsxs(Badge, { variant: "warning", className: "text-xs", children: [pendingTotalChangeCount, " unsaved change", pendingTotalChangeCount !== 1 ? 's' : ''] }), _jsx(Button, { variant: "ghost", size: "sm", onClick: discardAllChanges, disabled: anySaving, children: "Discard" }), _jsxs(Button, { variant: "primary", size: "sm", onClick: () => saveAllChanges().catch(() => void 0), loading: anySaving, children: [_jsx(Save, { size: 14, className: "mr-1" }), " Save"] })] }))] })] }), _jsxs("div", { className: "space-y-2", children: [filteredPacks.map((pack) => {
                                 const isExpanded = expandedPacks.has(pack.name);
-                                const hasEffective = pack.effectiveActions > 0 || pack.grantedMetrics > 0;
+                                const accessSummary = computePackAccessSummary(pack);
+                                const hasEffective = accessSummary.effective > 0 || pack.grantedMetrics > 0;
                                 const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
-                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [isCrmPack && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500', children: [pack.effectiveActions, "/", pack.actionCount] }), pack.explicitActions > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.explicitActions, " explicit)"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [isCrmPack && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
                                                         const grouped = new Map();
                                                         const other = [];
                                                         for (const a of pack.actions) {
@@ -1045,22 +1248,29 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                                         const isAdminTemplate = permissionSet?.template_role === 'admin';
                                                                                         const defaultOn = isAdminTemplate ? true : false;
                                                                                         const effectiveNow = Boolean(k && (isActionExplicitEffective(k) || defaultOn));
-                                                                                        const isInherited = effectiveNow === defaultOn && !hasPendingActionChange(k);
-                                                                                        return (_jsxs("div", { className: "flex items-center gap-2 shrink-0", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Access:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => setActionGrantLocal(k, String(e.target.value) === 'on'), children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInherited ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(k) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(k) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(k, defaultOn), title: "Clear override (back to template default)", children: "Clear" })) : null] }));
+                                                                                        const pending = pendingActionChanges.get(k);
+                                                                                        const persistedExplicit = actionGrantSet.has(k);
+                                                                                        const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
+                                                                                        const isInherited = !isOverrideNow && pending === undefined;
+                                                                                        return (_jsxs("div", { className: "flex items-center gap-2 shrink-0", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Access:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => setActionGrantLocal(k, String(e.target.value) === 'on'), children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInherited ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : isOverrideNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, (pending !== undefined || persistedExplicit) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(k, false), title: "Clear (remove explicit grant; fall back to template default)", children: "Clear" })) : null] }));
                                                                                     })()) : null] }, p.path)))] })), Array.isArray(node.actions) && node.actions.length > 0 && (_jsx("div", { style: { marginLeft: (depth + 1) * 20 }, className: "mt-2 space-y-1", children: node.actions.map((a) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
                                                                                 ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
                                                                                 : a.default_enabled
                                                                                     ? 'bg-green-50/30 dark:bg-green-900/5'
                                                                                     : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : null] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
-                                                                                            const explicitNow = isActionExplicitEffective(a.key);
+                                                                                            const key = String(a.key || '').trim();
+                                                                                            const pending = pendingActionChanges.get(key);
+                                                                                            const persistedExplicit = actionGrantSet.has(key);
+                                                                                            const explicitNow = pending !== undefined ? pending : persistedExplicit;
                                                                                             const isAdminTemplate = permissionSet?.template_role === 'admin';
                                                                                             const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
                                                                                             const effectiveNow = Boolean(explicitNow || createDefaultOn);
-                                                                                            const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                                                                            const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                                                                            const showClear = pending !== undefined || persistedExplicit;
                                                                                             return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: anySaving, onChange: (e) => {
                                                                                                             const v = String(e.target.value || '');
-                                                                                                            setActionGrantLocal(a.key, v === 'on');
-                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(a.key) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(a.key, createDefaultOn), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
+                                                                                                            setActionGrantLocal(key, v === 'on');
+                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), !isOverrideNow && pending === undefined ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : isOverrideNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, showClear ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(key, false), title: "Clear (remove explicit grant; fall back to template default)", children: "Clear" })) : null] }));
                                                                                         })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: anySaving })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key))) })), baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))] }, node.id));
                                                         }
                                                         return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-4 space-y-1", children: [_jsx("div", { className: "text-xs text-gray-500 mb-2", children: "Scope Policy Tree \u2014 override any branch; collapsed nodes inherit from parents" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), String(pack.name || '').toLowerCase() !== 'crm' && (_jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
@@ -1069,15 +1279,19 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                                 : a.default_enabled
                                                                                     ? 'bg-green-50/30 dark:bg-green-900/5'
                                                                                     : ''} hover:bg-gray-50 dark:hover:bg-gray-800`, children: [_jsxs("div", { className: "flex items-center gap-2 min-w-0 flex-1", children: [_jsx("span", { className: "font-medium text-sm truncate", children: a.label }), _jsx("span", { className: "text-xs text-gray-500 font-mono truncate", children: a.key }), a.default_enabled ? (_jsx(Badge, { variant: "success", className: "text-xs", children: "default" })) : a.explicit ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "granted" })) : (_jsx(Badge, { variant: "warning", className: "text-xs", children: "restricted" }))] }), _jsxs("div", { className: "flex items-center gap-4", children: [String(a.key || '').endsWith('.create') ? ((() => {
-                                                                                            const explicitNow = isActionExplicitEffective(a.key);
-                                                                                            const effectiveNow = Boolean(explicitNow || a.default_enabled);
+                                                                                            const key = String(a.key || '').trim();
+                                                                                            const pending = pendingActionChanges.get(key);
+                                                                                            const persistedExplicit = actionGrantSet.has(key);
+                                                                                            const explicitNow = pending !== undefined ? pending : persistedExplicit;
                                                                                             const isAdminTemplate = permissionSet?.template_role === 'admin';
                                                                                             const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                                                                            const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                                                                            const effectiveNow = Boolean(explicitNow || createDefaultOn);
+                                                                                            const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                                                                            const showClear = pending !== undefined || persistedExplicit;
                                                                                             return (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Create:" }), _jsxs("select", { className: "text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]", value: effectiveNow ? 'on' : 'off', disabled: savingPagesActions || mutations.loading, onChange: (e) => {
                                                                                                             const v = String(e.target.value || '');
-                                                                                                            setActionGrantLocal(a.key, v === 'on');
-                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), isInheritedDefault ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, hasPendingActionChange(a.key) ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => setActionGrantLocal(a.key, createDefaultOn), title: "Clear override (back to system default)", children: "Clear" })) : null] }));
+                                                                                                            setActionGrantLocal(key, v === 'on');
+                                                                                                        }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), !isOverrideNow && pending === undefined ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : isOverrideNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, showClear ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: savingPagesActions || mutations.loading, onClick: () => setActionGrantLocal(key, false), title: "Clear (remove explicit grant; fall back to template default)", children: "Clear" })) : null] }));
                                                                                         })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: savingPagesActions || mutations.loading })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key));
                                                                     }) }))] }));
                                                     })() })), pack.metrics.length > 0 && (_jsxs("div", { className: "p-4", children: [_jsxs("div", { className: "flex items-center gap-2 mb-3", children: [_jsx(BarChart3, { size: 16, className: "text-orange-500" }), _jsx("span", { className: "text-sm font-medium text-gray-600", children: "Metrics" }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-xs text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }), _jsx("div", { className: "space-y-1 ml-6", children: pack.metrics.map((m) => (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${m.hasPendingChange

@@ -390,8 +390,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       category?: string;
       description?: string;
       checked: boolean;
-      // Whether this metric is explicitly granted in the DB right now (stored override).
-      explicit: boolean;
+      // Template default for this metric for the current permission set (admin/user).
+      defaultOn: boolean;
+      // Whether the current effective value differs from defaultOn (override from user perspective).
+      isOverride: boolean;
       hasPendingChange: boolean;
       ownerKind: 'feature_pack' | 'app' | 'user';
       ownerId: string;
@@ -404,6 +406,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const pendingState = pendingMetricChanges.get(m.key);
       const effectiveState = pendingState !== undefined ? pendingState : currentlyGranted;
       const hasPendingChange = pendingState !== undefined && pendingState !== currentlyGranted;
+
+      const dra = Array.isArray((m as any)?.default_roles_allow)
+        ? ((m as any).default_roles_allow as any[])
+            .map((x: any) => String(x || '').trim().toLowerCase())
+            .filter(Boolean)
+        : [];
+      const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
+      const defaultOn =
+        roleKey === 'admin'
+          ? dra.includes('admin')
+          : roleKey === 'user'
+            ? dra.includes('user')
+            : false;
+      const isOverride = Boolean(effectiveState) !== Boolean(defaultOn);
 
       const ownerKind = (m.owner?.kind || 'app') as any;
       const ownerId =
@@ -422,7 +438,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         category: m.category,
         description: m.description,
         checked: effectiveState,
-        explicit: currentlyGranted,
+        defaultOn,
+        isOverride,
         hasPendingChange,
         ownerKind,
         ownerId,
@@ -481,7 +498,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         explicitActions: p.actions.filter((x: any) => x.explicit).length,
         metricCount: p.metrics.length,
         grantedMetrics: p.metrics.filter((x: any) => x.checked).length,
-        metricOverrides: p.metrics.filter((x: any) => x.explicit).length,
+        metricOverrides: p.metrics.filter((x: any) => x.isOverride).length,
       }))
       .filter((p) => p.actionCount > 0 || p.metricCount > 0);
 
@@ -502,6 +519,206 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       return false;
     });
   }, [packData, metricRowsByPack, search]);
+
+  // V2 header counts:
+  // - total: number of user-facing "items" (scope dropdown groups + create toggles + derived-page access toggles)
+  // - effective: how many are effectively allowed (direct or inherited/template default)
+  // - overrides: how many differ from the default/inherited value (not "explicit rows exist")
+  const computePackAccessSummary = useCallback((pack: any) => {
+    const packName = String(pack?.name || '').trim().toLowerCase();
+    if (!packName) return { total: 0, effective: 0, overrides: 0 };
+
+    const isAdminTemplate = permissionSet?.template_role === 'admin';
+
+    // Build scope-mode groups (one dropdown per groupKey) from action rows.
+    type ActionRow = ActionCatalogItem & { explicit: boolean; effective: boolean };
+    type GroupBuild = { actions: ActionRow[]; values: Map<string, ActionRow> };
+    const grouped = new Map<string, GroupBuild>();
+    const other: ActionRow[] = [];
+
+    for (const a of (pack.actions || []) as ActionRow[]) {
+      const parsed = parseExclusiveActionModeGroup(a.key);
+      if (!parsed) {
+        other.push(a);
+        continue;
+      }
+      if (!grouped.has(parsed.groupKey)) grouped.set(parsed.groupKey, { actions: [], values: new Map() });
+      grouped.get(parsed.groupKey)!.actions.push(a);
+      grouped.get(parsed.groupKey)!.values.set(parsed.value, a);
+    }
+
+    const precedenceValues = ['none', 'own', 'ldd', 'any'] as const;
+
+    function getDeclaredModes(rows: ActionRow[]): Array<'none' | 'own' | 'ldd' | 'any'> | null {
+      const out = new Set<'none' | 'own' | 'ldd' | 'any'>();
+      let saw = false;
+      for (const r of rows) {
+        const ms = (r as any)?.scope_modes;
+        if (!Array.isArray(ms)) continue;
+        saw = true;
+        for (const x of ms) {
+          const v = String(x || '').trim().toLowerCase();
+          if (v === 'none' || v === 'own' || v === 'ldd' || v === 'any') out.add(v);
+        }
+      }
+      return saw ? Array.from(out.values()) : null;
+    }
+
+    function buildGroup(groupKey: string, g: GroupBuild) {
+      const declaredModes = getDeclaredModes(g.actions);
+      const allowedValues =
+        declaredModes && declaredModes.length ? declaredModes : Array.from(precedenceValues);
+      const precedenceKeys = allowedValues.map((v) => g.values.get(v)?.key).filter(Boolean) as string[];
+      return { groupKey, values: g.values, actions: g.actions, allowedValues, precedenceKeys };
+    }
+
+    const groups = Array.from(grouped.entries()).map(([groupKey, g]) => buildGroup(groupKey, g));
+
+    function splitGroupKey(groupKey: string): { base: string; verb: 'read' | 'write' | 'delete' } | null {
+      const m = String(groupKey || '').match(/^(.*)\.(read|write|delete)\.scope$/);
+      if (!m) return null;
+      return { base: m[1], verb: m[2] as any };
+    }
+
+    function effectiveModeForGroupKey(groupKey: string): 'none' | 'own' | 'ldd' | 'any' {
+      const g = groups.find((x) => x.groupKey === groupKey);
+      if (!g) return 'none';
+      // Explicit selection (first in precedence order; local state includes pending changes)
+      let explicitKey: string | null = null;
+      for (const k of g.precedenceKeys) {
+        if (isActionExplicitEffective(k)) {
+          explicitKey = k;
+          break;
+        }
+      }
+      const explicitMode = (() => {
+        if (!explicitKey) return null;
+        for (const v of precedenceValues) {
+          if (g.values.get(v)?.key === explicitKey) return v;
+        }
+        return null;
+      })();
+
+      const parts = splitGroupKey(groupKey);
+      const verb = parts?.verb;
+      const base = parts?.base || '';
+
+      const isOnOffOnly =
+        g.allowedValues.includes('none') &&
+        g.allowedValues.includes('any') &&
+        !g.allowedValues.includes('own') &&
+        !g.allowedValues.includes('ldd');
+
+      const baseDefault: 'none' | 'own' | 'ldd' | 'any' = isOnOffOnly
+        ? (isAdminTemplate ? 'any' : 'none')
+        : (defaultScopeMode as any);
+
+      // Walk up base ancestry to find inherited value for this verb (pack-root -> entity -> ...).
+      const findInherited = (): ('none' | 'own' | 'ldd' | 'any') | null => {
+        if (!verb || !base) return null;
+        const segs = base.split('.');
+        for (let i = segs.length - 1; i >= 1; i--) {
+          const parentBase = segs.slice(0, i).join('.');
+          const k = `${parentBase}.${verb}.scope`;
+          if (groups.some((x) => x.groupKey === k)) return effectiveModeForGroupKey(k);
+        }
+        return null;
+      };
+
+      const inherited = findInherited();
+      const inheritedOrDefault = inherited ?? baseDefault;
+      return (explicitMode ?? inheritedOrDefault) as any;
+    }
+
+    function isOverrideForGroupKey(groupKey: string): boolean {
+      const g = groups.find((x) => x.groupKey === groupKey);
+      if (!g) return false;
+      let explicitKey: string | null = null;
+      for (const k of g.precedenceKeys) {
+        if (isActionExplicitEffective(k)) {
+          explicitKey = k;
+          break;
+        }
+      }
+      if (!explicitKey) return false;
+      const explicitMode = (() => {
+        for (const v of precedenceValues) {
+          if (g.values.get(v)?.key === explicitKey) return v;
+        }
+        return null;
+      })();
+      if (!explicitMode) return false;
+      const parts = splitGroupKey(groupKey);
+      const verb = parts?.verb;
+      const base = parts?.base || '';
+
+      const isOnOffOnly =
+        g.allowedValues.includes('none') &&
+        g.allowedValues.includes('any') &&
+        !g.allowedValues.includes('own') &&
+        !g.allowedValues.includes('ldd');
+      const baseDefault: 'none' | 'own' | 'ldd' | 'any' = isOnOffOnly
+        ? (isAdminTemplate ? 'any' : 'none')
+        : (defaultScopeMode as any);
+
+      const findInherited = (): ('none' | 'own' | 'ldd' | 'any') | null => {
+        if (!verb || !base) return null;
+        const segs = base.split('.');
+        for (let i = segs.length - 1; i >= 1; i--) {
+          const parentBase = segs.slice(0, i).join('.');
+          const k = `${parentBase}.${verb}.scope`;
+          if (groups.some((x) => x.groupKey === k)) return effectiveModeForGroupKey(k);
+        }
+        return null;
+      };
+
+      const inherited = findInherited();
+      const inheritedOrDefault = inherited ?? baseDefault;
+      return explicitMode !== inheritedOrDefault;
+    }
+
+    // Scope dropdowns (one per groupKey)
+    const scopeTotal = groups.length;
+    const scopeEffective = groups.filter((g) => effectiveModeForGroupKey(g.groupKey) !== 'none').length;
+    const scopeOverrides = groups.filter((g) => isOverrideForGroupKey(g.groupKey)).length;
+
+    // Create toggles: treat {pack}.{entity}.create as one item each (template-aware default).
+    const createActions = other.filter((a) => baseIdFromActionKey(a.key) !== null);
+    const createTotal = createActions.length;
+    const createEffective = createActions.filter((a) => {
+      const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+      return Boolean(isActionExplicitEffective(a.key) || defaultOn);
+    }).length;
+    const createOverrides = createActions.filter((a) => {
+      const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+      const effectiveNow = Boolean(isActionExplicitEffective(a.key) || defaultOn);
+      return effectiveNow !== defaultOn;
+    }).length;
+
+    // Derived-page access toggles (require_action + show_pages)
+    const derivedToggleKeys: string[] = [];
+    for (const r of routes) {
+      const pn = String((r as any)?.packName || '').trim().toLowerCase();
+      if (pn !== packName) continue;
+      if (!(r as any)?.authz?.show_pages) continue;
+      const req =
+        String((r as any)?.authz?.require_action || (r as any)?.authz?.requireAction || '').trim();
+      if (req) derivedToggleKeys.push(req);
+    }
+    const derivedTotal = derivedToggleKeys.length;
+    const derivedEffective = derivedToggleKeys.filter((k) => Boolean(isActionExplicitEffective(k) || (isAdminTemplate ? true : false))).length;
+    const derivedOverrides = derivedToggleKeys.filter((k) => {
+      const defaultOn = isAdminTemplate ? true : false;
+      const effectiveNow = Boolean(isActionExplicitEffective(k) || defaultOn);
+      return effectiveNow !== defaultOn;
+    }).length;
+
+    return {
+      total: scopeTotal + createTotal + derivedTotal,
+      effective: scopeEffective + createEffective + derivedEffective,
+      overrides: scopeOverrides + createOverrides + derivedOverrides,
+    };
+  }, [defaultScopeMode, isActionExplicitEffective, permissionSet?.template_role, routes]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HANDLERS
@@ -1021,7 +1238,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         <div className="space-y-2">
           {filteredPacks.map((pack) => {
             const isExpanded = expandedPacks.has(pack.name);
-            const hasEffective = pack.effectiveActions > 0 || pack.grantedMetrics > 0;
+            const accessSummary = computePackAccessSummary(pack);
+            const hasEffective = accessSummary.effective > 0 || pack.grantedMetrics > 0;
             const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
 
             return (
@@ -1049,11 +1267,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {pack.actionCount > 0 && (
                       <div className="flex items-center gap-1">
                         <KeyRound size={14} className="text-gray-400" />
-                        <span className={pack.effectiveActions > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                          {pack.effectiveActions}/{pack.actionCount}
+                        <span className={accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500'}>
+                          {accessSummary.effective}/{accessSummary.total}
                         </span>
-                        {pack.explicitActions > 0 ? (
-                          <span className="text-gray-400">({pack.explicitActions} explicit)</span>
+                        {accessSummary.overrides > 0 ? (
+                          <span className="text-gray-400">
+                            ({accessSummary.overrides} override{accessSummary.overrides === 1 ? '' : 's'})
+                          </span>
                         ) : null}
                       </div>
                     )}
@@ -1577,7 +1797,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                             const isAdminTemplate = permissionSet?.template_role === 'admin';
                                             const defaultOn = isAdminTemplate ? true : false;
                                             const effectiveNow = Boolean(k && (isActionExplicitEffective(k) || defaultOn));
-                                            const isInherited = effectiveNow === defaultOn && !hasPendingActionChange(k);
+                                            const pending = pendingActionChanges.get(k);
+                                            const persistedExplicit = actionGrantSet.has(k);
+                                            const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
+                                            const isInherited = !isOverrideNow && pending === undefined;
                                             return (
                                               <div className="flex items-center gap-2 shrink-0">
                                                 <span className="text-xs text-gray-400">Access:</span>
@@ -1592,16 +1815,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                 </select>
                                                 {isInherited ? (
                                                   <Badge variant="warning" className="text-xs">inherited</Badge>
-                                                ) : hasPendingActionChange(k) ? (
+                                                ) : isOverrideNow ? (
                                                   <Badge variant="info" className="text-xs">override</Badge>
                                                 ) : null}
-                                                {hasPendingActionChange(k) ? (
+                                                {(pending !== undefined || persistedExplicit) ? (
                                                   <Button
                                                     size="sm"
                                                     variant="ghost"
                                                     disabled={anySaving}
-                                                    onClick={() => setActionGrantLocal(k, defaultOn)}
-                                                    title="Clear override (back to template default)"
+                                                    onClick={() => setActionGrantLocal(k, false)}
+                                                    title="Clear (remove explicit grant; fall back to template default)"
                                                   >
                                                     Clear
                                                   </Button>
@@ -1638,11 +1861,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                         <div className="flex items-center gap-4">
                                           {String(a.key || '').endsWith('.create') ? (
                                             (() => {
-                                              const explicitNow = isActionExplicitEffective(a.key);
+                                              const key = String(a.key || '').trim();
+                                              const pending = pendingActionChanges.get(key);
+                                              const persistedExplicit = actionGrantSet.has(key);
+                                              const explicitNow = pending !== undefined ? pending : persistedExplicit;
                                               const isAdminTemplate = permissionSet?.template_role === 'admin';
                                               const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
                                               const effectiveNow = Boolean(explicitNow || createDefaultOn);
-                                              const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                              const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                              const showClear = pending !== undefined || persistedExplicit;
                                               return (
                                                 <div className="flex items-center gap-2">
                                                   <span className="text-xs text-gray-400">Create:</span>
@@ -1652,24 +1879,24 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                     disabled={anySaving}
                                                     onChange={(e) => {
                                                       const v = String(e.target.value || '');
-                                                      setActionGrantLocal(a.key, v === 'on');
+                                                      setActionGrantLocal(key, v === 'on');
                                                     }}
                                                   >
                                                     <option value="on">On</option>
                                                     <option value="off">Off</option>
                                                   </select>
-                                                  {isInheritedDefault ? (
+                                                  {!isOverrideNow && pending === undefined ? (
                                                     <Badge variant="warning" className="text-xs">inherited</Badge>
-                                                  ) : hasPendingActionChange(a.key) ? (
+                                                  ) : isOverrideNow ? (
                                                     <Badge variant="info" className="text-xs">override</Badge>
                                                   ) : null}
-                                                  {hasPendingActionChange(a.key) ? (
+                                                  {showClear ? (
                                                     <Button
                                                       size="sm"
                                                       variant="ghost"
                                                       disabled={anySaving}
-                                                      onClick={() => setActionGrantLocal(a.key, createDefaultOn)}
-                                                      title="Clear override (back to system default)"
+                                                      onClick={() => setActionGrantLocal(key, false)}
+                                                      title="Clear (remove explicit grant; fall back to template default)"
                                                     >
                                                       Clear
                                                     </Button>
@@ -1743,11 +1970,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 <div className="flex items-center gap-4">
                                   {String(a.key || '').endsWith('.create') ? (
                                     (() => {
-                                      const explicitNow = isActionExplicitEffective(a.key);
-                                      const effectiveNow = Boolean(explicitNow || a.default_enabled);
+                                      const key = String(a.key || '').trim();
+                                      const pending = pendingActionChanges.get(key);
+                                      const persistedExplicit = actionGrantSet.has(key);
+                                      const explicitNow = pending !== undefined ? pending : persistedExplicit;
                                       const isAdminTemplate = permissionSet?.template_role === 'admin';
                                       const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                      const isInheritedDefault = effectiveNow === createDefaultOn && !hasPendingActionChange(a.key);
+                                      const effectiveNow = Boolean(explicitNow || createDefaultOn);
+                                      const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                      const showClear = pending !== undefined || persistedExplicit;
                                       return (
                                         <div className="flex items-center gap-2">
                                           <span className="text-xs text-gray-400">Create:</span>
@@ -1757,24 +1988,24 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                             disabled={savingPagesActions || mutations.loading}
                                             onChange={(e) => {
                                               const v = String(e.target.value || '');
-                                              setActionGrantLocal(a.key, v === 'on');
+                                              setActionGrantLocal(key, v === 'on');
                                             }}
                                           >
                                             <option value="on">On</option>
                                             <option value="off">Off</option>
                                           </select>
-                                          {isInheritedDefault ? (
+                                          {!isOverrideNow && pending === undefined ? (
                                             <Badge variant="warning" className="text-xs">inherited</Badge>
-                                          ) : hasPendingActionChange(a.key) ? (
+                                          ) : isOverrideNow ? (
                                             <Badge variant="info" className="text-xs">override</Badge>
                                           ) : null}
-                                          {hasPendingActionChange(a.key) ? (
+                                          {showClear ? (
                                             <Button
                                               size="sm"
                                               variant="ghost"
                                               disabled={savingPagesActions || mutations.loading}
-                                              onClick={() => setActionGrantLocal(a.key, createDefaultOn)}
-                                              title="Clear override (back to system default)"
+                                              onClick={() => setActionGrantLocal(key, false)}
+                                              title="Clear (remove explicit grant; fall back to template default)"
                                             >
                                               Clear
                                             </Button>

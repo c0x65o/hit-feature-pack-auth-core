@@ -307,6 +307,8 @@ metrics:
       rollup_strategy: last
       entity_kinds: [user]
       time_kind: realtime
+      # Default: On for admin templates, Off for user templates.
+      default_roles_allow: [admin]
     - key: fp.auth-core.users_all
       label: Users (All)
       unit: users
@@ -314,6 +316,8 @@ metrics:
       entity_kinds: [user]
       time_kind: none
       description: "User-list metric: all users in the system."
+      # Default: On for admin templates, Off for user templates.
+      default_roles_allow: [admin]
     - key: fp.auth-core.users_admins
       label: Users (Admins)
       unit: users
@@ -321,6 +325,8 @@ metrics:
       entity_kinds: [user]
       time_kind: none
       description: "User-list metric: users whose role is admin."
+      # Default: On for admin templates, Off for user templates.
+      default_roles_allow: [admin]
     - key: fp.auth-core.users_unverified
       label: Users (Unverified)
       unit: users
@@ -328,6 +334,8 @@ metrics:
       entity_kinds: [user]
       time_kind: none
       description: "User-list metric: users who have not verified their email."
+      # Default: On for admin templates, Off for user templates.
+      default_roles_allow: [admin]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PERMISSIONS - Action definitions (for admin-core permissions UI + runtime checks)
