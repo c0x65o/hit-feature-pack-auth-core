@@ -10,7 +10,9 @@ This document enumerates what FP Auth Core must include (responsibilities, data 
 
 - **Single migration source**: Auth-related schema is defined in **feature pack migrations** (`hit-feature-pack-auth-core/migrations/*`) and synced into consuming apps (e.g. `applications/*/migrations/feature-packs/auth-core__*.sql`).
 - **Single language runtime**: all auth runtime is **TypeScript** running inside the app runtime (e.g. Next.js route handlers / server runtime used by feature pack dispatcher).
-- **No Python services**: no `/api/proxy/auth` routing to Python, no `HIT_AUTH_URL` usage, no service-token/provisioner fetches for auth.
+- **No Python services**: no `/api/proxy/auth` routing to Python, no `HIT_AUTH_URL` usage.
+- **No provisioner / no service tokens**: no `X-HIT-Service-Token` flows, no “resolve config via provisioner”, no shared-db/SSO coupling, no cross-project semantics.
+- **Single app DB**: Auth Core uses the app’s database connection directly (Drizzle) with no indirection.
 - **Self-contained**: all endpoints required by Auth Core UI + SDK + other feature packs are served by FP-owned TypeScript server handlers.
 
 ## Current architecture (what exists today)
@@ -21,6 +23,7 @@ This document enumerates what FP Auth Core must include (responsibilities, data 
   - `applications/hitcents-erp/app/api/proxy/auth/[...path]/route.ts`
   - It forwards requests to `HIT_AUTH_URL` / `NEXT_PUBLIC_HIT_AUTH_URL` (default `http://localhost:8001` in dev).
 - The Auth Core feature pack and SDK call `"/api/proxy/auth"` by default.
+  - Some calls also forward `X-HIT-Service-Token` today; that entire concept is removed in the TS-only design.
 
 ### What Auth Core FP does today
 
@@ -55,7 +58,7 @@ Concretely:
 - **Refresh**: exchange refresh token for new access+refresh token
 - **Logout**: revoke refresh token (and/or session record)
 - **Logout-all**: revoke all sessions for user
-- **Validate token**: server-to-server and app-side validation for JWTs issued by FP
+- **Validate token**: app-side validation for JWTs issued by FP (no cross-runtime / no provisioner tokens)
 - **Me**: return current user profile and claims
 - **Cookie + header support**:
   - Accept `Authorization: Bearer <jwt>` and `hit_token` cookie
@@ -274,10 +277,11 @@ Python auth module currently depends on:
 In the TS-only world, Auth Core FP must instead:
 
 - Use **direct app DB connection** (no provisioner indirection)
-- Define a clear mechanism for privileged server-to-server operations (if needed):
-  - either internal-only Next routes,
-  - or app-side server actions protected by app secrets,
-  - or eliminate the concept entirely for local/dev flows.
+- **Eliminate** privileged “service token” concepts entirely:
+  - No service-token auth mode
+  - No “admin via service token”
+  - No shared-db or project-scoped token claims
+  - All privileged operations are enforced using the **same user JWT + role/permission system** as everything else, or are **build/dev-time DB seeds** (see bootstrap).
 
 ## Public interfaces (must be provided by FP)
 
@@ -410,10 +414,10 @@ Implementation will be provided by the TS-only Email Core pack (or an app adapte
 
 Today `hit-cli` auto-provisions an admin user by calling Python auth (`hit_cli/commands/run.py::_auto_provision_auth_admin`).
 
-In TS-only world, choose one:
+In TS-only world, **do not** introduce a new privileged HTTP surface. Prefer deterministic, local behavior:
 
-- **DB seed** step owned by app/FP (recommended): if env `HIT_AUTH_USERNAME/HIT_AUTH_PASSWORD` exist, create admin user directly in DB
-- Or a privileged internal route reachable only in dev
+- **DB seed** step owned by app/FP: if env `HIT_AUTH_USERNAME/HIT_AUTH_PASSWORD` exist, create the admin user directly in DB at dev bootstrap time (idempotent).
+- For production, rely on normal onboarding flows and/or a one-time migration/seed executed as part of app deployment (still DB-local, still TypeScript).
 
 ## Notes on compatibility (what to preserve)
 
