@@ -5,7 +5,8 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 function getAuthUrl(): string {
-  return process.env.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
+  // Prefer server-only module URL when available; fall back to HIT link env; then to the in-app proxy.
+  return process.env.HIT_AUTH_URL || process.env.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
 }
 
 function getBearerFromRequest(request: NextRequest): string {
@@ -30,6 +31,9 @@ async function authFetch(request: NextRequest, path: string, init: RequestInit) 
   const bearer = getBearerFromRequest(request);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (bearer) headers.Authorization = bearer;
+  // Some auth module endpoints require the HIT service token (e.g. admin APIs).
+  const serviceToken = process.env.HIT_SERVICE_TOKEN;
+  if (serviceToken) headers['X-HIT-Service-Token'] = serviceToken;
   const res = await fetch(`${authUrl}${path}`, {
     ...init,
     headers: { ...headers, ...(init.headers || {}) },
