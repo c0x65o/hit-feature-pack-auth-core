@@ -405,11 +405,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     const APP_PACK_ID = '__app__';
 
     for (const m of metricsCatalog || []) {
-      const currentlyGranted = metricGrantIdByKey.has(m.key);
-      const pendingState = pendingMetricChanges.get(m.key);
-      const effectiveState = pendingState !== undefined ? pendingState : currentlyGranted;
-      const hasPendingChange = pendingState !== undefined && pendingState !== currentlyGranted;
-
       const dra = Array.isArray((m as any)?.default_roles_allow)
         ? ((m as any).default_roles_allow as any[])
             .map((x: any) => String(x || '').trim().toLowerCase())
@@ -426,6 +421,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
           : roleKey === 'user'
             ? dra.includes('user')
             : false;
+
+      // Metrics are allow-only today: "effective" should include template defaults (admin/user),
+      // not just explicit DB grants. This keeps override counts consistent with user expectations.
+      const currentlyGranted = metricGrantIdByKey.has(m.key);
+      const baselineEffective = Boolean(currentlyGranted || defaultOn);
+      const pendingState = pendingMetricChanges.get(m.key);
+      const effectiveState = pendingState !== undefined ? Boolean(pendingState) : baselineEffective;
+      const hasPendingChange = pendingState !== undefined && Boolean(pendingState) !== baselineEffective;
       const isOverride = Boolean(effectiveState) !== Boolean(defaultOn);
 
       const ownerKind = (m.owner?.kind || 'app') as any;
@@ -460,7 +463,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     }
 
     return { byPack, APP_PACK_ID };
-  }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges]);
+  }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges, permissionSet?.template_role]);
 
   // Filter by search (pages and actions only)
   const filteredPacks = useMemo(() => {
