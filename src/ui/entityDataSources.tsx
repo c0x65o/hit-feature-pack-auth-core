@@ -86,6 +86,7 @@ function useAvailableRolesOptionSource() {
     { value: 'admin', label: 'Admin' },
   ]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [impersonationEnabled, setImpersonationEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +101,8 @@ function useAvailableRolesOptionSource() {
         const json = await res.json().catch(() => ({}));
         const rolesAny = json?.features?.available_roles;
         const roles: string[] = Array.isArray(rolesAny) ? rolesAny.map((r: any) => String(r)).filter(Boolean) : [];
+        const imp = Boolean(json?.features?.admin_impersonation);
+        if (!cancelled) setImpersonationEnabled(imp);
         if (!roles.length) return;
         const next = roles.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }));
         if (!cancelled) setOptions(next);
@@ -115,7 +118,7 @@ function useAvailableRolesOptionSource() {
     };
   }, []);
 
-  return { options, loading };
+  return { options, loading, impersonationEnabled };
 }
 
 export function useEntityDataSource(entityKey: string): EntityDataSource | null {
@@ -144,6 +147,7 @@ export function useEntityDataSource(entityKey: string): EntityDataSource | null 
             name: name || email,
             role,
             status: u?.locked ? 'Locked' : 'Active',
+            impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
           };
         });
 
@@ -172,6 +176,7 @@ export function useEntityDataSource(entityKey: string): EntityDataSource | null 
               status: user?.locked ? 'Locked' : 'Active',
               first_name: pf?.first_name ?? '',
               last_name: pf?.last_name ?? '',
+              impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
             }
           : null;
         return {
@@ -193,6 +198,7 @@ export function useEntityDataSource(entityKey: string): EntityDataSource | null 
               first_name: pf?.first_name ?? '',
               last_name: pf?.last_name ?? '',
               password: '',
+              impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
             }
           : null;
 

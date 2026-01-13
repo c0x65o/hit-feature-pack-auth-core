@@ -119,6 +119,37 @@ export function EntityDetailPage({
 
   const pageTitle = record?.name ? String(record.name) : String(meta?.titleSingular || entityKey);
 
+  const passesWhen = (whenAny: any): boolean => {
+    const w = whenAny && typeof whenAny === 'object' ? whenAny : null;
+    if (!w) return true;
+    const field = typeof w.field === 'string' ? w.field.trim() : '';
+    if (!field) return true;
+    const raw = (record as any)?.[field];
+    if ('equals' in w) return raw === (w as any).equals;
+    if ('notEquals' in w) return raw !== (w as any).notEquals;
+    if ((w as any).truthy === true) return Boolean(raw);
+    if ((w as any).falsy === true) return !raw;
+    return true;
+  };
+
+  const interpolate = (tpl: string) => {
+    const s = String(tpl || '');
+    return s.replace(/\{([^}]+)\}/g, (_m, key) => {
+      const k = String(key || '').trim();
+      if (!k) return '';
+      const v = (record as any)?.[k];
+      return v == null ? '' : String(v);
+    });
+  };
+
+  const coerceAlertVariant = (
+    v: unknown
+  ): 'error' | 'success' | 'warning' | 'info' | undefined => {
+    const s = String(v || '').trim().toLowerCase();
+    if (s === 'error' || s === 'success' || s === 'warning' || s === 'info') return s;
+    return undefined;
+  };
+
   const renderSpecHeaderActions = () => {
     if (!Array.isArray(headerActionsSpec) || headerActionsSpec.length === 0) return null;
     const nodes: React.ReactNode[] = [];
@@ -126,6 +157,7 @@ export function EntityDetailPage({
       if (!a || typeof a !== 'object') continue;
       const kind = String((a as any).kind || '').trim();
       if (!kind) continue;
+      if (!passesWhen((a as any).when)) continue;
 
       if (kind === 'call') {
         const field = String((a as any).field || '').trim();
@@ -206,7 +238,20 @@ export function EntityDetailPage({
             variant="secondary"
             size="sm"
             onClick={async () => {
-              await handler({ entityKey, record });
+              const confirm = (a as any).confirm && typeof (a as any).confirm === 'object' ? (a as any).confirm : null;
+              if (confirm) {
+                const ok = await alertDialog.showConfirm(interpolate(String(confirm.body || 'Are you sure?')), {
+                  title: interpolate(String(confirm.title || 'Confirm')),
+                  variant: coerceAlertVariant((confirm as any).variant),
+                });
+                if (!ok) return;
+              }
+              try {
+                await handler({ entityKey, record });
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Action failed';
+                await alertDialog.showAlert(String(msg), { title: 'Action Failed', variant: 'error' });
+              }
             }}
           >
             {icon === 'download' ? <Download size={16} className="mr-1" /> : null}

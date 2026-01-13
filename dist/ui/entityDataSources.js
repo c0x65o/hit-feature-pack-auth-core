@@ -25,6 +25,7 @@ function useAvailableRolesOptionSource() {
         { value: 'admin', label: 'Admin' },
     ]);
     const [loading, setLoading] = useState(false);
+    const [impersonationEnabled, setImpersonationEnabled] = useState(false);
     useEffect(() => {
         let cancelled = false;
         const run = async () => {
@@ -37,6 +38,9 @@ function useAvailableRolesOptionSource() {
                 const json = await res.json().catch(() => ({}));
                 const rolesAny = json?.features?.available_roles;
                 const roles = Array.isArray(rolesAny) ? rolesAny.map((r) => String(r)).filter(Boolean) : [];
+                const imp = Boolean(json?.features?.admin_impersonation);
+                if (!cancelled)
+                    setImpersonationEnabled(imp);
                 if (!roles.length)
                     return;
                 const next = roles.map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }));
@@ -56,7 +60,7 @@ function useAvailableRolesOptionSource() {
             cancelled = true;
         };
     }, []);
-    return { options, loading };
+    return { options, loading, impersonationEnabled };
 }
 export function useEntityDataSource(entityKey) {
     if (entityKey === 'auth.user') {
@@ -82,6 +86,7 @@ export function useEntityDataSource(entityKey) {
                         name: name || email,
                         role,
                         status: u?.locked ? 'Locked' : 'Active',
+                        impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
                     };
                 });
                 return {
@@ -109,6 +114,7 @@ export function useEntityDataSource(entityKey) {
                         status: user?.locked ? 'Locked' : 'Active',
                         first_name: pf?.first_name ?? '',
                         last_name: pf?.last_name ?? '',
+                        impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
                     }
                     : null;
                 return {
@@ -130,6 +136,7 @@ export function useEntityDataSource(entityKey) {
                         first_name: pf?.first_name ?? '',
                         last_name: pf?.last_name ?? '',
                         password: '',
+                        impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
                     }
                     : null;
                 const create = async (payload) => {

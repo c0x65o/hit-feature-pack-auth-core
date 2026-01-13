@@ -75,6 +75,40 @@ export function EntityDetailPage({ entityKey, id, onNavigate, useDetailData, res
         }
     };
     const pageTitle = record?.name ? String(record.name) : String(meta?.titleSingular || entityKey);
+    const passesWhen = (whenAny) => {
+        const w = whenAny && typeof whenAny === 'object' ? whenAny : null;
+        if (!w)
+            return true;
+        const field = typeof w.field === 'string' ? w.field.trim() : '';
+        if (!field)
+            return true;
+        const raw = record?.[field];
+        if ('equals' in w)
+            return raw === w.equals;
+        if ('notEquals' in w)
+            return raw !== w.notEquals;
+        if (w.truthy === true)
+            return Boolean(raw);
+        if (w.falsy === true)
+            return !raw;
+        return true;
+    };
+    const interpolate = (tpl) => {
+        const s = String(tpl || '');
+        return s.replace(/\{([^}]+)\}/g, (_m, key) => {
+            const k = String(key || '').trim();
+            if (!k)
+                return '';
+            const v = record?.[k];
+            return v == null ? '' : String(v);
+        });
+    };
+    const coerceAlertVariant = (v) => {
+        const s = String(v || '').trim().toLowerCase();
+        if (s === 'error' || s === 'success' || s === 'warning' || s === 'info')
+            return s;
+        return undefined;
+    };
     const renderSpecHeaderActions = () => {
         if (!Array.isArray(headerActionsSpec) || headerActionsSpec.length === 0)
             return null;
@@ -84,6 +118,8 @@ export function EntityDetailPage({ entityKey, id, onNavigate, useDetailData, res
                 continue;
             const kind = String(a.kind || '').trim();
             if (!kind)
+                continue;
+            if (!passesWhen(a.when))
                 continue;
             if (kind === 'call') {
                 const field = String(a.field || '').trim();
@@ -130,7 +166,22 @@ export function EntityDetailPage({ entityKey, id, onNavigate, useDetailData, res
                 const label = String(a.label || actionKey);
                 const icon = String(a.icon || '').trim().toLowerCase();
                 nodes.push(_jsxs(Button, { variant: "secondary", size: "sm", onClick: async () => {
-                        await handler({ entityKey, record });
+                        const confirm = a.confirm && typeof a.confirm === 'object' ? a.confirm : null;
+                        if (confirm) {
+                            const ok = await alertDialog.showConfirm(interpolate(String(confirm.body || 'Are you sure?')), {
+                                title: interpolate(String(confirm.title || 'Confirm')),
+                                variant: coerceAlertVariant(confirm.variant),
+                            });
+                            if (!ok)
+                                return;
+                        }
+                        try {
+                            await handler({ entityKey, record });
+                        }
+                        catch (e) {
+                            const msg = e instanceof Error ? e.message : 'Action failed';
+                            await alertDialog.showAlert(String(msg), { title: 'Action Failed', variant: 'error' });
+                        }
                     }, children: [icon === 'download' ? _jsx(Download, { size: 16, className: "mr-1" }) : null, label] }, actionKey));
                 continue;
             }

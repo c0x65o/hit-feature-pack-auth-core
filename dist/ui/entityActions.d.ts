@@ -1,6 +1,6 @@
 export type EntityActionHandlerArgs = {
     entityKey: string;
-    record: any;
+    record?: any;
     resolved?: Record<string, any>;
     relations?: Record<string, any[]>;
 };

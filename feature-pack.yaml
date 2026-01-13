@@ -241,6 +241,24 @@ nav:
 # API routes - org dimensions management
 api:
   routes:
+    # Mobile entity endpoints (schema-driven)
+    - path: /api/auth/users
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-users"
+      description: "Schema-driven auth users (mobile/web)."
+    - path: /api/auth/users/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-users-id"
+      description: "Schema-driven auth user by id/email (mobile/web)."
+    - path: /api/auth/groups
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-groups"
+      description: "Schema-driven auth groups (mobile/web)."
+    - path: /api/auth/groups/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-groups-id"
+      description: "Schema-driven auth group by id (mobile/web)."
+
     # Location Types
     - path: /api/org/location-types
       methods: [GET, POST]

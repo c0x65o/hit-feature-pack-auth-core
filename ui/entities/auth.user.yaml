@@ -28,6 +28,50 @@ entities:
         - kind: email
           label: Email
           field: email
+        - kind: action
+          label: Assume
+          actionKey: auth.assumeUser
+          when: { field: impersonationEnabled, equals: true }
+          confirm:
+            title: Assume User
+            body: Are you sure you want to assume "{name}"?
+            variant: warning
+        - kind: action
+          label: Verify Email
+          actionKey: auth.verifyEmail
+          when: { field: email_verified, equals: false }
+          confirm:
+            title: Verify Email
+            body: Mark this email as verified?
+        - kind: action
+          label: Resend Verification
+          actionKey: auth.resendVerification
+          when: { field: email_verified, equals: false }
+          confirm:
+            title: Resend Verification
+            body: Resend verification email to "{email}"?
+        - kind: action
+          label: Reset Password
+          actionKey: auth.resetPasswordEmail
+          confirm:
+            title: Reset Password
+            body: Send a password reset email to "{email}"?
+            variant: warning
+        - kind: action
+          label: Lock
+          actionKey: auth.lockUser
+          when: { field: locked, equals: false }
+          confirm:
+            title: Lock User
+            body: Lock this user account?
+            variant: warning
+        - kind: action
+          label: Unlock
+          actionKey: auth.unlockUser
+          when: { field: locked, equals: true }
+          confirm:
+            title: Unlock User
+            body: Unlock this user account?
 
     storage:
       kind: remote
@@ -47,7 +91,7 @@ entities:
         email: true
         role: true
         status: true
-        email_verified: false
+        email_verified: true
         two_factor_enabled: false
         created_at: false
         last_login: true
@@ -93,7 +137,7 @@ entities:
     fields:
       id: { type: text, label: ID, readOnly: true }
       email: { type: email, label: Email, required: true }
-      password: { type: text, label: Password, placeholder: "Set an initial password (create only)" }
+      password: { type: password, label: Password, placeholder: "Set an initial password (create only)" }
       role: { type: select, label: Role, optionSource: auth.availableRoles }
       first_name: { type: text, label: First Name }
       last_name: { type: text, label: Last Name }
