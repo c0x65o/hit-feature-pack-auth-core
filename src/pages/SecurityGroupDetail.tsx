@@ -390,6 +390,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       category?: string;
       description?: string;
       checked: boolean;
+      // Whether this metric is explicitly granted in the DB right now (stored override).
+      explicit: boolean;
       hasPendingChange: boolean;
       ownerKind: 'feature_pack' | 'app' | 'user';
       ownerId: string;
@@ -420,6 +422,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         category: m.category,
         description: m.description,
         checked: effectiveState,
+        explicit: currentlyGranted,
         hasPendingChange,
         ownerKind,
         ownerId,
@@ -478,6 +481,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         explicitActions: p.actions.filter((x: any) => x.explicit).length,
         metricCount: p.metrics.length,
         grantedMetrics: p.metrics.filter((x: any) => x.checked).length,
+        metricOverrides: p.metrics.filter((x: any) => x.explicit).length,
       }))
       .filter((p) => p.actionCount > 0 || p.metricCount > 0);
 
@@ -1056,9 +1060,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {pack.metricCount > 0 && (
                       <div className="flex items-center gap-1">
                         <BarChart3 size={14} className="text-gray-400" />
-                        <span className={pack.grantedMetrics > 0 ? 'text-orange-600 font-medium' : 'text-gray-500'}>
+                        <span className={pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}>
                           {pack.grantedMetrics}/{pack.metricCount}
                         </span>
+                        {pack.metricOverrides > 0 ? (
+                          <span className="text-gray-400">
+                            ({pack.metricOverrides} override{pack.metricOverrides === 1 ? '' : 's'})
+                          </span>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -1804,9 +1813,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                         <div className="flex items-center gap-2 mb-3">
                           <BarChart3 size={16} className="text-orange-500" />
                           <span className="text-sm font-medium text-gray-600">Metrics</span>
-                          <span className="text-xs text-gray-400">
-                            ({pack.grantedMetrics} selected)
-                          </span>
+                          {pack.metricOverrides > 0 ? (
+                            <span className="text-xs text-gray-400">
+                              ({pack.metricOverrides} override{pack.metricOverrides === 1 ? '' : 's'})
+                            </span>
+                          ) : null}
                         </div>
                         <div className="space-y-1 ml-6">
                           {pack.metrics.map((m: any) => (
