@@ -54,6 +54,7 @@ export function renderEntityFormField({
   const type = String(spec.type || 'text').trim().toLowerCase();
   const label = String(spec.label || keyName);
   const placeholder = typeof spec.placeholder === 'string' ? String(spec.placeholder) : undefined;
+  const readOnly = Boolean(spec.readOnly);
 
   if (type === 'select') {
     const src = typeof spec.optionSource === 'string' ? String(spec.optionSource) : '';
@@ -71,7 +72,7 @@ export function renderEntityFormField({
         }}
         options={options}
         placeholder={placeholder || cfg?.placeholder}
-        disabled={Boolean(cfg?.loading)}
+        disabled={readOnly || Boolean(cfg?.loading)}
         error={error}
         required={Boolean(required)}
       />
@@ -110,6 +111,7 @@ export function renderEntityFormField({
         placeholder={placeholder}
         error={error}
         required={Boolean(required)}
+        disabled={readOnly}
       />
     );
   }
@@ -127,6 +129,7 @@ export function renderEntityFormField({
         placeholder={placeholder}
         error={error}
         required={Boolean(required)}
+        disabled={readOnly}
       />
     );
   }
@@ -142,7 +145,7 @@ export function renderEntityFormField({
           setValue(v ? 'true' : 'false');
           clearFieldError(keyName);
         }}
-        disabled={false}
+        disabled={readOnly}
       />
     );
   }
@@ -179,6 +182,7 @@ export function renderEntityFormField({
       placeholder={placeholder}
       error={error}
       required={Boolean(required)}
+      disabled={readOnly}
     />
   );
 }
