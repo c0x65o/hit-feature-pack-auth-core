@@ -10,6 +10,15 @@ function trimOrEmpty(v) {
 function bool(v) {
     return v === true || v === 'true';
 }
+function numOrNull(raw) {
+    const s = trimOrEmpty(raw);
+    if (!s)
+        return { value: null };
+    const n = Number(s);
+    if (Number.isFinite(n))
+        return { value: n };
+    return { value: null, error: `Invalid number: ${s}` };
+}
 function collectScalarFieldKeysFromForm(uiSpec) {
     const form = asRecord(uiSpec?.form) || {};
     const sections = Array.isArray(form.sections) ? form.sections : [];
@@ -47,8 +56,29 @@ export function prepareEntityUpsert({ uiSpec, values }) {
     }
     const payload = {};
     for (const key of scalarKeys) {
+        const spec = asRecord(fieldsMap[key]) || {};
+        const t = trimOrEmpty(spec.type).toLowerCase() || 'text';
         const v = trimOrEmpty(values?.[key]);
+        if (t === 'number') {
+            const parsed = numOrNull(v);
+            if (parsed.error) {
+                fieldErrors[key] = parsed.error;
+                continue;
+            }
+            payload[key] = parsed.value;
+            continue;
+        }
+        if (t === 'boolean') {
+            if (!v)
+                payload[key] = null;
+            else
+                payload[key] = v === 'true' || v === '1';
+            continue;
+        }
         payload[key] = v || null;
+    }
+    if (Object.keys(fieldErrors).length > 0) {
+        return { fieldErrors, payload: null, normalizedRelations: {} };
     }
     return { fieldErrors: {}, payload, normalizedRelations: {} };
 }

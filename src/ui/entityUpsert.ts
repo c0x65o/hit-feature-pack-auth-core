@@ -16,6 +16,14 @@ function bool(v: unknown): boolean {
   return v === true || v === 'true';
 }
 
+function numOrNull(raw: string): { value: number | null; error?: string } {
+  const s = trimOrEmpty(raw);
+  if (!s) return { value: null };
+  const n = Number(s);
+  if (Number.isFinite(n)) return { value: n };
+  return { value: null, error: `Invalid number: ${s}` };
+}
+
 export type PrepareEntityUpsertArgs = {
   uiSpec: any;
   values: Record<string, string>;
@@ -67,8 +75,31 @@ export function prepareEntityUpsert({ uiSpec, values }: PrepareEntityUpsertArgs)
 
   const payload: Record<string, any> = {};
   for (const key of scalarKeys) {
+    const spec = asRecord(fieldsMap[key]) || {};
+    const t = trimOrEmpty(spec.type).toLowerCase() || 'text';
     const v = trimOrEmpty(values?.[key]);
+
+    if (t === 'number') {
+      const parsed = numOrNull(v);
+      if (parsed.error) {
+        fieldErrors[key] = parsed.error;
+        continue;
+      }
+      payload[key] = parsed.value;
+      continue;
+    }
+
+    if (t === 'boolean') {
+      if (!v) payload[key] = null;
+      else payload[key] = v === 'true' || v === '1';
+      continue;
+    }
+
     payload[key] = v || null;
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return { fieldErrors, payload: null, normalizedRelations: {} };
   }
 
   return { fieldErrors: {}, payload, normalizedRelations: {} };

@@ -48,7 +48,7 @@ export function EntityUpsertPage({
   const uiSpec = useEntityUiSpec(entityKey);
   const ds = useEntityDataSource(entityKey);
 
-  const { Input, Select, Autocomplete } = useUi();
+  const { Input, Select, Autocomplete, TextArea, Checkbox } = useUi();
   const searchParams = useSearchParams();
   const appliedDefaultsRef = useRef<Set<string>>(new Set());
 
@@ -183,7 +183,7 @@ export function EntityUpsertPage({
                   clearFieldError,
                   error: (fieldErrors as any)?.[k],
                   required: isRequired(k),
-                  ui: { Input, Select, Autocomplete },
+                  ui: { Input, Select, Autocomplete, TextArea, Checkbox },
                   optionSources: registries.optionSources || {},
                   referenceRenderers: registries.referenceRenderers || {},
                 })

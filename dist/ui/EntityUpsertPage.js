@@ -37,7 +37,7 @@ export function EntityUpsertPage({ entityKey, id, onNavigate, }) {
     const recordId = id === 'new' ? undefined : id;
     const uiSpec = useEntityUiSpec(entityKey);
     const ds = useEntityDataSource(entityKey);
-    const { Input, Select, Autocomplete } = useUi();
+    const { Input, Select, Autocomplete, TextArea, Checkbox } = useUi();
     const searchParams = useSearchParams();
     const appliedDefaultsRef = useRef(new Set());
     const { submitting, error, fieldErrors, submit, clearError, setFieldErrors, clearFieldError } = useFormSubmit();
@@ -138,7 +138,7 @@ export function EntityUpsertPage({ entityKey, id, onNavigate, }) {
                             clearFieldError,
                             error: fieldErrors?.[k],
                             required: isRequired(k),
-                            ui: { Input, Select, Autocomplete },
+                            ui: { Input, Select, Autocomplete, TextArea, Checkbox },
                             optionSources: registries.optionSources || {},
                             referenceRenderers: registries.referenceRenderers || {},
                         })) })] }, `sec-${idx}`));
