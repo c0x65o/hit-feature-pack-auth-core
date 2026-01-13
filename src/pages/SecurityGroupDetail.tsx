@@ -551,7 +551,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     const packName = String(pack?.name || '').trim().toLowerCase();
     if (!packName) return { total: 0, effective: 0, overrides: 0 };
 
-    const isAdminTemplate = permissionSet?.template_role === 'admin';
+    const isAdminTemplate = templateRoleEffective === 'admin';
 
     // Build scope-mode groups (one dropdown per groupKey) from action rows.
     type ActionRow = ActionCatalogItem & { explicit: boolean; effective: boolean };
@@ -589,8 +589,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
     function buildGroup(groupKey: string, g: GroupBuild) {
       const declaredModes = getDeclaredModes(g.actions);
+      // Infer allowed values from what keys actually exist, so `none/any`-only groups
+      // don't get misclassified as having `own/ldd` (which would make `any` look like an override).
+      const presentValues = Array.from(precedenceValues).filter((v) => g.values.has(v));
       const allowedValues =
-        declaredModes && declaredModes.length ? declaredModes : Array.from(precedenceValues);
+        declaredModes && declaredModes.length
+          ? declaredModes.filter((v) => g.values.has(v))
+          : presentValues;
       const precedenceKeys = allowedValues.map((v) => g.values.get(v)?.key).filter(Boolean) as string[];
       return { groupKey, values: g.values, actions: g.actions, allowedValues, precedenceKeys };
     }
@@ -741,7 +746,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       effective: scopeEffective + createEffective + derivedEffective,
       overrides: scopeOverrides + createOverrides + derivedOverrides,
     };
-  }, [defaultScopeMode, isActionExplicitEffective, permissionSet?.template_role, routes]);
+  }, [defaultScopeMode, isActionExplicitEffective, templateRoleEffective, routes]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HANDLERS

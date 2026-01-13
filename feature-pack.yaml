@@ -419,14 +419,6 @@ permissions:
       label: "Auth-Core Locations Read Scope = Any"
       description: "Read locations regardless of scope."
       default_enabled: false
-    - key: auth-core.locations.read.scope.own
-      label: "Auth-Core Locations Read Scope = Own"
-      description: "Read only locations you own (not applicable - locations don't have ownership)."
-      default_enabled: false
-    - key: auth-core.locations.read.scope.ldd
-      label: "Auth-Core Locations Read Scope = LDD"
-      description: "Read locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.locations.write.scope.none
       label: "Auth-Core Locations Write Scope = None"
@@ -436,14 +428,6 @@ permissions:
       label: "Auth-Core Locations Write Scope = Any"
       description: "Edit locations regardless of scope."
       default_enabled: false
-    - key: auth-core.locations.write.scope.own
-      label: "Auth-Core Locations Write Scope = Own"
-      description: "Edit only locations you own (not applicable - locations don't have ownership)."
-      default_enabled: false
-    - key: auth-core.locations.write.scope.ldd
-      label: "Auth-Core Locations Write Scope = LDD"
-      description: "Edit locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.locations.delete.scope.none
       label: "Auth-Core Locations Delete Scope = None"
@@ -452,14 +436,6 @@ permissions:
     - key: auth-core.locations.delete.scope.any
       label: "Auth-Core Locations Delete Scope = Any"
       description: "Delete locations regardless of scope."
-      default_enabled: false
-    - key: auth-core.locations.delete.scope.own
-      label: "Auth-Core Locations Delete Scope = Own"
-      description: "Delete only locations you own (not applicable - locations don't have ownership)."
-      default_enabled: false
-    - key: auth-core.locations.delete.scope.ldd
-      label: "Auth-Core Locations Delete Scope = LDD"
-      description: "Delete locations you own, or that match your L/D/D scope (not applicable - locations don't have LDD fields)."
       default_enabled: false
 
     - key: auth-core.locations.create
@@ -476,14 +452,6 @@ permissions:
       label: "Auth-Core Divisions Read Scope = Any"
       description: "Read divisions regardless of scope."
       default_enabled: false
-    - key: auth-core.divisions.read.scope.own
-      label: "Auth-Core Divisions Read Scope = Own"
-      description: "Read only divisions you own (not applicable - divisions don't have ownership)."
-      default_enabled: false
-    - key: auth-core.divisions.read.scope.ldd
-      label: "Auth-Core Divisions Read Scope = LDD"
-      description: "Read divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.divisions.write.scope.none
       label: "Auth-Core Divisions Write Scope = None"
@@ -493,14 +461,6 @@ permissions:
       label: "Auth-Core Divisions Write Scope = Any"
       description: "Edit divisions regardless of scope."
       default_enabled: false
-    - key: auth-core.divisions.write.scope.own
-      label: "Auth-Core Divisions Write Scope = Own"
-      description: "Edit only divisions you own (not applicable - divisions don't have ownership)."
-      default_enabled: false
-    - key: auth-core.divisions.write.scope.ldd
-      label: "Auth-Core Divisions Write Scope = LDD"
-      description: "Edit divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.divisions.delete.scope.none
       label: "Auth-Core Divisions Delete Scope = None"
@@ -509,14 +469,6 @@ permissions:
     - key: auth-core.divisions.delete.scope.any
       label: "Auth-Core Divisions Delete Scope = Any"
       description: "Delete divisions regardless of scope."
-      default_enabled: false
-    - key: auth-core.divisions.delete.scope.own
-      label: "Auth-Core Divisions Delete Scope = Own"
-      description: "Delete only divisions you own (not applicable - divisions don't have ownership)."
-      default_enabled: false
-    - key: auth-core.divisions.delete.scope.ldd
-      label: "Auth-Core Divisions Delete Scope = LDD"
-      description: "Delete divisions you own, or that match your L/D/D scope (not applicable - divisions don't have LDD fields)."
       default_enabled: false
 
     - key: auth-core.divisions.create
@@ -533,14 +485,6 @@ permissions:
       label: "Auth-Core Departments Read Scope = Any"
       description: "Read departments regardless of scope."
       default_enabled: false
-    - key: auth-core.departments.read.scope.own
-      label: "Auth-Core Departments Read Scope = Own"
-      description: "Read only departments you own (not applicable - departments don't have ownership)."
-      default_enabled: false
-    - key: auth-core.departments.read.scope.ldd
-      label: "Auth-Core Departments Read Scope = LDD"
-      description: "Read departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.departments.write.scope.none
       label: "Auth-Core Departments Write Scope = None"
@@ -550,14 +494,6 @@ permissions:
       label: "Auth-Core Departments Write Scope = Any"
       description: "Edit departments regardless of scope."
       default_enabled: false
-    - key: auth-core.departments.write.scope.own
-      label: "Auth-Core Departments Write Scope = Own"
-      description: "Edit only departments you own (not applicable - departments don't have ownership)."
-      default_enabled: false
-    - key: auth-core.departments.write.scope.ldd
-      label: "Auth-Core Departments Write Scope = LDD"
-      description: "Edit departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
-      default_enabled: false
 
     - key: auth-core.departments.delete.scope.none
       label: "Auth-Core Departments Delete Scope = None"
@@ -566,14 +502,6 @@ permissions:
     - key: auth-core.departments.delete.scope.any
       label: "Auth-Core Departments Delete Scope = Any"
       description: "Delete departments regardless of scope."
-      default_enabled: false
-    - key: auth-core.departments.delete.scope.own
-      label: "Auth-Core Departments Delete Scope = Own"
-      description: "Delete only departments you own (not applicable - departments don't have ownership)."
-      default_enabled: false
-    - key: auth-core.departments.delete.scope.ldd
-      label: "Auth-Core Departments Delete Scope = LDD"
-      description: "Delete departments you own, or that match your L/D/D scope (not applicable - departments don't have LDD fields)."
       default_enabled: false
 
     - key: auth-core.departments.create
