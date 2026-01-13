@@ -143,12 +143,12 @@ function baseIdFromScopeBasePrefix(prefix: string): string {
 function baseIdFromActionKey(key: string): string | null {
   const k = String(key || '').trim().toLowerCase();
   if (!k) return null;
-  // {pack}.create -> attach to pack root
-  const mPackCreate = k.match(/^([a-z][a-z0-9_-]*)\.create$/);
-  if (mPackCreate) return `${mPackCreate[1]}`;
-  // {pack}.{entity}.create -> attach to pack.entity
-  const mCreate = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.create$/);
-  if (mCreate) return `${mCreate[1]}.${mCreate[2]}`;
+  // {pack}.{create|update|delete} -> attach to pack root
+  const mPackVerb = k.match(/^([a-z][a-z0-9_-]*)\.(create|update|delete)$/);
+  if (mPackVerb) return `${mPackVerb[1]}`;
+  // {pack}.{entity}.{create|update|delete} -> attach to pack.entity
+  const mEntityVerb = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.(create|update|delete)$/);
+  if (mEntityVerb) return `${mEntityVerb[1]}.${mEntityVerb[2]}`;
   return null;
 }
 
@@ -743,14 +743,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     const scopeEffective = groups.filter((g) => effectiveModeForGroupKey(g.groupKey) !== 'none').length;
     const scopeOverrides = groups.filter((g) => isOverrideForGroupKey(g.groupKey)).length;
 
-    // Create toggles: treat {pack}.{entity}.create as one item each (template-aware default).
-    const createActions = other.filter((a) => baseIdFromActionKey(a.key) !== null);
-    const createTotal = createActions.length;
-    const createEffective = createActions.filter((a) => {
+    // Toggle actions: treat {pack}.{entity}.{create|update|delete} as one item each (template-aware default).
+    const toggleActions = other.filter((a) => baseIdFromActionKey(a.key) !== null);
+    const createTotal = toggleActions.length;
+    const createEffective = toggleActions.filter((a) => {
       const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
       return Boolean(isActionExplicitEffective(a.key) || defaultOn);
     }).length;
-    const createOverrides = createActions.filter((a) => {
+    const createOverrides = toggleActions.filter((a) => {
       const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
       const effectiveNow = Boolean(isActionExplicitEffective(a.key) || defaultOn);
       return effectiveNow !== defaultOn;
@@ -1976,20 +1976,21 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                           ) : null}
                                         </div>
                                         <div className="flex items-center gap-4">
-                                          {String(a.key || '').endsWith('.create') ? (
+                                          {(/\.(create|update|delete)$/i.test(String(a.key || '').trim()) && !String(a.key || '').includes('.scope.')) ? (
                                             (() => {
                                               const key = String(a.key || '').trim();
+                                              const verb = key.split('.').slice(-1)[0] || 'action';
                                               const pending = pendingActionChanges.get(key);
                                               const persistedExplicit = actionGrantSet.has(key);
                                               const explicitNow = pending !== undefined ? pending : persistedExplicit;
-                                              const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                              const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                              const effectiveNow = Boolean(explicitNow || createDefaultOn);
-                                              const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                              const isAdminTemplate = templateRoleEffective === 'admin';
+                                              const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                              const effectiveNow = Boolean(explicitNow || defaultOn);
+                                              const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
                                               const showClear = pending !== undefined || persistedExplicit;
                                               return (
                                                 <div className="flex items-center gap-2">
-                                                  <span className="text-xs text-gray-400">Create:</span>
+                                                  <span className="text-xs text-gray-400">{titleCase(verb)}:</span>
                                                   <select
                                                     className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
                                                     value={effectiveNow ? 'on' : 'off'}
@@ -2013,7 +2014,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                       variant="ghost"
                                                       disabled={anySaving}
                                                       onClick={() => setActionGrantLocal(key, false)}
-                                                      title="Clear (remove explicit grant; fall back to template default)"
+                                                      title="Clear (remove explicit grant; fall back to template/default)"
                                                     >
                                                       Clear
                                                     </Button>
@@ -2085,20 +2086,21 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                   )}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                  {String(a.key || '').endsWith('.create') ? (
+                                  {(/\.(create|update|delete)$/i.test(String(a.key || '').trim()) && !String(a.key || '').includes('.scope.')) ? (
                                     (() => {
                                       const key = String(a.key || '').trim();
+                                      const verb = key.split('.').slice(-1)[0] || 'action';
                                       const pending = pendingActionChanges.get(key);
                                       const persistedExplicit = actionGrantSet.has(key);
                                       const explicitNow = pending !== undefined ? pending : persistedExplicit;
-                                      const isAdminTemplate = permissionSet?.template_role === 'admin';
-                                      const createDefaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                      const effectiveNow = Boolean(explicitNow || createDefaultOn);
-                                      const isOverrideNow = Boolean(effectiveNow) !== Boolean(createDefaultOn);
+                                      const isAdminTemplate = templateRoleEffective === 'admin';
+                                      const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                      const effectiveNow = Boolean(explicitNow || defaultOn);
+                                      const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
                                       const showClear = pending !== undefined || persistedExplicit;
                                       return (
                                         <div className="flex items-center gap-2">
-                                          <span className="text-xs text-gray-400">Create:</span>
+                                          <span className="text-xs text-gray-400">{titleCase(verb)}:</span>
                                           <select
                                             className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
                                             value={effectiveNow ? 'on' : 'off'}
@@ -2122,7 +2124,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                               variant="ghost"
                                               disabled={savingPagesActions || mutations.loading}
                                               onClick={() => setActionGrantLocal(key, false)}
-                                              title="Clear (remove explicit grant; fall back to template default)"
+                                              title="Clear (remove explicit grant; fall back to template/default)"
                                             >
                                               Clear
                                             </Button>

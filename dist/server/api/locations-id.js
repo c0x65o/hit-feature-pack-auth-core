@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { locations, locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
+import { requireAuthCoreAction } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -87,21 +88,9 @@ export async function GET(request) {
  */
 export async function PUT(request) {
     try {
-        // Check write permission with explicit scope mode branching
-        const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'write' });
-        if (mode === 'none') {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-        else if (mode === 'own' || mode === 'ldd') {
-            // Locations don't have ownership or LDD fields, so these modes deny access
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-        else if (mode === 'any') {
-            // Allow access - proceed with update
-        }
-        else {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
+        const updateCheck = await requireAuthCoreAction(request, 'auth-core.locations.update');
+        if (updateCheck)
+            return updateCheck;
         const id = extractId(request);
         if (!id) {
             return NextResponse.json({ error: "Location ID is required" }, { status: 400 });
@@ -179,21 +168,9 @@ export async function PUT(request) {
  */
 export async function DELETE(request) {
     try {
-        // Check delete permission with explicit scope mode branching
-        const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'delete' });
-        if (mode === 'none') {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-        else if (mode === 'own' || mode === 'ldd') {
-            // Locations don't have ownership or LDD fields, so these modes deny access
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-        else if (mode === 'any') {
-            // Allow access - proceed with delete
-        }
-        else {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
+        const deleteCheck = await requireAuthCoreAction(request, 'auth-core.locations.delete');
+        if (deleteCheck)
+            return deleteCheck;
         const id = extractId(request);
         if (!id) {
             return NextResponse.json({ error: "Location ID is required" }, { status: 400 });

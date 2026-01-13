@@ -15,9 +15,5 @@ export declare function PUT(request: NextRequest): Promise<NextResponse<any>>;
  * DELETE /api/org/divisions/[id]
  * Delete a division
  */
-export declare function DELETE(request: NextRequest): Promise<NextResponse<{
-    error: string;
-}> | NextResponse<{
-    success: boolean;
-}>>;
+export declare function DELETE(request: NextRequest): Promise<NextResponse<unknown>>;
 //# sourceMappingURL=divisions-id.d.ts.map

@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { divisions } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
+import { requireAuthCoreAction } from "../lib/require-action";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,19 +68,8 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    // Check write permission with explicit scope mode branching
-    const mode = await resolveAuthCoreScopeMode(request, { entity: 'divisions', verb: 'write' });
-    
-    if (mode === 'none') {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'own' || mode === 'ldd') {
-      // Divisions don't have ownership or LDD fields, so these modes deny access
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'any') {
-      // Allow access - proceed with update
-    } else {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const updateCheck = await requireAuthCoreAction(request, 'auth-core.divisions.update');
+    if (updateCheck) return updateCheck;
 
     const id = extractId(request);
     if (!id) {
@@ -143,19 +133,8 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Check delete permission with explicit scope mode branching
-    const mode = await resolveAuthCoreScopeMode(request, { entity: 'divisions', verb: 'delete' });
-    
-    if (mode === 'none') {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'own' || mode === 'ldd') {
-      // Divisions don't have ownership or LDD fields, so these modes deny access
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'any') {
-      // Allow access - proceed with delete
-    } else {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const deleteCheck = await requireAuthCoreAction(request, 'auth-core.divisions.delete');
+    if (deleteCheck) return deleteCheck;
 
     const id = extractId(request);
     if (!id) {

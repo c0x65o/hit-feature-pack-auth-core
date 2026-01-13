@@ -408,27 +408,19 @@ permissions:
       description: "Read locations regardless of scope."
       default_enabled: false
 
-    - key: auth-core.locations.write.scope.none
-      label: "Auth-Core Locations Write Scope = None"
-      description: "Deny all location write access."
-      default_enabled: false
-    - key: auth-core.locations.write.scope.any
-      label: "Auth-Core Locations Write Scope = Any"
-      description: "Edit locations regardless of scope."
-      default_enabled: false
-
-    - key: auth-core.locations.delete.scope.none
-      label: "Auth-Core Locations Delete Scope = None"
-      description: "Deny all location delete access."
-      default_enabled: false
-    - key: auth-core.locations.delete.scope.any
-      label: "Auth-Core Locations Delete Scope = Any"
-      description: "Delete locations regardless of scope."
-      default_enabled: false
+    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
 
     - key: auth-core.locations.create
       label: Create Location
       description: "Create a new location."
+      default_enabled: false
+    - key: auth-core.locations.update
+      label: Update Location
+      description: "Update an existing location."
+      default_enabled: false
+    - key: auth-core.locations.delete
+      label: Delete Location
+      description: "Delete a location."
       default_enabled: false
 
     # Divisions override
@@ -441,27 +433,19 @@ permissions:
       description: "Read divisions regardless of scope."
       default_enabled: false
 
-    - key: auth-core.divisions.write.scope.none
-      label: "Auth-Core Divisions Write Scope = None"
-      description: "Deny all division write access."
-      default_enabled: false
-    - key: auth-core.divisions.write.scope.any
-      label: "Auth-Core Divisions Write Scope = Any"
-      description: "Edit divisions regardless of scope."
-      default_enabled: false
-
-    - key: auth-core.divisions.delete.scope.none
-      label: "Auth-Core Divisions Delete Scope = None"
-      description: "Deny all division delete access."
-      default_enabled: false
-    - key: auth-core.divisions.delete.scope.any
-      label: "Auth-Core Divisions Delete Scope = Any"
-      description: "Delete divisions regardless of scope."
-      default_enabled: false
+    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
 
     - key: auth-core.divisions.create
       label: Create Division
       description: "Create a new division."
+      default_enabled: false
+    - key: auth-core.divisions.update
+      label: Update Division
+      description: "Update an existing division."
+      default_enabled: false
+    - key: auth-core.divisions.delete
+      label: Delete Division
+      description: "Delete a division."
       default_enabled: false
 
     # Departments override
@@ -474,27 +458,19 @@ permissions:
       description: "Read departments regardless of scope."
       default_enabled: false
 
-    - key: auth-core.departments.write.scope.none
-      label: "Auth-Core Departments Write Scope = None"
-      description: "Deny all department write access."
-      default_enabled: false
-    - key: auth-core.departments.write.scope.any
-      label: "Auth-Core Departments Write Scope = Any"
-      description: "Edit departments regardless of scope."
-      default_enabled: false
-
-    - key: auth-core.departments.delete.scope.none
-      label: "Auth-Core Departments Delete Scope = None"
-      description: "Deny all department delete access."
-      default_enabled: false
-    - key: auth-core.departments.delete.scope.any
-      label: "Auth-Core Departments Delete Scope = Any"
-      description: "Delete departments regardless of scope."
-      default_enabled: false
+    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
 
     - key: auth-core.departments.create
       label: Create Department
       description: "Create a new department."
+      default_enabled: false
+    - key: auth-core.departments.update
+      label: Update Department
+      description: "Update an existing department."
+      default_enabled: false
+    - key: auth-core.departments.delete
+      label: Delete Department
+      description: "Delete a department."
       default_enabled: false
 
     # Assignments override
