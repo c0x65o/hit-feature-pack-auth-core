@@ -248,26 +248,52 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             return pending;
         return actionGrantSet.has(key);
     }, [pendingActionChanges, actionGrantSet]);
-    const crmHeaderSummary = useMemo(() => {
+    const packRootScopeSummaryByPack = useMemo(() => {
         const precedence = ['none', 'own', 'ldd', 'any'];
-        const pick = (verb) => {
-            const candidates = actionCatalog
-                .filter((a) => String(a.key || '').toLowerCase().startsWith(`crm.${verb}.scope.`))
-                .map((a) => String(a.key));
-            // Choose the most restrictive explicitly granted mode if any exist; otherwise defaultScopeMode.
+        // index: pack -> verb -> present scope modes
+        const present = new Map();
+        for (const a of actionCatalog) {
+            const k = String(a.key || '').trim().toLowerCase();
+            const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
+            if (!m)
+                continue;
+            const pack = m[1];
+            const verb = m[2];
+            const mode = m[3];
+            if (!present.has(pack))
+                present.set(pack, { read: new Set(), write: new Set(), delete: new Set() });
+            present.get(pack)[verb].add(mode);
+        }
+        function baseDefaultForVerb(pack, verb) {
+            const modes = present.get(pack)?.[verb];
+            const allowed = modes ? Array.from(modes.values()) : [];
+            const isOnOffOnly = allowed.includes('none') &&
+                allowed.includes('any') &&
+                !allowed.includes('own') &&
+                !allowed.includes('ldd');
+            if (isOnOffOnly)
+                return templateRoleEffective === 'admin' ? 'any' : 'none';
+            return defaultScopeMode;
+        }
+        function pick(pack, verb) {
+            const modes = present.get(pack)?.[verb];
+            if (!modes || modes.size === 0)
+                return baseDefaultForVerb(pack, verb);
             for (const mode of precedence) {
-                const key = `crm.${verb}.scope.${mode}`;
-                if (candidates.includes(key) && isActionExplicitEffective(key))
+                if (!modes.has(mode))
+                    continue;
+                const key = `${pack}.${verb}.scope.${mode}`;
+                if (isActionExplicitEffective(key))
                     return mode;
             }
-            return defaultScopeMode;
-        };
-        return {
-            read: pick('read'),
-            write: pick('write'),
-            delete: pick('delete'),
-        };
-    }, [actionCatalog, isActionExplicitEffective, defaultScopeMode]);
+            return baseDefaultForVerb(pack, verb);
+        }
+        const out = new Map();
+        for (const pack of present.keys()) {
+            out.set(pack, { read: pick(pack, 'read'), write: pick(pack, 'write'), delete: pick(pack, 'delete') });
+        }
+        return out;
+    }, [actionCatalog, isActionExplicitEffective, defaultScopeMode, templateRoleEffective]);
     const hasPendingActionChange = useCallback((actionKey) => {
         const key = String(actionKey || '').trim();
         const pending = pendingActionChanges.get(key);
@@ -939,8 +965,9 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                 const isExpanded = expandedPacks.has(pack.name);
                                 const accessSummary = computePackAccessSummary(pack);
                                 const hasEffective = accessSummary.effective > 0 || pack.grantedMetrics > 0;
-                                const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
-                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [isCrmPack && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                const packKey = String(pack.name || '').trim().toLowerCase();
+                                const rootSummary = packRootScopeSummaryByPack.get(packKey);
+                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [rootSummary && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", rootSummary.read === 'none' ? 'None' : rootSummary.read === 'any' ? 'Any' : rootSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", rootSummary.write === 'none' ? 'None' : rootSummary.write === 'any' ? 'Any' : rootSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", rootSummary.delete === 'none' ? 'None' : rootSummary.delete === 'any' ? 'Any' : rootSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
                                                         const grouped = new Map();
                                                         const other = [];
                                                         for (const a of pack.actions) {
@@ -1064,26 +1091,23 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 baseNode.children.push(verbNode);
                                                             }
                                                         }
-                                                        // Attach non-scope actions (like create) under derived base nodes ONLY for CRM,
-                                                        // since non-CRM packs also render a flat list below (would otherwise double-render).
-                                                        if (String(pack.name || '').trim().toLowerCase() === 'crm') {
-                                                            for (const a of other) {
-                                                                const baseId = baseIdFromActionKey(a.key);
-                                                                if (!baseId)
-                                                                    continue;
-                                                                const n = getOrCreateNode(baseId, 'base');
-                                                                if (!n.actions)
-                                                                    n.actions = [];
-                                                                n.actions.push(a);
-                                                            }
-                                                            for (const n of nodeById.values()) {
-                                                                if (n.actions && n.actions.length > 0) {
-                                                                    n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-                                                                }
+                                                        // Attach attachable non-scope actions (like `{pack}.create` / `{pack}.{entity}.create`)
+                                                        // under derived base nodes for any pack that has a scope tree, so we avoid per-pack hardcoding.
+                                                        for (const a of other) {
+                                                            const baseId = baseIdFromActionKey(a.key);
+                                                            if (!baseId)
+                                                                continue;
+                                                            const n = getOrCreateNode(baseId, 'base');
+                                                            if (!n.actions)
+                                                                n.actions = [];
+                                                            n.actions.push(a);
+                                                        }
+                                                        for (const n of nodeById.values()) {
+                                                            if (n.actions && n.actions.length > 0) {
+                                                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
                                                             }
                                                         }
                                                         // Attach derived-gated pages (read-only) under nodes using route authz metadata.
-                                                        // Example: CRM Setup should show its 4 setup pages under `crm.setup`.
                                                         for (const r of routes) {
                                                             if (!r?.authz?.entity || !r?.authz?.verb)
                                                                 continue;
@@ -1096,7 +1120,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             const entity = String(r.authz.entity || '').trim().toLowerCase();
                                                             if (!entity)
                                                                 continue;
-                                                            const baseId = `${packName}.${entity}`;
+                                                            const baseId = entity.startsWith(`${packName}.`) ? entity : `${packName}.${entity}`;
                                                             const n = getOrCreateNode(baseId, 'base');
                                                             if (!n.pages)
                                                                 n.pages = [];
@@ -1355,7 +1379,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                                                         }, children: [_jsx("option", { value: "on", children: "On" }), _jsx("option", { value: "off", children: "Off" })] }), !isOverrideNow && pending === undefined ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "inherited" })) : isOverrideNow ? (_jsx(Badge, { variant: "info", className: "text-xs", children: "override" })) : null, showClear ? (_jsx(Button, { size: "sm", variant: "ghost", disabled: anySaving, onClick: () => setActionGrantLocal(key, false), title: "Clear (remove explicit grant; fall back to template default)", children: "Clear" })) : null] }));
                                                                                         })()) : (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "text-xs text-gray-400", children: "Enabled:" }), _jsx(Checkbox, { checked: Boolean(a.explicit || a.default_enabled), onChange: () => toggleActionGrantLocal(a.key), disabled: anySaving })] })), hasPendingActionChange(a.key) ? (_jsx(Badge, { variant: "warning", className: "text-xs", children: "unsaved" })) : null] })] }, a.key))) })), baseChildren.map((c) => renderBaseNode(c, depth + 1, nextInherited))] }, node.id));
                                                         }
-                                                        return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-4 space-y-1", children: [_jsx("div", { className: "text-xs text-gray-500 mb-2", children: "Scope Policy Tree \u2014 override any branch; collapsed nodes inherit from parents" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), String(pack.name || '').toLowerCase() !== 'crm' && (_jsx("div", { className: "space-y-1 ml-6", children: other.map((a) => {
+                                                        return (_jsxs(_Fragment, { children: [groups.length > 0 && (_jsxs("div", { className: "ml-6 mb-4 space-y-1", children: [_jsx("div", { className: "text-xs text-gray-500 mb-2", children: "Scope Policy Tree \u2014 override any branch; collapsed nodes inherit from parents" }), roots.map((r) => renderBaseNode(r, 0, { read: null, write: null, delete: null }))] })), other.filter((a) => baseIdFromActionKey(a.key) === null).length > 0 && (_jsx("div", { className: "space-y-1 ml-6", children: other.filter((a) => baseIdFromActionKey(a.key) === null).map((a) => {
                                                                         return (_jsxs("div", { className: `flex items-center justify-between py-1.5 px-2 rounded ${a.explicit && !a.default_enabled
                                                                                 ? 'bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800'
                                                                                 : a.default_enabled

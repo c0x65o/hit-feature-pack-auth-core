@@ -335,25 +335,52 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return actionGrantSet.has(key);
   }, [pendingActionChanges, actionGrantSet]);
 
-  const crmHeaderSummary = useMemo(() => {
+  const packRootScopeSummaryByPack = useMemo(() => {
+    type ScopeVerb = 'read' | 'write' | 'delete';
     const precedence: ScopeModeValue[] = ['none', 'own', 'ldd', 'any'];
-    const pick = (verb: 'read' | 'write' | 'delete'): ScopeModeValue => {
-      const candidates = actionCatalog
-        .filter((a) => String(a.key || '').toLowerCase().startsWith(`crm.${verb}.scope.`))
-        .map((a) => String(a.key));
-      // Choose the most restrictive explicitly granted mode if any exist; otherwise defaultScopeMode.
-      for (const mode of precedence) {
-        const key = `crm.${verb}.scope.${mode}`;
-        if (candidates.includes(key) && isActionExplicitEffective(key)) return mode;
-      }
+
+    // index: pack -> verb -> present scope modes
+    const present = new Map<string, Record<ScopeVerb, Set<ScopeModeValue>>>();
+    for (const a of actionCatalog) {
+      const k = String(a.key || '').trim().toLowerCase();
+      const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
+      if (!m) continue;
+      const pack = m[1];
+      const verb = m[2] as ScopeVerb;
+      const mode = m[3] as ScopeModeValue;
+      if (!present.has(pack)) present.set(pack, { read: new Set(), write: new Set(), delete: new Set() });
+      present.get(pack)![verb].add(mode);
+    }
+
+    function baseDefaultForVerb(pack: string, verb: ScopeVerb): ScopeModeValue {
+      const modes = present.get(pack)?.[verb];
+      const allowed = modes ? Array.from(modes.values()) : [];
+      const isOnOffOnly =
+        allowed.includes('none') &&
+        allowed.includes('any') &&
+        !allowed.includes('own') &&
+        !allowed.includes('ldd');
+      if (isOnOffOnly) return templateRoleEffective === 'admin' ? 'any' : 'none';
       return defaultScopeMode;
-    };
-    return {
-      read: pick('read'),
-      write: pick('write'),
-      delete: pick('delete'),
-    };
-  }, [actionCatalog, isActionExplicitEffective, defaultScopeMode]);
+    }
+
+    function pick(pack: string, verb: ScopeVerb): ScopeModeValue {
+      const modes = present.get(pack)?.[verb];
+      if (!modes || modes.size === 0) return baseDefaultForVerb(pack, verb);
+      for (const mode of precedence) {
+        if (!modes.has(mode)) continue;
+        const key = `${pack}.${verb}.scope.${mode}`;
+        if (isActionExplicitEffective(key)) return mode;
+      }
+      return baseDefaultForVerb(pack, verb);
+    }
+
+    const out = new Map<string, { read: ScopeModeValue; write: ScopeModeValue; delete: ScopeModeValue }>();
+    for (const pack of present.keys()) {
+      out.set(pack, { read: pick(pack, 'read'), write: pick(pack, 'write'), delete: pick(pack, 'delete') });
+    }
+    return out;
+  }, [actionCatalog, isActionExplicitEffective, defaultScopeMode, templateRoleEffective]);
 
   const hasPendingActionChange = useCallback((actionKey: string): boolean => {
     const key = String(actionKey || '').trim();
@@ -1274,7 +1301,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
             const isExpanded = expandedPacks.has(pack.name);
             const accessSummary = computePackAccessSummary(pack);
             const hasEffective = accessSummary.effective > 0 || pack.grantedMetrics > 0;
-            const isCrmPack = String(pack.name || '').toLowerCase() === 'crm';
+            const packKey = String(pack.name || '').trim().toLowerCase();
+            const rootSummary = packRootScopeSummaryByPack.get(packKey);
 
             return (
               <div key={pack.name} className="border rounded-lg overflow-hidden">
@@ -1291,11 +1319,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     <span className="font-semibold">{pack.title || titleCase(pack.name)}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
-                    {isCrmPack && (
+                    {rootSummary && (
                       <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
-                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">R: {crmHeaderSummary.read === 'none' ? 'None' : crmHeaderSummary.read === 'any' ? 'Any' : crmHeaderSummary.read === 'ldd' ? 'LDD' : 'Own'}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">W: {crmHeaderSummary.write === 'none' ? 'None' : crmHeaderSummary.write === 'any' ? 'Any' : crmHeaderSummary.write === 'ldd' ? 'LDD' : 'Own'}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">D: {crmHeaderSummary.delete === 'none' ? 'None' : crmHeaderSummary.delete === 'any' ? 'Any' : crmHeaderSummary.delete === 'ldd' ? 'LDD' : 'Own'}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
+                          R: {rootSummary.read === 'none' ? 'None' : rootSummary.read === 'any' ? 'Any' : rootSummary.read === 'ldd' ? 'LDD' : 'Own'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
+                          W: {rootSummary.write === 'none' ? 'None' : rootSummary.write === 'any' ? 'Any' : rootSummary.write === 'ldd' ? 'LDD' : 'Own'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
+                          D: {rootSummary.delete === 'none' ? 'None' : rootSummary.delete === 'any' ? 'Any' : rootSummary.delete === 'ldd' ? 'LDD' : 'Own'}
+                        </span>
                       </div>
                     )}
                     {pack.actionCount > 0 && (
@@ -1491,25 +1525,22 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
                           }
 
-                          // Attach non-scope actions (like create) under derived base nodes ONLY for CRM,
-                          // since non-CRM packs also render a flat list below (would otherwise double-render).
-                          if (String(pack.name || '').trim().toLowerCase() === 'crm') {
-                            for (const a of other) {
-                              const baseId = baseIdFromActionKey(a.key);
-                              if (!baseId) continue;
-                              const n = getOrCreateNode(baseId, 'base');
-                              if (!n.actions) n.actions = [];
-                              n.actions.push(a);
-                            }
-                            for (const n of nodeById.values()) {
-                              if (n.actions && n.actions.length > 0) {
-                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-                              }
+                          // Attach attachable non-scope actions (like `{pack}.create` / `{pack}.{entity}.create`)
+                          // under derived base nodes for any pack that has a scope tree, so we avoid per-pack hardcoding.
+                          for (const a of other) {
+                            const baseId = baseIdFromActionKey(a.key);
+                            if (!baseId) continue;
+                            const n = getOrCreateNode(baseId, 'base');
+                            if (!n.actions) n.actions = [];
+                            n.actions.push(a);
+                          }
+                          for (const n of nodeById.values()) {
+                            if (n.actions && n.actions.length > 0) {
+                              n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
                             }
                           }
 
                           // Attach derived-gated pages (read-only) under nodes using route authz metadata.
-                          // Example: CRM Setup should show its 4 setup pages under `crm.setup`.
                           for (const r of routes) {
                             if (!r?.authz?.entity || !r?.authz?.verb) continue;
                             // Only show pages that opt-in via YAML (keeps activities/contacts/etc clean; setup can show its 4 routes).
@@ -1518,7 +1549,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             if (!packName || packName !== String(pack.name || '').trim().toLowerCase()) continue;
                             const entity = String(r.authz.entity || '').trim().toLowerCase();
                             if (!entity) continue;
-                            const baseId = `${packName}.${entity}`;
+                            const baseId = entity.startsWith(`${packName}.`) ? entity : `${packName}.${entity}`;
                             const n = getOrCreateNode(baseId, 'base');
                             if (!n.pages) n.pages = [];
                             n.pages.push({
@@ -2027,10 +2058,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 </div>
                               )}
 
-                              {/* For CRM, "other" actions are attached into the tree above. Keep flat list for non-CRM packs. */}
-                              {String(pack.name || '').toLowerCase() !== 'crm' && (
+                              {/* Non-scope actions that can't be attached into the scope tree remain here. */}
+                              {other.filter((a) => baseIdFromActionKey(a.key) === null).length > 0 && (
                                 <div className="space-y-1 ml-6">
-                                  {other.map((a) => {
+                                  {other.filter((a) => baseIdFromActionKey(a.key) === null).map((a) => {
                             return (
                               <div
                                 key={a.key}
