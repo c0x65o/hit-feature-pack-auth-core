@@ -371,10 +371,6 @@ permissions:
       label: "Auth-Core Read Scope = Own"
       description: "Read only auth-core entities you own (not applicable for org dimensions)."
       default_enabled: false
-    - key: auth-core.read.scope.ldd
-      label: "Auth-Core Read Scope = LDD"
-      description: "Read auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
-      default_enabled: false
 
     - key: auth-core.write.scope.none
       label: "Auth-Core Write Scope = None"
@@ -388,10 +384,6 @@ permissions:
       label: "Auth-Core Write Scope = Own"
       description: "Edit only auth-core entities you own (not applicable for org dimensions)."
       default_enabled: false
-    - key: auth-core.write.scope.ldd
-      label: "Auth-Core Write Scope = LDD"
-      description: "Edit auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
-      default_enabled: false
 
     - key: auth-core.delete.scope.none
       label: "Auth-Core Delete Scope = None"
@@ -404,10 +396,6 @@ permissions:
     - key: auth-core.delete.scope.own
       label: "Auth-Core Delete Scope = Own"
       description: "Delete only auth-core entities you own (not applicable for org dimensions)."
-      default_enabled: false
-    - key: auth-core.delete.scope.ldd
-      label: "Auth-Core Delete Scope = LDD"
-      description: "Delete auth-core entities you own, or that match your L/D/D scope (not applicable for org dimensions)."
       default_enabled: false
 
     # Locations override (optional): if set, overrides auth-core.read.scope.* for locations only.
