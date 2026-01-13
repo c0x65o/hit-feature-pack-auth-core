@@ -5,8 +5,8 @@ import { Plus } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
 import { useServerDataTableState } from '@hit/ui-kit';
+import { useEntityDataTableColumns, type DataTableColumn } from '@hit/ui-kit';
 import { useEntityUiSpec } from './useHitUiSpecs';
-import { useEntityDataTableColumns, type DataTableColumn } from './entityTable';
 import { useEntityDataSource, type ListQueryArgs as DsListQueryArgs } from './entityDataSources';
 
 type ListSpec = {
@@ -19,7 +19,6 @@ type ListSpec = {
   initialColumnVisibility?: Record<string, boolean>;
   initialSorting?: Array<{ id: string; desc?: boolean }>;
   columns?: any;
-  mobileColumnKeys?: string[];
 };
 
 type ListQueryArgs = {

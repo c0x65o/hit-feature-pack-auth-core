@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import type { DataTableColumn } from './entityTable';
+import type { DataTableColumn } from '@hit/ui-kit';
 import { formatDate, formatDateTime } from '@hit/sdk';
 import {
   useAuthFeatures,

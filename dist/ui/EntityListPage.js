@@ -5,8 +5,8 @@ import { Plus } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
 import { useServerDataTableState } from '@hit/ui-kit';
+import { useEntityDataTableColumns } from '@hit/ui-kit';
 import { useEntityUiSpec } from './useHitUiSpecs';
-import { useEntityDataTableColumns } from './entityTable';
 import { useEntityDataSource } from './entityDataSources';
 export function EntityListPage({ entityKey, onNavigate, useListData, customRenderers, renderRowActions, emptyMessage, }) {
     const { Page, Card, Button, DataTable, Modal, AlertDialog, Alert, Spinner } = useUi();

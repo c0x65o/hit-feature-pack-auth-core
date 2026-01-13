@@ -1,5 +1,5 @@
 import React from 'react';
-import { type DataTableColumn } from './entityTable';
+import { type DataTableColumn } from '@hit/ui-kit';
 type ListQueryArgs = {
     page: number;
     pageSize: number;
