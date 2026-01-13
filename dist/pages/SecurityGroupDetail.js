@@ -527,7 +527,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 return null;
             };
             const inherited = findInherited();
-            const inheritedOrDefault = inherited ?? baseDefault;
+            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+            // treat it as "no inheritance" and fall back to baseDefault.
+            const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
+            const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
             return (explicitMode ?? inheritedOrDefault);
         }
         function isOverrideForGroupKey(groupKey) {
@@ -575,7 +578,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 return null;
             };
             const inherited = findInherited();
-            const inheritedOrDefault = inherited ?? baseDefault;
+            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+            // treat it as "no inheritance" and fall back to baseDefault.
+            const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
+            const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
             return explicitMode !== inheritedOrDefault;
         }
         // Scope dropdowns (one per groupKey)
