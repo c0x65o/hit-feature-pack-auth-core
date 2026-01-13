@@ -2,8 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from 'react';
 import { RefreshCw, Eye } from 'lucide-react';
-import { useUi } from '@hit/ui-kit';
-import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
+import { useServerDataTableState, useUi } from '@hit/ui-kit';
 import { formatDateTime } from '@hit/sdk';
 import { useAuditLog, useAuthAdminConfig } from '../hooks/useAuthAdmin';
 export function AuditLog({ onNavigate }) {

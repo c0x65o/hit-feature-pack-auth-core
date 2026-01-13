@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
-import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { useEntityUiSpec } from './useHitUiSpecs';
 import { useEntityDataTableColumns, type DataTableColumn } from './entityTable';
 import { useEntityDataSource, type ListQueryArgs as DsListQueryArgs } from './entityDataSources';
@@ -149,6 +149,7 @@ export function EntityListPage({
 
   const columns = useEntityDataTableColumns({
     listSpec: listSpec as any,
+    fieldsMap: (uiSpec as any)?.fields || null,
     isMobile,
     customRenderers: useMemo(() => {
       const base = { ...(dsRenderers || {}), ...(customRenderers || {}) } as Record<string, DataTableColumn['render']>;

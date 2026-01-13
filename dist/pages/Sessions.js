@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Trash2, RefreshCw, Monitor, Smartphone, Globe } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
 import { useAlertDialog } from '@hit/ui-kit/hooks/useAlertDialog';
-import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
+import { useServerDataTableState } from '@hit/ui-kit';
 import { formatDateTime, formatRelativeTime } from '@hit/sdk';
 import { useSessions, useSessionMutations } from '../hooks/useAuthAdmin';
 export function Sessions({ onNavigate }) {

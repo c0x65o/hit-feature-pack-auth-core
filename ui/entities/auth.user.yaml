@@ -137,7 +137,8 @@ entities:
     fields:
       id: { type: text, label: ID, readOnly: true }
       email: { type: email, label: Email, required: true }
-      password: { type: password, label: Password, placeholder: "Set an initial password (create only)" }
+      # Canonical secret/password type is `secret` (mobile + web renderers support it).
+      password: { type: secret, label: Password, placeholder: "Set an initial password (create only)" }
       role: { type: select, label: Role, optionSource: auth.availableRoles }
       first_name: { type: text, label: First Name }
       last_name: { type: text, label: Last Name }

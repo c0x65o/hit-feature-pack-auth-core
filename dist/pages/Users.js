@@ -2,8 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Trash2, UserPlus, Lock } from 'lucide-react';
-import { useUi } from '@hit/ui-kit';
-import { useServerDataTableState } from '@hit/ui-kit/hooks/useServerDataTableState';
+import { useServerDataTableState, useUi } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
 import { useUsers, useUserMutations, useAuthAdminConfig, useProfileFields } from '../hooks/useAuthAdmin';
 export function Users({ onNavigate }) {
