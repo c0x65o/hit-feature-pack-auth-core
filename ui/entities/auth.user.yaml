@@ -96,24 +96,13 @@ entities:
         created_at: false
         last_login: true
       columns:
-        - key: email
-          label: Email
-          sortable: true
-          filterType: string
-        - key: role
-          label: Role
-        - key: status
-          label: Status
-        - key: email_verified
-          label: Verified
-        - key: two_factor_enabled
-          label: 2FA
-        - key: created_at
-          label: Created
-          sortable: true
-        - key: last_login
-          label: Last Login
-          sortable: true
+        - email
+        - role
+        - status
+        - email_verified
+        - two_factor_enabled
+        - created_at
+        - last_login
         - key: actions
           label: ""
           sortable: false
