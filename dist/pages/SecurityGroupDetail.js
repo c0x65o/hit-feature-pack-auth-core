@@ -160,7 +160,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
     }, []);
     // Root/default scope mode depends on whether this permission set is an "admin template".
     // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
-    const defaultScopeMode = permissionSet?.template_role === 'admin' ? 'own' : 'none';
+    // Template default for scope-mode dropdowns:
+    // - User template: OWN by default (matches auth module bootstrap semantics)
+    // - Admin template: OWN by default (strict `require_mode` may force ANY in specific places)
+    // - Non-template groups: NONE until explicitly granted
+    const templateRoleEffective = (() => {
+        const tr = String(permissionSet?.template_role || '').trim().toLowerCase();
+        if (tr === 'admin' || tr === 'user')
+            return tr;
+        const name = String(permissionSet?.name || '').trim().toLowerCase();
+        if (name === 'system admin')
+            return 'admin';
+        if (name === 'default access')
+            return 'user';
+        return null;
+    })();
+    const defaultScopeMode = templateRoleEffective ? 'own' : 'none';
     // ─────────────────────────────────────────────────────────────────────────
     // DERIVED DATA
     // ─────────────────────────────────────────────────────────────────────────
@@ -305,7 +320,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                         .map((x) => String(x || '').trim().toLowerCase())
                         .filter(Boolean)
                     : [];
-            const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
+            const roleKey = String(templateRoleEffective || '').trim().toLowerCase();
             const defaultOn = roleKey === 'admin'
                 ? dra.includes('admin')
                 : roleKey === 'user'
@@ -348,7 +363,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             byPack.set(k, arr);
         }
         return { byPack, APP_PACK_ID };
-    }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges, permissionSet?.template_role]);
+    }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges, templateRoleEffective]);
     // Filter by search (pages and actions only)
     const filteredPacks = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -1038,19 +1053,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 baseNode.children.push(verbNode);
                                                             }
                                                         }
-                                                        // Attach non-scope actions (like create) under derived base nodes for ALL packs.
-                                                        for (const a of other) {
-                                                            const baseId = baseIdFromActionKey(a.key);
-                                                            if (!baseId)
-                                                                continue;
-                                                            const n = getOrCreateNode(baseId, 'base');
-                                                            if (!n.actions)
-                                                                n.actions = [];
-                                                            n.actions.push(a);
-                                                        }
-                                                        for (const n of nodeById.values()) {
-                                                            if (n.actions && n.actions.length > 0) {
-                                                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+                                                        // Attach non-scope actions (like create) under derived base nodes ONLY for CRM,
+                                                        // since non-CRM packs also render a flat list below (would otherwise double-render).
+                                                        if (String(pack.name || '').trim().toLowerCase() === 'crm') {
+                                                            for (const a of other) {
+                                                                const baseId = baseIdFromActionKey(a.key);
+                                                                if (!baseId)
+                                                                    continue;
+                                                                const n = getOrCreateNode(baseId, 'base');
+                                                                if (!n.actions)
+                                                                    n.actions = [];
+                                                                n.actions.push(a);
+                                                            }
+                                                            for (const n of nodeById.values()) {
+                                                                if (n.actions && n.actions.length > 0) {
+                                                                    n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+                                                                }
                                                             }
                                                         }
                                                         // Attach derived-gated pages (read-only) under nodes using route authz metadata.
@@ -1142,15 +1160,16 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 !allowedModes.includes('own') &&
                                                                 !allowedModes.includes('ldd');
                                                             // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
-                                                            // Admin templates default to ANY (on). Non-admin templates default to NONE (off).
+                                                            // Admin templates default to ANY (on). User templates default to NONE (off).
                                                             const baseDefault = isOnOffOnly
-                                                                ? (permissionSet?.template_role === 'admin' ? 'any' : 'none')
+                                                                ? (templateRoleEffective === 'admin' ? 'any' : 'none')
                                                                 : defaultScopeMode;
                                                             const inheritedModeSafe = inheritedMode && allowedModes.includes(inheritedMode) ? inheritedMode : null;
-                                                            const effectiveValue = explicitValue ?? inheritedModeSafe ?? baseDefault;
-                                                            const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
+                                                            const baselineValue = inheritedModeSafe ?? baseDefault;
+                                                            const effectiveValue = explicitValue ?? baselineValue;
+                                                            const isSameAsBaseline = Boolean(explicitValue && explicitValue === baselineValue);
                                                             const status = explicitValue
-                                                                ? (isSameAsInherited ? 'same' : 'override')
+                                                                ? (isSameAsBaseline ? 'same' : 'override')
                                                                 : inheritedModeSafe
                                                                     ? 'inherited'
                                                                     : 'default';

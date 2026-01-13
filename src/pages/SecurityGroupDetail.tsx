@@ -245,7 +245,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   // Root/default scope mode depends on whether this permission set is an "admin template".
   // Admin templates default to OWN (safe + useful). Non-admin templates default to NONE (fail-closed).
-  const defaultScopeMode: ScopeModeValue = permissionSet?.template_role === 'admin' ? 'own' : 'none';
+  // Template default for scope-mode dropdowns:
+  // - User template: OWN by default (matches auth module bootstrap semantics)
+  // - Admin template: OWN by default (strict `require_mode` may force ANY in specific places)
+  // - Non-template groups: NONE until explicitly granted
+  const templateRoleEffective: 'admin' | 'user' | null = (() => {
+    const tr = String((permissionSet as any)?.template_role || '').trim().toLowerCase();
+    if (tr === 'admin' || tr === 'user') return tr as any;
+    const name = String((permissionSet as any)?.name || '').trim().toLowerCase();
+    if (name === 'system admin') return 'admin';
+    if (name === 'default access') return 'user';
+    return null;
+  })();
+
+  const defaultScopeMode: ScopeModeValue = templateRoleEffective ? 'own' : 'none';
 
   // ─────────────────────────────────────────────────────────────────────────
   // DERIVED DATA
@@ -414,7 +427,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
               .map((x: any) => String(x || '').trim().toLowerCase())
               .filter(Boolean)
         : [];
-      const roleKey = String(permissionSet?.template_role || '').trim().toLowerCase();
+      const roleKey = String(templateRoleEffective || '').trim().toLowerCase();
       const defaultOn =
         roleKey === 'admin'
           ? dra.includes('admin')
@@ -463,7 +476,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     }
 
     return { byPack, APP_PACK_ID };
-  }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges, permissionSet?.template_role]);
+  }, [metricsCatalog, metricGrantIdByKey, pendingMetricChanges, templateRoleEffective]);
 
   // Filter by search (pages and actions only)
   const filteredPacks = useMemo(() => {
@@ -1467,17 +1480,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             }
                           }
 
-                          // Attach non-scope actions (like create) under derived base nodes for ALL packs.
-                          for (const a of other) {
-                            const baseId = baseIdFromActionKey(a.key);
-                            if (!baseId) continue;
-                            const n = getOrCreateNode(baseId, 'base');
-                            if (!n.actions) n.actions = [];
-                            n.actions.push(a);
-                          }
-                          for (const n of nodeById.values()) {
-                            if (n.actions && n.actions.length > 0) {
-                              n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+                          // Attach non-scope actions (like create) under derived base nodes ONLY for CRM,
+                          // since non-CRM packs also render a flat list below (would otherwise double-render).
+                          if (String(pack.name || '').trim().toLowerCase() === 'crm') {
+                            for (const a of other) {
+                              const baseId = baseIdFromActionKey(a.key);
+                              if (!baseId) continue;
+                              const n = getOrCreateNode(baseId, 'base');
+                              if (!n.actions) n.actions = [];
+                              n.actions.push(a);
+                            }
+                            for (const n of nodeById.values()) {
+                              if (n.actions && n.actions.length > 0) {
+                                n.actions.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+                              }
                             }
                           }
 
@@ -1566,19 +1582,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               !allowedModes.includes('ldd');
 
                             // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
-                            // Admin templates default to ANY (on). Non-admin templates default to NONE (off).
+                            // Admin templates default to ANY (on). User templates default to NONE (off).
                             const baseDefault: ScopeModeValue = isOnOffOnly
-                              ? (permissionSet?.template_role === 'admin' ? 'any' : 'none')
+                              ? (templateRoleEffective === 'admin' ? 'any' : 'none')
                               : defaultScopeMode;
 
                             const inheritedModeSafe: ScopeModeValue | null =
                               inheritedMode && allowedModes.includes(inheritedMode) ? inheritedMode : null;
 
-                            const effectiveValue: ScopeModeValue = explicitValue ?? inheritedModeSafe ?? baseDefault;
-                            const isSameAsInherited = Boolean(explicitValue && inheritedMode && explicitValue === inheritedMode);
+                            const baselineValue: ScopeModeValue = inheritedModeSafe ?? baseDefault;
+                            const effectiveValue: ScopeModeValue = explicitValue ?? baselineValue;
+                            const isSameAsBaseline = Boolean(explicitValue && explicitValue === baselineValue);
                             const status: 'override' | 'inherited' | 'default' | 'same' =
                               explicitValue
-                                ? (isSameAsInherited ? 'same' : 'override')
+                                ? (isSameAsBaseline ? 'same' : 'override')
                                 : inheritedModeSafe
                                   ? 'inherited'
                                   : 'default';
