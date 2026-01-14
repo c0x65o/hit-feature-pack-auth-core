@@ -3,7 +3,6 @@ import { HIT_CONFIG } from '@/lib/hit-config.generated';
 import { getDb } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import crypto from 'crypto';
-import { promisify } from 'util';
 function json(data, init) {
     return NextResponse.json(data, {
         status: init?.status ?? 200,
@@ -162,14 +161,24 @@ function getEmailVerificationEnabledFromConfig() {
     const auth = HIT_CONFIG?.auth ?? {};
     return normalizeBool(auth.emailVerification, true);
 }
-const scryptAsync = promisify(crypto.scrypt);
+// Node's `promisify(crypto.scrypt)` loses the overload that accepts `options`, which we use.
+// Wrap it ourselves so TS is happy and we can pass N/r/p.
+function scryptAsync(password, salt, keyLen, options) {
+    return new Promise((resolve, reject) => {
+        crypto.scrypt(password, salt, keyLen, options, (err, derivedKey) => {
+            if (err)
+                return reject(err);
+            resolve(derivedKey);
+        });
+    });
+}
 async function hashPassword(password) {
     const salt = crypto.randomBytes(16);
     const N = 16384;
     const r = 8;
     const p = 1;
     const keyLen = 64;
-    const dk = (await scryptAsync(password, salt, keyLen, { N, r, p }));
+    const dk = await scryptAsync(password, salt, keyLen, { N, r, p });
     return `scrypt$${N}$${r}$${p}$${salt.toString('base64')}$${dk.toString('base64')}`;
 }
 async function verifyPassword(password, stored) {
@@ -189,7 +198,7 @@ async function verifyPassword(password, stored) {
         const expected = Buffer.from(String(dkB64 || ''), 'base64');
         if (!salt.length || !expected.length)
             return false;
-        const dk = (await scryptAsync(password, salt, expected.length, { N, r, p }));
+        const dk = await scryptAsync(password, salt, expected.length, { N, r, p });
         if (dk.length !== expected.length)
             return false;
         return crypto.timingSafeEqual(dk, expected);
@@ -236,7 +245,10 @@ function issueAccessToken(opts) {
 }
 async function tryWriteAuthAuditEvent(args) {
     try {
-        const mod = await import('@hit/feature-pack-audit-core/server/lib/write-audit').catch(() => null);
+        // NOTE: Keep module path non-literal so TS doesn't require the audit-core package at build time.
+        // (Audit-core may not be installed in all apps yet.)
+        const modulePath = '@hit/feature-pack-audit-core/server/lib/write-audit';
+        const mod = await import(modulePath).catch(() => null);
         const writeAuditEvent = mod?.writeAuditEvent;
         if (!writeAuditEvent)
             return;
