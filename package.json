@@ -67,6 +67,7 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
+    "@hit/feature-pack-email-core": "*",
     "@hit/feature-pack-form-core": "*",
     "@hit/sdk": "*",
     "@hit/ui-kit": "*",
@@ -78,6 +79,9 @@
     "react-easy-crop": "^5.5.6"
   },
   "peerDependenciesMeta": {
+    "@hit/feature-pack-email-core": {
+      "optional": true
+    },
     "@hit/feature-pack-form-core": {
       "optional": true
     },
@@ -90,6 +94,7 @@
   },
   "devDependencies": {
     "@hit/feature-pack-stubs": "file:../../../packages/hit-feature-pack-stubs",
+    "@hit/feature-pack-email-core": "file:../hit-feature-pack-email-core",
     "@hit/feature-pack-form-core": "file:../hit-feature-pack-form-core",
     "@hit/sdk": "file:../../../hit-sdks/hit-sdk-typescript",
     "@hit/ui-kit": "file:../../../packages/hit-ui-kit-ts",

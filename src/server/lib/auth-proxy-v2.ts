@@ -174,7 +174,21 @@ function getEmailVerificationEnabledFromConfig(): boolean {
   return normalizeBool(auth.emailVerification, true);
 }
 
-const scryptAsync = promisify(crypto.scrypt);
+// Node's `promisify(crypto.scrypt)` loses the overload that accepts `options`, which we use.
+// Wrap it ourselves so TS is happy and we can pass N/r/p.
+function scryptAsync(
+  password: string,
+  salt: Buffer,
+  keyLen: number,
+  options: crypto.ScryptOptions
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keyLen, options, (err, derivedKey) => {
+      if (err) return reject(err);
+      resolve(derivedKey as Buffer);
+    });
+  });
+}
 
 async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
@@ -182,7 +196,7 @@ async function hashPassword(password: string): Promise<string> {
   const r = 8;
   const p = 1;
   const keyLen = 64;
-  const dk = (await scryptAsync(password, salt, keyLen, { N, r, p })) as Buffer;
+  const dk = await scryptAsync(password, salt, keyLen, { N, r, p });
   return `scrypt$${N}$${r}$${p}$${salt.toString('base64')}$${dk.toString('base64')}`;
 }
 
@@ -199,7 +213,7 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
     const salt = Buffer.from(String(saltB64 || ''), 'base64');
     const expected = Buffer.from(String(dkB64 || ''), 'base64');
     if (!salt.length || !expected.length) return false;
-    const dk = (await scryptAsync(password, salt, expected.length, { N, r, p })) as Buffer;
+    const dk = await scryptAsync(password, salt, expected.length, { N, r, p });
     if (dk.length !== expected.length) return false;
     return crypto.timingSafeEqual(dk, expected);
   } catch {
@@ -264,7 +278,10 @@ async function tryWriteAuthAuditEvent(args: {
   details?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
-    const mod = await import('@hit/feature-pack-audit-core/server/lib/write-audit').catch(() => null);
+    // NOTE: Keep module path non-literal so TS doesn't require the audit-core package at build time.
+    // (Audit-core may not be installed in all apps yet.)
+    const modulePath: string = '@hit/feature-pack-audit-core/server/lib/write-audit';
+    const mod = await import(modulePath).catch(() => null);
     const writeAuditEvent = (mod as any)?.writeAuditEvent as
       | ((
           dbOrTx: any,
@@ -993,7 +1010,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
     if (groupIds.length > 0) {
       assignmentWhere = sql`${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(
-        groupIds.map((gid) => sql`${gid}`),
+        groupIds.map((gid: string) => sql`${gid}`),
         sql`, `
       )}))`;
     }
@@ -1017,7 +1034,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         SELECT enabled
         FROM hit_auth_v2_group_action_permissions
         WHERE action_key = ${actionKey}
-          AND group_id::text IN (${sql.join(groupIds.map((gid) => sql`${gid}`), sql`, `)})
+          AND group_id::text IN (${sql.join(groupIds.map((gid: string) => sql`${gid}`), sql`, `)})
       `);
       const rows = (gp?.rows || []) as any[];
       if (rows.length > 0) {
