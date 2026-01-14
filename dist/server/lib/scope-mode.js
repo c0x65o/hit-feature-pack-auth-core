@@ -12,7 +12,7 @@ export async function resolveAuthCoreScopeMode(request, args) {
     const entityPrefix = entity ? `auth-core.${entity}.${verb}.scope` : `auth-core.${verb}.scope`;
     const globalPrefix = `auth-core.${verb}.scope`;
     // Most restrictive wins (first match returned).
-    const modes = ['none', 'own', 'ldd', 'any'];
+    const modes = ['none', 'own', 'location', 'department', 'division', 'all'];
     for (const m of modes) {
         const res = await checkAuthCoreAction(request, `${entityPrefix}.${m}`);
         if (res.ok)

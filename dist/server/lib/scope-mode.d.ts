@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-export type ScopeMode = 'none' | 'own' | 'ldd' | 'any';
+export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
 /**

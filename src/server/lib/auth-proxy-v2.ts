@@ -158,6 +158,9 @@ function buildFeaturesFromConfig(): Record<string, unknown> {
 
     // Roles: V2 is intentionally simple.
     available_roles: ['admin', 'user'],
+
+    // Admin tooling.
+    admin_impersonation: true,
   };
 }
 
@@ -227,7 +230,13 @@ function getRefreshTtlSeconds(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30 * 24 * 60 * 60; // 30d
 }
 
-function issueAccessToken(opts: { email: string; role: string; emailVerified: boolean }): string | NextResponse {
+function issueAccessToken(opts: {
+  email: string;
+  role: string;
+  emailVerified: boolean;
+  impersonatorEmail?: string | null;
+  impersonationSessionId?: string | null;
+}): string | NextResponse {
   const secret = getJwtSecret();
   if (!secret) return err('Auth not configured: HIT_AUTH_JWT_SECRET is missing', 500);
   const exp = nowSeconds() + getAccessTtlSeconds();
@@ -237,10 +246,66 @@ function issueAccessToken(opts: { email: string; role: string; emailVerified: bo
     email_verified: opts.emailVerified,
     role: opts.role,
     roles: [opts.role],
+    impersonator_email: opts.impersonatorEmail ?? null,
+    impersonation_session_id: opts.impersonationSessionId ?? null,
     exp,
     iat: nowSeconds(),
   };
   return signJwtHmac(payload, secret);
+}
+
+async function tryWriteAuthAuditEvent(args: {
+  req: NextRequest;
+  actorEmail: string;
+  action: string;
+  summary: string;
+  entityKind: string;
+  entityId?: string | null;
+  details?: Record<string, unknown> | null;
+}): Promise<void> {
+  try {
+    const mod = await import('@hit/feature-pack-audit-core/server/lib/write-audit').catch(() => null);
+    const writeAuditEvent = (mod as any)?.writeAuditEvent as
+      | ((
+          dbOrTx: any,
+          input: {
+            entityKind: string;
+            entityId?: string | null;
+            action: string;
+            summary: string;
+            details?: Record<string, unknown> | null;
+            actorId: string;
+            actorName?: string | null;
+            actorType?: 'user' | 'system' | 'api';
+            packName?: string | null;
+            method?: string | null;
+            path?: string | null;
+            ipAddress?: string | null;
+            userAgent?: string | null;
+          }
+        ) => Promise<void>)
+      | undefined;
+    if (!writeAuditEvent) return;
+
+    const url = new URL(args.req.url);
+    await writeAuditEvent(getDb(), {
+      entityKind: args.entityKind,
+      entityId: args.entityId ?? null,
+      action: args.action,
+      summary: args.summary,
+      details: args.details ?? null,
+      actorId: args.actorEmail,
+      actorName: args.actorEmail,
+      actorType: 'user',
+      packName: 'auth-core',
+      method: args.req.method,
+      path: url.pathname,
+      ipAddress: getClientIp(args.req),
+      userAgent: args.req.headers.get('user-agent'),
+    });
+  } catch {
+    // Audit is best-effort for auth flows; don't break login/logout.
+  }
 }
 
 async function createRefreshToken(db: any, opts: { email: string; req: NextRequest }) {
@@ -435,11 +500,33 @@ export async function tryHandleAuthV2Proxy(opts: {
       LIMIT 1
     `);
     const row = res?.rows?.[0] as any;
-    if (!row) return err('Invalid credentials', 401);
+    if (!row) {
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: email,
+        action: 'auth.login_failed',
+        summary: `Login failed for ${email}`,
+        entityKind: 'auth.user',
+        entityId: email,
+        details: { reason: 'user_not_found' },
+      });
+      return err('Invalid credentials', 401);
+    }
     if (row.locked) return err('Account is locked', 403);
     if (!row.password_hash) return err('Invalid credentials', 401);
     const ok = await verifyPassword(password, String(row.password_hash));
-    if (!ok) return err('Invalid credentials', 401);
+    if (!ok) {
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: row.email,
+        action: 'auth.login_failed',
+        summary: `Login failed for ${row.email}`,
+        entityKind: 'auth.user',
+        entityId: row.email,
+        details: { reason: 'bad_password' },
+      });
+      return err('Invalid credentials', 401);
+    }
 
     // Update last_login best-effort
     await db.execute(sql`UPDATE hit_auth_v2_users SET last_login = now(), updated_at = now() WHERE email = ${email}`);
@@ -452,6 +539,14 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (tokenOrErr instanceof NextResponse) return tokenOrErr;
 
     const refresh = await createRefreshToken(db, { email, req });
+    await tryWriteAuthAuditEvent({
+      req,
+      actorEmail: row.email,
+      action: 'auth.login',
+      summary: `Login successful for ${row.email}`,
+      entityKind: 'auth.user',
+      entityId: row.email,
+    });
     return json({
       token: tokenOrErr,
       refresh_token: refresh.token,
@@ -490,6 +585,14 @@ export async function tryHandleAuthV2Proxy(opts: {
     });
     if (tokenOrErr instanceof NextResponse) return tokenOrErr;
     const refresh = await createRefreshToken(db, { email, req });
+    await tryWriteAuthAuditEvent({
+      req,
+      actorEmail: email,
+      action: 'auth.refresh',
+      summary: `Token refreshed for ${email}`,
+      entityKind: 'auth.user',
+      entityId: email,
+    });
     return json({
       token: tokenOrErr,
       refresh_token: refresh.token,
@@ -505,6 +608,17 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (refreshToken) {
       await revokeRefreshToken(db, refreshToken);
     }
+    const u = requireUser(req);
+    if (!(u instanceof NextResponse)) {
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: u.email,
+        action: 'auth.logout',
+        summary: `Logout for ${u.email}`,
+        entityKind: 'auth.user',
+        entityId: u.email,
+      });
+    }
     return json({ ok: true });
   }
 
@@ -513,6 +627,143 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (u instanceof NextResponse) return u;
     const db = getDb();
     await revokeAllRefreshTokensForUser(db, u.email);
+    await tryWriteAuthAuditEvent({
+      req,
+      actorEmail: u.email,
+      action: 'auth.logout_all',
+      summary: `Logout-all for ${u.email}`,
+      entityKind: 'auth.user',
+      entityId: u.email,
+    });
+    return json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------------------
+  // IMPERSONATION
+  // ---------------------------------------------------------------------------
+  if (p0 === 'impersonate' && p1 === 'start' && m === 'POST') {
+    const gate = requireAdmin(req);
+    if (gate) return gate;
+
+    const admin = requireUser(req);
+    if (admin instanceof NextResponse) return admin;
+
+    const body = (await req.json().catch(() => ({}))) as any;
+    const user_email = String(body?.user_email || '').trim().toLowerCase();
+    if (!isEmail(user_email)) return err('user_email is required', 400);
+
+    const db = getDb();
+    const res = await db.execute(sql`
+      SELECT email, role, email_verified
+      FROM hit_auth_v2_users
+      WHERE email = ${user_email}
+      LIMIT 1
+    `);
+    const u = res?.rows?.[0] as any;
+    if (!u?.email) return err('User not found', 404);
+
+    const ip = getClientIp(req);
+    const ua = req.headers.get('user-agent');
+    const sess = await db.execute(sql`
+      INSERT INTO hit_auth_v2_impersonation_sessions (
+        admin_email, impersonated_email, started_at, ended_at, ended_reason, ip_address, user_agent
+      ) VALUES (
+        ${admin.email}, ${u.email}, now(), NULL, NULL, ${ip as any}, ${ua as any}
+      )
+      RETURNING id::text AS id
+    `);
+    const sessionId = String((sess?.rows?.[0] as any)?.id || '');
+
+    const tokenOrErr = issueAccessToken({
+      email: String(u.email),
+      role: String(u.role || 'user').toLowerCase(),
+      emailVerified: Boolean(u.email_verified),
+      impersonatorEmail: admin.email,
+      impersonationSessionId: sessionId || null,
+    });
+    if (tokenOrErr instanceof NextResponse) return tokenOrErr;
+
+    await tryWriteAuthAuditEvent({
+      req,
+      actorEmail: admin.email,
+      action: 'auth.impersonate_start',
+      summary: `Impersonation started: ${admin.email} -> ${u.email}`,
+      entityKind: 'auth.impersonation_session',
+      entityId: sessionId || null,
+      details: { admin_email: admin.email, impersonated_email: u.email },
+    });
+
+    return json({
+      token: tokenOrErr,
+      admin_email: admin.email,
+      impersonated_user: { email: u.email, email_verified: Boolean(u.email_verified), roles: [String(u.role || 'user')] },
+    });
+  }
+
+  if (p0 === 'impersonate' && p1 === 'end' && m === 'POST') {
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const session_id = String(body?.session_id || '').trim();
+
+    // Admin can end any session by id
+    if (session_id) {
+      const gate = requireAdmin(req);
+      if (gate) return gate;
+      const admin = requireUser(req);
+      if (admin instanceof NextResponse) return admin;
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_impersonation_sessions
+        SET ended_at = COALESCE(ended_at, now()), ended_reason = COALESCE(ended_reason, 'ended')
+        WHERE id = ${session_id}::uuid
+      `);
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: admin.email,
+        action: 'auth.impersonate_end',
+        summary: `Impersonation ended by admin: ${admin.email} (session ${session_id})`,
+        entityKind: 'auth.impersonation_session',
+        entityId: session_id,
+      });
+      return json({ ok: true });
+    }
+
+    // Otherwise: end "current" impersonation session inferred from JWT claims.
+    const token = extractBearer(req);
+    if (!token) return err('Authentication required', 401);
+    const secret = getJwtSecret();
+    if (!secret) return err('Auth not configured: HIT_AUTH_JWT_SECRET is missing', 500);
+    const claims = verifyJwtHmac(token, secret);
+    if (!claims) return err('Authentication required', 401);
+
+    const sid =
+      typeof (claims as any).impersonation_session_id === 'string'
+        ? String((claims as any).impersonation_session_id).trim()
+        : '';
+    const imp =
+      typeof (claims as any).impersonator_email === 'string'
+        ? String((claims as any).impersonator_email).trim()
+        : '';
+    const sub =
+      (typeof (claims as any).email === 'string' && String((claims as any).email).trim()) ||
+      (typeof (claims as any).sub === 'string' && String((claims as any).sub).trim()) ||
+      '';
+    if (!sid || !imp || !sub) return err('Not impersonating', 400);
+
+    await db.execute(sql`
+      UPDATE hit_auth_v2_impersonation_sessions
+      SET ended_at = COALESCE(ended_at, now()), ended_reason = COALESCE(ended_reason, 'ended')
+      WHERE id = ${sid}::uuid
+    `);
+    await tryWriteAuthAuditEvent({
+      req,
+      actorEmail: imp.toLowerCase(),
+      action: 'auth.impersonate_end',
+      summary: `Impersonation ended: ${imp} -> ${sub}`,
+      entityKind: 'auth.impersonation_session',
+      entityId: sid,
+      details: { admin_email: imp, impersonated_email: sub },
+    });
     return json({ ok: true });
   }
 

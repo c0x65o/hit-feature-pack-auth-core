@@ -53,26 +53,18 @@ async function canAccessAssignment(db, request, assignmentUserKey, assignmentDiv
     else if (mode === 'own') {
         return assignmentUserKey.toLowerCase() === user.email.toLowerCase();
     }
-    else if (mode === 'any') {
+    else if (mode === 'all') {
         return true;
     }
-    else if (mode === 'ldd') {
-        // Check if assignment is the current user's own
-        if (assignmentUserKey.toLowerCase() === user.email.toLowerCase()) {
-            return true;
-        }
-        // Check if assignment's division/department/location matches user's LDD scope
+    else if (mode === 'division' || mode === 'department' || mode === 'location') {
         const scopeIds = await fetchUserOrgScopeIds(db, user.sub);
-        if (assignmentDivisionId && scopeIds.divisionIds.includes(assignmentDivisionId)) {
-            return true;
+        if (mode === 'division') {
+            return Boolean(assignmentDivisionId && scopeIds.divisionIds.includes(assignmentDivisionId));
         }
-        if (assignmentDepartmentId && scopeIds.departmentIds.includes(assignmentDepartmentId)) {
-            return true;
+        if (mode === 'department') {
+            return Boolean(assignmentDepartmentId && scopeIds.departmentIds.includes(assignmentDepartmentId));
         }
-        if (assignmentLocationId && scopeIds.locationIds.includes(assignmentLocationId)) {
-            return true;
-        }
-        return false;
+        return Boolean(assignmentLocationId && scopeIds.locationIds.includes(assignmentLocationId));
     }
     return false;
 }

@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments, divisions, departments, locations } from "@/lib/feature-pack-schemas";
-import { eq, desc, and, or, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
 import { requireAuthCoreAction } from "../lib/require-action";
 import { extractUserFromRequest } from "../auth";
@@ -56,7 +56,7 @@ export async function GET(request) {
         const locationId = searchParams.get("locationId");
         // Build conditions
         const conditions = [];
-        // Apply scope-based filtering (explicit branching on none/own/ldd/any)
+        // Apply scope-based filtering (explicit branching on none/own/location/department/division/all)
         if (mode === 'none') {
             // Explicit deny: return empty results (fail-closed but non-breaking for list UI)
             conditions.push(sql `false`);
@@ -65,31 +65,29 @@ export async function GET(request) {
             // Only show the current user's own assignment
             conditions.push(eq(userOrgAssignments.userKey, user.email));
         }
-        else if (mode === 'ldd') {
-            // Show assignments where:
-            // 1. The assignment is the current user's own (own)
-            // 2. The assignment's division/department/location matches the user's LDD scope
+        else if (mode === 'location' || mode === 'department' || mode === 'division') {
+            // Match assignments in the user's org scope for the selected dimension.
             const scopeIds = await fetchUserOrgScopeIds(db, user.sub);
-            const ownCondition = eq(userOrgAssignments.userKey, user.email);
-            // For LDD matching, check if assignment's division/department/location matches user's scope
-            const lddParts = [];
-            if (scopeIds.divisionIds.length) {
-                lddParts.push(inArray(userOrgAssignments.divisionId, scopeIds.divisionIds));
+            if (mode === 'location') {
+                if (!scopeIds.locationIds.length)
+                    conditions.push(sql `false`);
+                else
+                    conditions.push(inArray(userOrgAssignments.locationId, scopeIds.locationIds));
             }
-            if (scopeIds.departmentIds.length) {
-                lddParts.push(inArray(userOrgAssignments.departmentId, scopeIds.departmentIds));
-            }
-            if (scopeIds.locationIds.length) {
-                lddParts.push(inArray(userOrgAssignments.locationId, scopeIds.locationIds));
-            }
-            if (lddParts.length > 0) {
-                conditions.push(or(ownCondition, or(...lddParts)));
+            else if (mode === 'department') {
+                if (!scopeIds.departmentIds.length)
+                    conditions.push(sql `false`);
+                else
+                    conditions.push(inArray(userOrgAssignments.departmentId, scopeIds.departmentIds));
             }
             else {
-                conditions.push(ownCondition);
+                if (!scopeIds.divisionIds.length)
+                    conditions.push(sql `false`);
+                else
+                    conditions.push(inArray(userOrgAssignments.divisionId, scopeIds.divisionIds));
             }
         }
-        else if (mode === 'any') {
+        else if (mode === 'all') {
             // Allow access - no additional filtering based on scope
         }
         else {
@@ -152,13 +150,12 @@ export async function POST(request) {
         if (mode === 'none') {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
-        else if (mode === 'own' || mode === 'ldd') {
-            // For write, we need to check if user can write their own assignment or matching LDD
-            // This is handled at the individual assignment level, so we allow creation here
-            // but the assignment will be checked when accessed
-        }
-        else if (mode === 'any') {
-            // Allow access - proceed with creation
+        else if (mode === 'own' ||
+            mode === 'location' ||
+            mode === 'department' ||
+            mode === 'division' ||
+            mode === 'all') {
+            // For write, scoped checks are enforced at the individual assignment level.
         }
         else {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
