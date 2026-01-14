@@ -107,7 +107,19 @@ function extractBearer(req: NextRequest): string | null {
   const auth = req.headers.get('authorization');
   if (auth?.startsWith('Bearer ')) return auth.slice(7).trim();
   const cookieToken = req.cookies.get('hit_token')?.value;
-  return cookieToken || null;
+  if (cookieToken) return cookieToken;
+  const rawCookie = req.headers.get('cookie') || '';
+  if (rawCookie) {
+    const parts = rawCookie.split(';').map((c) => c.trim());
+    for (const p of parts) {
+      const eq = p.indexOf('=');
+      if (eq <= 0) continue;
+      const name = p.slice(0, eq);
+      const value = p.slice(eq + 1);
+      if (name === 'hit_token' && value) return value;
+    }
+  }
+  return null;
 }
 
 function getClientIp(req: NextRequest): string | null {
@@ -657,7 +669,7 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (tokenOrErr instanceof NextResponse) return tokenOrErr;
 
     const refresh = await createRefreshToken(db, { email, req });
-    const res = json(
+    const registerJson = json(
       {
         token: tokenOrErr,
         refresh_token: refresh.token,
@@ -666,7 +678,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       },
       { status: 201 }
     );
-    return withAuthCookie(res, tokenOrErr);
+    return withAuthCookie(registerJson, tokenOrErr);
   }
 
   if (p0 === 'login' && m === 'POST') {
@@ -855,13 +867,13 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     if (token) {
       const token_hash = sha256Hex(token);
-      const res = await db.execute(sql`
+      const verifyTokenRes = await db.execute(sql`
         SELECT email
         FROM hit_auth_v2_email_verification_tokens
         WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
         LIMIT 1
       `);
-      const row = res?.rows?.[0] as any;
+      const row = verifyTokenRes?.rows?.[0] as any;
       if (!row?.email) return err('Invalid or expired verification token', 400);
       await db.execute(sql`
         UPDATE hit_auth_v2_users
@@ -878,7 +890,7 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     if (email && code) {
       const code_hash = sha256Hex(code);
-      const res = await db.execute(sql`
+      const verifyCodeRes = await db.execute(sql`
         SELECT id, email
         FROM hit_auth_v2_email_verification_tokens
         WHERE email = ${email} AND code_hash = ${code_hash}
@@ -886,7 +898,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         ORDER BY created_at DESC
         LIMIT 1
       `);
-      const row = res?.rows?.[0] as any;
+      const row = verifyCodeRes?.rows?.[0] as any;
       if (!row?.email) return err('Invalid verification code', 400);
       await db.execute(sql`
         UPDATE hit_auth_v2_users
@@ -910,10 +922,10 @@ export async function tryHandleAuthV2Proxy(opts: {
     const email = String(url.searchParams.get('email') || '').trim().toLowerCase();
     if (!email || !isEmail(email)) return err('Invalid email', 400);
     const db = getDb();
-    const u = await db.execute(sql`
+    const verifyStatusRes = await db.execute(sql`
       SELECT email_verified FROM hit_auth_v2_users WHERE email = ${email} LIMIT 1
     `);
-    const user = u?.rows?.[0] as any;
+    const user = verifyStatusRes?.rows?.[0] as any;
     if (!user) return json({ email_verified: false, verification_sent_at: null });
     if (user.email_verified) return json({ email_verified: true, verification_sent_at: null });
 
@@ -936,13 +948,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     const email = String(body?.email || '').trim().toLowerCase();
     if (!email || !isEmail(email)) return json({ ok: true });
 
-    const res = await db.execute(sql`
+    const resendUserRes = await db.execute(sql`
       SELECT email, email_verified
       FROM hit_auth_v2_users
       WHERE email = ${email}
       LIMIT 1
     `);
-    const user = res?.rows?.[0] as any;
+    const user = resendUserRes?.rows?.[0] as any;
     if (!user || user.email_verified) return json({ ok: true });
 
     try {
@@ -962,13 +974,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     const email = String(body?.email || '').trim().toLowerCase();
     if (!email || !isEmail(email)) return json({ ok: true });
 
-    const res = await db.execute(sql`
+    const forgotUserRes = await db.execute(sql`
       SELECT email
       FROM hit_auth_v2_users
       WHERE email = ${email}
       LIMIT 1
     `);
-    const user = res?.rows?.[0] as any;
+    const user = forgotUserRes?.rows?.[0] as any;
     if (!user?.email) return json({ ok: true });
 
     try {
@@ -990,13 +1002,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (!token || !password) return err('Token and password are required', 400);
 
     const token_hash = sha256Hex(token);
-    const res = await db.execute(sql`
+    const resetTokenRes = await db.execute(sql`
       SELECT email
       FROM hit_auth_v2_password_reset_tokens
       WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
       LIMIT 1
     `);
-    const row = res?.rows?.[0] as any;
+    const row = resetTokenRes?.rows?.[0] as any;
     if (!row?.email) return err('Invalid or expired reset token', 400);
 
     const password_hash = await hashPassword(password);
@@ -1021,13 +1033,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     const email = String(body?.email || '').trim().toLowerCase();
     if (!email || !isEmail(email)) return json({ ok: true });
 
-    const res = await db.execute(sql`
+    const magicUserRes = await db.execute(sql`
       SELECT email, locked
       FROM hit_auth_v2_users
       WHERE email = ${email}
       LIMIT 1
     `);
-    const user = res?.rows?.[0] as any;
+    const user = magicUserRes?.rows?.[0] as any;
     if (!user?.email || user.locked) return json({ ok: true });
 
     try {
@@ -1241,13 +1253,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     const u = requireUser(req);
     if (u instanceof NextResponse) return u;
     const db = getDb();
-    const res = await db.execute(sql`
+    const meRes = await db.execute(sql`
       SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
       FROM hit_auth_v2_users
       WHERE email = ${u.email}
       LIMIT 1
     `);
-    const row = res?.rows?.[0];
+    const row = meRes?.rows?.[0];
     if (!row) return err('User not found', 404);
     return json(normalizeUserRow(row));
   }
@@ -1263,12 +1275,12 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /users (list)
     if (m === 'GET' && !p1) {
-      const res = await db.execute(
+      const usersListRes = await db.execute(
         sql`SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
             FROM hit_auth_v2_users
             ORDER BY created_at DESC`
       );
-      return json((res?.rows || []).map(normalizeUserRow));
+      return json((usersListRes?.rows || []).map(normalizeUserRow));
     }
 
     // POST /users (create)
@@ -1333,13 +1345,13 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /users/{email}
     if (m === 'GET') {
-      const res = await db.execute(sql`
+      const userGetRes = await db.execute(sql`
         SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
         FROM hit_auth_v2_users
         WHERE email = ${email}
         LIMIT 1
       `);
-      const row = res?.rows?.[0];
+      const row = userGetRes?.rows?.[0];
       if (!row) return err('User not found', 404);
       return json(normalizeUserRow(row));
     }
@@ -1356,7 +1368,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       const profile_picture_url =
         body?.profile_picture_url != null ? String(body.profile_picture_url).trim() : undefined;
 
-      const res = await db.execute(sql`
+      const userUpdateRes = await db.execute(sql`
         UPDATE hit_auth_v2_users
         SET
           role = COALESCE(${role as any}, role),
@@ -1368,7 +1380,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         WHERE email = ${email}
         RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
       `);
-      const row = res?.rows?.[0];
+      const row = userUpdateRes?.rows?.[0];
       if (!row) return err('User not found', 404);
       return json(normalizeUserRow(row));
     }
@@ -1467,12 +1479,12 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (gate) return gate;
 
     const db = getDb();
-    const res = await db.execute(sql`
+    const directoryRes = await db.execute(sql`
       SELECT email, profile_fields
       FROM hit_auth_v2_users
       ORDER BY email ASC
     `);
-    const items = (res?.rows || []).map((r: any) => ({
+    const items = (directoryRes?.rows || []).map((r: any) => ({
       email: String(r?.email || ''),
       profile_fields: r?.profile_fields && typeof r.profile_fields === 'object' ? r.profile_fields : {},
     }));
@@ -1705,7 +1717,7 @@ export async function tryHandleAuthV2Proxy(opts: {
           out[p] = true;
           continue;
         }
-        const wildcardAllowed = Array.from(psAllow.values()).some((pattern) => matchesWildcard(pattern, p));
+        const wildcardAllowed = Array.from(psAllow.values()).some((pattern: string) => matchesWildcard(pattern, p));
         if (wildcardAllowed) {
           out[p] = true;
           continue;
@@ -1757,12 +1769,12 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /admin/permissions/sets
     if (m === 'GET' && !psId) {
-      const res = await db.execute(sql`
+      const permissionSetsRes = await db.execute(sql`
         SELECT id, name, description, template_role, created_at, updated_at
         FROM hit_auth_v2_permission_sets
         ORDER BY updated_at DESC, name ASC
       `);
-      return json({ items: res?.rows || [] });
+      return json({ items: permissionSetsRes?.rows || [] });
     }
 
     // POST /admin/permissions/sets
@@ -2050,7 +2062,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       if (!key) return err('key is required', 400);
       if (key.length > 200) return err('key is too long', 400);
 
-      const res = await db.execute(sql`
+      const actionsUpsertRes = await db.execute(sql`
         INSERT INTO hit_auth_v2_permission_actions (
           key, pack_name, label, description, default_enabled, created_at, updated_at
         ) VALUES (
@@ -2064,7 +2076,7 @@ export async function tryHandleAuthV2Proxy(opts: {
           updated_at = now()
         RETURNING key, pack_name, label, description, default_enabled, created_at, updated_at
       `);
-      return json(res?.rows?.[0] || null, { status: 201 });
+      return json(actionsUpsertRes?.rows?.[0] || null, { status: 201 });
     }
 
     // DELETE /admin/permissions/actions/{action_key}
@@ -2089,7 +2101,7 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /admin/groups (list)
     if (m === 'GET' && !p2) {
-      const res = await db.execute(sql`
+      const groupsListRes = await db.execute(sql`
         SELECT
           g.id,
           g.name,
@@ -2105,7 +2117,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         FROM hit_auth_v2_groups g
         ORDER BY g.name ASC
       `);
-      return json((res?.rows || []).map(normalizeGroupRow));
+      return json((groupsListRes?.rows || []).map(normalizeGroupRow));
     }
 
     // POST /admin/groups (create)
@@ -2138,7 +2150,7 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /admin/groups/{group_id}
     if (m === 'GET' && !p3) {
-      const res = await db.execute(sql`
+      const groupGetRes = await db.execute(sql`
         SELECT
           g.id, g.name, g.description, g.metadata, g.created_at, g.updated_at,
           COALESCE((
@@ -2150,7 +2162,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         WHERE g.id = ${gid}::uuid
         LIMIT 1
       `);
-      const row = res?.rows?.[0];
+      const row = groupGetRes?.rows?.[0];
       if (!row) return err('Group not found', 404);
       return json(normalizeGroupRow(row));
     }
@@ -2198,7 +2210,7 @@ export async function tryHandleAuthV2Proxy(opts: {
 
     // GET /admin/groups/{group_id}/users
     if (m === 'GET' && p3 === 'users') {
-      const res = await db.execute(sql`
+      const groupUsersRes = await db.execute(sql`
         SELECT
           ug.id,
           ug.user_email,
@@ -2211,7 +2223,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         WHERE ug.group_id = ${gid}::uuid
         ORDER BY ug.created_at DESC
       `);
-      return json(res?.rows || []);
+      return json(groupUsersRes?.rows || []);
     }
   }
 
@@ -2226,7 +2238,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       if (!email || !isEmail(email)) return err('Invalid user email', 400);
 
       const db = getDb();
-      const res = await db.execute(sql`
+      const userGroupsRes = await db.execute(sql`
         SELECT
           ug.id,
           ug.user_email,
@@ -2239,7 +2251,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         WHERE ug.user_email = ${email}
         ORDER BY ug.created_at DESC
       `);
-      return json(res?.rows || []);
+      return json(userGroupsRes?.rows || []);
     }
   }
 
@@ -2249,7 +2261,7 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (u instanceof NextResponse) return u;
 
     const db = getDb();
-    const res = await db.execute(sql`
+    const meGroupsRes = await db.execute(sql`
       SELECT
         ug.id,
         ug.user_email,
@@ -2262,7 +2274,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       WHERE ug.user_email = ${u.email}
       ORDER BY ug.created_at DESC
     `);
-    return json(res?.rows || []);
+    return json(meGroupsRes?.rows || []);
   }
 
   // Not implemented yet.
