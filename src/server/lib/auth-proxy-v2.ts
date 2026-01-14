@@ -161,6 +161,16 @@ function buildFeaturesFromConfig(): Record<string, unknown> {
   };
 }
 
+function getAllowSignupFromConfig(): boolean {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  return normalizeBool(auth.allowSignup, false);
+}
+
+function getEmailVerificationEnabledFromConfig(): boolean {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  return normalizeBool(auth.emailVerification, true);
+}
+
 const scryptAsync = promisify(crypto.scrypt);
 
 async function hashPassword(password: string): Promise<string> {
@@ -346,6 +356,70 @@ export async function tryHandleAuthV2Proxy(opts: {
   // ---------------------------------------------------------------------------
   // CORE AUTH (login/refresh/logout/validate/me)
   // ---------------------------------------------------------------------------
+  if (p0 === 'register' && m === 'POST') {
+    if (!getAllowSignupFromConfig()) return err('Registration is disabled', 403);
+
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const email = String(body?.email || '').trim().toLowerCase();
+    const password = String(body?.password || '').trim();
+    if (!email || !isEmail(email)) return err('Invalid email', 400);
+    if (!password) return err('Password is required', 400);
+
+    const exists = await db.execute(sql`SELECT 1 FROM hit_auth_v2_users WHERE email = ${email} LIMIT 1`);
+    if ((exists?.rows || []).length > 0) return err('User already exists', 400);
+
+    const password_hash = await hashPassword(password);
+    const emailVerificationEnabled = getEmailVerificationEnabledFromConfig();
+    const email_verified = emailVerificationEnabled ? false : true;
+
+    const ins = await db.execute(sql`
+      INSERT INTO hit_auth_v2_users (
+        email,
+        password_hash,
+        email_verified,
+        two_factor_enabled,
+        locked,
+        role,
+        metadata,
+        profile_fields,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${email},
+        ${password_hash},
+        ${email_verified},
+        false,
+        false,
+        'user',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        now(),
+        now()
+      )
+      RETURNING email, email_verified, role
+    `);
+    const row = ins?.rows?.[0] as any;
+
+    const tokenOrErr = issueAccessToken({
+      email,
+      role: String(row?.role || 'user').toLowerCase(),
+      emailVerified: Boolean(row?.email_verified),
+    });
+    if (tokenOrErr instanceof NextResponse) return tokenOrErr;
+
+    const refresh = await createRefreshToken(db, { email, req });
+    return json(
+      {
+        token: tokenOrErr,
+        refresh_token: refresh.token,
+        email_verified: Boolean(row?.email_verified),
+        expires_in: getAccessTtlSeconds(),
+      },
+      { status: 201 }
+    );
+  }
+
   if (p0 === 'login' && m === 'POST') {
     const db = getDb();
     const body = (await req.json().catch(() => ({}))) as any;
@@ -614,6 +688,447 @@ export async function tryHandleAuthV2Proxy(opts: {
       profile_fields: r?.profile_fields && typeof r.profile_fields === 'object' ? r.profile_fields : {},
     }));
     return json(items);
+  }
+
+  // ---------------------------------------------------------------------------
+  // PERMISSIONS (action checks)
+  // ---------------------------------------------------------------------------
+  if (p0 === 'permissions' && (p1 || '').trim() === 'actions' && (pathSegments[2] || '').trim() === 'check' && m === 'GET') {
+    const u = requireUser(req);
+    if (u instanceof NextResponse) return u;
+
+    const actionKey = pathSegments
+      .slice(3)
+      .map((s) => safeDecodePathSegment(String(s || '')).trim())
+      .filter(Boolean)
+      .join('/');
+    if (!actionKey) return json({ has_permission: false, source: 'missing_action_key' }, { status: 200 });
+
+    const db = getDb();
+
+    const actionRes = await db.execute(
+      sql`SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`
+    );
+    const actionRow = actionRes?.rows?.[0] as any;
+    if (!actionRow) {
+      return json({ has_permission: false, source: 'unknown_action' }, { status: 200 });
+    }
+
+    // 1) User overrides (highest precedence)
+    const userOv = await db.execute(sql`
+      SELECT enabled
+      FROM hit_auth_v2_user_action_overrides
+      WHERE user_email = ${u.email} AND action_key = ${actionKey}
+      LIMIT 1
+    `);
+    const uRow = userOv?.rows?.[0] as any;
+    if (uRow && typeof uRow.enabled === 'boolean') {
+      return json({ has_permission: Boolean(uRow.enabled), source: 'user_override' }, { status: 200 });
+    }
+
+    // Resolve role (simple model: admin/user)
+    const role = u.roles.includes('admin') ? 'admin' : 'user';
+
+    // Resolve group memberships
+    const groupsRes = await db.execute(
+      sql`SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`
+    );
+    const groupIds = (groupsRes?.rows || [])
+      .map((r: any) => String(r?.id || '').trim())
+      .filter(Boolean);
+
+    // 2) Permission Set grants (Security Groups)
+    let assignmentWhere = sql`(a.principal_type = 'user' AND a.principal_id = ${u.email})
+      OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
+    if (groupIds.length > 0) {
+      assignmentWhere = sql`${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(
+        groupIds.map((gid) => sql`${gid}`),
+        sql`, `
+      )}))`;
+    }
+
+    const ps = await db.execute(sql`
+      SELECT 1 AS ok
+      FROM hit_auth_v2_permission_set_assignments a
+      JOIN hit_auth_v2_permission_set_action_grants g
+        ON g.permission_set_id = a.permission_set_id
+       AND g.action_key = ${actionKey}
+      WHERE ${assignmentWhere}
+      LIMIT 1
+    `);
+    if ((ps?.rows || []).length > 0) {
+      return json({ has_permission: true, source: 'permission_set' }, { status: 200 });
+    }
+
+    // 3) Group action permissions (deny-precedence within group overrides)
+    if (groupIds.length > 0) {
+      const gp = await db.execute(sql`
+        SELECT enabled
+        FROM hit_auth_v2_group_action_permissions
+        WHERE action_key = ${actionKey}
+          AND group_id::text IN (${sql.join(groupIds.map((gid) => sql`${gid}`), sql`, `)})
+      `);
+      const rows = (gp?.rows || []) as any[];
+      if (rows.length > 0) {
+        const anyDeny = rows.some((r) => r && r.enabled === false);
+        const anyAllow = rows.some((r) => r && r.enabled === true);
+        return json(
+          { has_permission: anyDeny ? false : anyAllow ? true : false, source: 'group_action_permission' },
+          { status: 200 }
+        );
+      }
+    }
+
+    // 4) Role action permissions
+    const rp = await db.execute(sql`
+      SELECT enabled
+      FROM hit_auth_v2_role_action_permissions
+      WHERE role = ${role} AND action_key = ${actionKey}
+      LIMIT 1
+    `);
+    const rRow = rp?.rows?.[0] as any;
+    if (rRow && typeof rRow.enabled === 'boolean') {
+      return json({ has_permission: Boolean(rRow.enabled), source: 'role_action_permission' }, { status: 200 });
+    }
+
+    // 5) Default
+    return json(
+      { has_permission: Boolean(actionRow.default_enabled), source: 'default' },
+      { status: 200 }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // PERMISSION SETS (Security Groups) - admin APIs
+  // ---------------------------------------------------------------------------
+  if (p0 === 'admin' && (p1 || '').trim() === 'permissions' && (pathSegments[2] || '').trim() === 'sets') {
+    const gate = requireAdmin(req);
+    if (gate) return gate;
+
+    const db = getDb();
+    const psId = String(pathSegments[3] || '').trim();
+    const sub = String(pathSegments[4] || '').trim();
+    const tail = String(pathSegments[5] || '').trim();
+
+    // GET /admin/permissions/sets
+    if (m === 'GET' && !psId) {
+      const res = await db.execute(sql`
+        SELECT id, name, description, template_role, created_at, updated_at
+        FROM hit_auth_v2_permission_sets
+        ORDER BY updated_at DESC, name ASC
+      `);
+      return json({ items: res?.rows || [] });
+    }
+
+    // POST /admin/permissions/sets
+    if (m === 'POST' && !psId) {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const name = String(body?.name || '').trim();
+      const description =
+        body?.description != null && String(body.description).trim() ? String(body.description).trim() : null;
+      const template_role =
+        body?.template_role != null && String(body.template_role).trim()
+          ? String(body.template_role).trim().toLowerCase()
+          : null;
+      if (!name) return err('Permission set name is required', 400);
+      if (template_role && template_role !== 'admin' && template_role !== 'user') {
+        return err('Invalid template_role (must be admin|user)', 400);
+      }
+
+      try {
+        const ins = await db.execute(sql`
+          INSERT INTO hit_auth_v2_permission_sets (name, description, template_role, created_at, updated_at)
+          VALUES (${name}, ${description as any}, ${template_role as any}, now(), now())
+          RETURNING id, name, description, template_role, created_at, updated_at
+        `);
+        return json(ins?.rows?.[0] || null, { status: 201 });
+      } catch (e: any) {
+        const msg = String(e?.message || e || '').toLowerCase();
+        if (msg.includes('duplicate') || msg.includes('unique')) return err('Permission set name already exists', 400);
+        return err('Failed to create permission set', 500);
+      }
+    }
+
+    if (!psId) return err('Permission set id is required', 400);
+
+    // GET /admin/permissions/sets/{psId}
+    if (m === 'GET' && !sub) {
+      const setRes = await db.execute(sql`
+        SELECT id, name, description, template_role, created_at, updated_at
+        FROM hit_auth_v2_permission_sets
+        WHERE id = ${psId}::uuid
+        LIMIT 1
+      `);
+      const ps = setRes?.rows?.[0];
+      if (!ps) return err('Permission set not found', 404);
+
+      const [assignmentsRes, actionsRes, pagesRes, metricsRes] = await Promise.all([
+        db.execute(sql`
+          SELECT id, permission_set_id, principal_type, principal_id, created_at
+          FROM hit_auth_v2_permission_set_assignments
+          WHERE permission_set_id = ${psId}::uuid
+          ORDER BY created_at DESC
+        `),
+        db.execute(sql`
+          SELECT g.id, g.permission_set_id, g.action_key, g.created_at, a.label, a.description, a.pack_name
+          FROM hit_auth_v2_permission_set_action_grants g
+          LEFT JOIN hit_auth_v2_permission_actions a ON a.key = g.action_key
+          WHERE g.permission_set_id = ${psId}::uuid
+          ORDER BY g.created_at DESC
+        `),
+        db.execute(sql`
+          SELECT id, permission_set_id, page_path, created_at
+          FROM hit_auth_v2_permission_set_page_grants
+          WHERE permission_set_id = ${psId}::uuid
+          ORDER BY created_at DESC
+        `),
+        db.execute(sql`
+          SELECT id, permission_set_id, metric_key, created_at
+          FROM hit_auth_v2_permission_set_metric_grants
+          WHERE permission_set_id = ${psId}::uuid
+          ORDER BY created_at DESC
+        `),
+      ]);
+
+      return json({
+        permission_set: ps,
+        assignments: assignmentsRes?.rows || [],
+        action_grants: actionsRes?.rows || [],
+        page_grants: pagesRes?.rows || [],
+        metric_grants: metricsRes?.rows || [],
+      });
+    }
+
+    // PUT/PATCH /admin/permissions/sets/{psId}
+    if ((m === 'PUT' || m === 'PATCH') && !sub) {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const name = body?.name != null ? String(body.name).trim() : undefined;
+      const description =
+        body?.description !== undefined
+          ? body?.description != null && String(body.description).trim()
+            ? String(body.description).trim()
+            : null
+          : undefined;
+      const template_role =
+        body?.template_role !== undefined
+          ? body?.template_role != null && String(body.template_role).trim()
+            ? String(body.template_role).trim().toLowerCase()
+            : null
+          : undefined;
+
+      if (template_role !== undefined && template_role !== null && template_role !== 'admin' && template_role !== 'user') {
+        return err('Invalid template_role (must be admin|user|null)', 400);
+      }
+      if (m === 'PUT' && (!name || !name.trim())) return err('Permission set name is required', 400);
+
+      try {
+        const upd = await db.execute(sql`
+          UPDATE hit_auth_v2_permission_sets
+          SET
+            name = COALESCE(${(name ?? null) as any}, name),
+            description = ${description === undefined ? (sql`description` as any) : (description as any)},
+            template_role = ${template_role === undefined ? (sql`template_role` as any) : (template_role as any)},
+            updated_at = now()
+          WHERE id = ${psId}::uuid
+          RETURNING id, name, description, template_role, created_at, updated_at
+        `);
+        const row = upd?.rows?.[0];
+        if (!row) return err('Permission set not found', 404);
+        return json(row);
+      } catch (e: any) {
+        const msg = String(e?.message || e || '').toLowerCase();
+        if (msg.includes('duplicate') || msg.includes('unique')) return err('Permission set name already exists', 400);
+        return err('Failed to update permission set', 500);
+      }
+    }
+
+    // DELETE /admin/permissions/sets/{psId}
+    if (m === 'DELETE' && !sub) {
+      await db.execute(sql`DELETE FROM hit_auth_v2_permission_sets WHERE id = ${psId}::uuid`);
+      return json({}, { status: 204 });
+    }
+
+    // POST /admin/permissions/sets/{psId}/assignments
+    if (sub === 'assignments' && m === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const principal_type = String(body?.principal_type || '').trim().toLowerCase();
+      const principal_id = String(body?.principal_id || '').trim();
+      if (!principal_type || !principal_id) return err('principal_type and principal_id are required', 400);
+      if (principal_type !== 'user' && principal_type !== 'group' && principal_type !== 'role') {
+        return err('Invalid principal_type (must be user|group|role)', 400);
+      }
+
+      if (principal_type === 'user' && !isEmail(principal_id)) return err('Invalid principal_id (email expected)', 400);
+      if (principal_type === 'role' && principal_id !== 'admin' && principal_id !== 'user') {
+        return err('Invalid principal_id (role must be admin|user)', 400);
+      }
+
+      // Best-effort existence checks
+      if (principal_type === 'user') {
+        const u1 = await db.execute(sql`SELECT 1 FROM hit_auth_v2_users WHERE email = ${principal_id.toLowerCase()} LIMIT 1`);
+        if ((u1?.rows || []).length === 0) return err('User not found', 404);
+      }
+      if (principal_type === 'group') {
+        const g1 = await db.execute(sql`SELECT 1 FROM hit_auth_v2_groups WHERE id = ${principal_id}::uuid LIMIT 1`);
+        if ((g1?.rows || []).length === 0) return err('Group not found', 404);
+      }
+
+      try {
+        const ins = await db.execute(sql`
+          INSERT INTO hit_auth_v2_permission_set_assignments (permission_set_id, principal_type, principal_id, created_at)
+          VALUES (${psId}::uuid, ${principal_type}, ${principal_id.toLowerCase()}, now())
+          RETURNING id, permission_set_id, principal_type, principal_id, created_at
+        `);
+        return json(ins?.rows?.[0] || null, { status: 201 });
+      } catch (e: any) {
+        const msg = String(e?.message || e || '').toLowerCase();
+        if (msg.includes('duplicate') || msg.includes('unique')) return err('Assignment already exists', 400);
+        return err('Failed to create assignment', 500);
+      }
+    }
+
+    // DELETE /admin/permissions/sets/{psId}/assignments/{assignment_id}
+    if (sub === 'assignments' && tail && m === 'DELETE') {
+      await db.execute(
+        sql`DELETE FROM hit_auth_v2_permission_set_assignments WHERE id = ${tail}::uuid AND permission_set_id = ${psId}::uuid`
+      );
+      return json({}, { status: 204 });
+    }
+
+    // POST /admin/permissions/sets/{psId}/actions
+    if (sub === 'actions' && m === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const action_key = String(body?.action_key || body?.actionKey || '').trim();
+      if (!action_key) return err('action_key is required', 400);
+
+      // Ensure action exists (auto-register minimal record if missing)
+      const a0 = await db.execute(sql`SELECT 1 FROM hit_auth_v2_permission_actions WHERE key = ${action_key} LIMIT 1`);
+      if ((a0?.rows || []).length === 0) {
+        await db.execute(sql`
+          INSERT INTO hit_auth_v2_permission_actions (key, pack_name, label, description, default_enabled, created_at, updated_at)
+          VALUES (${action_key}, NULL, '', NULL, false, now(), now())
+          ON CONFLICT (key) DO NOTHING
+        `);
+      }
+
+      try {
+        const ins = await db.execute(sql`
+          INSERT INTO hit_auth_v2_permission_set_action_grants (permission_set_id, action_key, created_at)
+          VALUES (${psId}::uuid, ${action_key}, now())
+          RETURNING id, permission_set_id, action_key, created_at
+        `);
+        return json(ins?.rows?.[0] || null, { status: 201 });
+      } catch (e: any) {
+        const msg = String(e?.message || e || '').toLowerCase();
+        if (msg.includes('duplicate') || msg.includes('unique')) return err('Action grant already exists', 400);
+        return err('Failed to create action grant', 500);
+      }
+    }
+
+    // DELETE /admin/permissions/sets/{psId}/actions/{grant_id}
+    if (sub === 'actions' && tail && m === 'DELETE') {
+      await db.execute(
+        sql`DELETE FROM hit_auth_v2_permission_set_action_grants WHERE id = ${tail}::uuid AND permission_set_id = ${psId}::uuid`
+      );
+      return json({}, { status: 204 });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PERMISSION ACTIONS (registry) - admin APIs
+  // ---------------------------------------------------------------------------
+  if (p0 === 'admin' && (p1 || '').trim() === 'permissions' && (pathSegments[2] || '').trim() === 'actions') {
+    const gate = requireAdmin(req);
+    if (gate) return gate;
+
+    const db = getDb();
+    const actionKeyParam = pathSegments[3] ? safeDecodePathSegment(String(pathSegments[3])) : '';
+
+    // GET /admin/permissions/actions?search&pack&page&pageSize
+    if (m === 'GET' && !actionKeyParam) {
+      const url = new URL(req.url);
+      const search = String(url.searchParams.get('search') || '').trim().toLowerCase();
+      const pack = String(url.searchParams.get('pack') || '').trim().toLowerCase();
+      const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+      const pageSize = Math.min(200, Math.max(1, parseInt(url.searchParams.get('pageSize') || '50', 10) || 50));
+      const offset = (page - 1) * pageSize;
+
+      // Build WHERE dynamically (raw SQL but parameterized via drizzle-orm sql template).
+      const whereParts: any[] = [];
+      if (pack) {
+        whereParts.push(sql`LOWER(COALESCE(pack_name, '')) = ${pack}`);
+      }
+      if (search) {
+        const like = `%${search}%`;
+        whereParts.push(
+          sql`(LOWER(key) LIKE ${like} OR LOWER(COALESCE(label, '')) LIKE ${like} OR LOWER(COALESCE(description, '')) LIKE ${like})`
+        );
+      }
+      const whereClause =
+        whereParts.length > 0 ? sql`WHERE ${sql.join(whereParts, sql` AND `)}` : sql``;
+
+      const [itemsRes, countRes] = await Promise.all([
+        db.execute(sql`
+          SELECT key, pack_name, label, description, default_enabled, created_at, updated_at
+          FROM hit_auth_v2_permission_actions
+          ${whereClause}
+          ORDER BY key ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `),
+        db.execute(sql`
+          SELECT COUNT(*)::int AS total
+          FROM hit_auth_v2_permission_actions
+          ${whereClause}
+        `),
+      ]);
+
+      const total = Number(countRes?.rows?.[0]?.total || 0);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      return json({
+        items: itemsRes?.rows || [],
+        pagination: { page, pageSize, total, totalPages },
+      });
+    }
+
+    // POST /admin/permissions/actions (upsert/register)
+    if (m === 'POST' && !actionKeyParam) {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const key = String(body?.key || '').trim();
+      const pack_name = body?.pack_name != null && String(body.pack_name).trim() ? String(body.pack_name).trim() : null;
+      const label = body?.label != null ? String(body.label) : '';
+      const description =
+        body?.description != null && String(body.description).trim() ? String(body.description).trim() : null;
+      const default_enabled =
+        typeof body?.default_enabled === 'boolean' ? Boolean(body.default_enabled) : false;
+
+      if (!key) return err('key is required', 400);
+      if (key.length > 200) return err('key is too long', 400);
+
+      const res = await db.execute(sql`
+        INSERT INTO hit_auth_v2_permission_actions (
+          key, pack_name, label, description, default_enabled, created_at, updated_at
+        ) VALUES (
+          ${key}, ${pack_name as any}, ${label}, ${description as any}, ${default_enabled}, now(), now()
+        )
+        ON CONFLICT (key) DO UPDATE SET
+          pack_name = EXCLUDED.pack_name,
+          label = EXCLUDED.label,
+          description = EXCLUDED.description,
+          default_enabled = EXCLUDED.default_enabled,
+          updated_at = now()
+        RETURNING key, pack_name, label, description, default_enabled, created_at, updated_at
+      `);
+      return json(res?.rows?.[0] || null, { status: 201 });
+    }
+
+    // DELETE /admin/permissions/actions/{action_key}
+    if (m === 'DELETE' && actionKeyParam) {
+      const key = actionKeyParam.trim();
+      if (!key) return err('Invalid action key', 400);
+      await db.execute(sql`DELETE FROM hit_auth_v2_permission_actions WHERE key = ${key}`);
+      return json({}, { status: 204 });
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server';
 import { checkAuthCoreAction } from './require-action';
 
-export type ScopeMode = 'none' | 'own' | 'ldd' | 'any';
+// Scope modes for LDD-enabled permission trees.
+// - own is the default for user templates
+// - all means full access (no L/D/D scoping)
+export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
 
@@ -22,7 +25,7 @@ export async function resolveAuthCoreScopeMode(
   const globalPrefix = `auth-core.${verb}.scope`;
 
   // Most restrictive wins (first match returned).
-  const modes: ScopeMode[] = ['none', 'own', 'ldd', 'any'];
+  const modes: ScopeMode[] = ['none', 'own', 'location', 'department', 'division', 'all'];
 
   for (const m of modes) {
     const res = await checkAuthCoreAction(request, `${entityPrefix}.${m}`);

@@ -18,14 +18,8 @@ export async function GET(request: NextRequest) {
     // Check read permission with explicit scope mode branching
     const mode = await resolveAuthCoreScopeMode(request, { entity: 'locations', verb: 'read' });
     
-    if (mode === 'none') {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'own' || mode === 'ldd') {
-      // Locations don't have ownership or LDD fields, so these modes deny access
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    } else if (mode === 'any') {
-      // Allow access - proceed with query
-    } else {
+    // Locations are a non-LDD entity: treat this as a simple none/all gate.
+    if (mode !== 'all') {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

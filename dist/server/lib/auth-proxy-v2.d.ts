@@ -1,0 +1,18 @@
+import { NextRequest, NextResponse } from 'next/server';
+export type AuthBackendMode = 'python' | 'ts';
+/**
+ * V2 Auth Proxy Handler (TypeScript-only)
+ *
+ * Used to incrementally replace the Python auth module behind the existing
+ * `/api/proxy/auth/*` surface, without changing the fundamental system yet.
+ *
+ * Return:
+ * - NextResponse if handled by V2
+ * - null if not handled (caller may return 501 or proxy to Python depending on app mode)
+ */
+export declare function tryHandleAuthV2Proxy(opts: {
+    req: NextRequest;
+    pathSegments: string[];
+    method: string;
+}): Promise<NextResponse | null>;
+//# sourceMappingURL=auth-proxy-v2.d.ts.map

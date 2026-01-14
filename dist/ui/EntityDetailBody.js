@@ -2,6 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Mail } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
+import { splitLinkedEntityTabsExtra, wrapWithLinkedEntityTabsIfConfigured } from '@hit/feature-pack-form-core';
 function asRecord(v) {
     return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
 }
@@ -45,9 +46,10 @@ function DetailField({ uiSpec, record, fieldKey }) {
         return null;
     return (_jsxs("div", { children: [_jsx("div", { className: "text-sm text-gray-400 mb-1", children: label }), _jsx("div", { children: String(raw) })] }, fieldKey));
 }
-export function EntityDetailBody({ entityKey, uiSpec, record, }) {
+export function EntityDetailBody({ entityKey, uiSpec, record, navigate, }) {
     const { Card } = useUi();
     const detail = asRecord(uiSpec?.detail) || {};
+    const { linkedEntityTabs } = splitLinkedEntityTabsExtra(detail.extras);
     const summaryFieldsAny = detail.summaryFields;
     const summaryFields = Array.isArray(summaryFieldsAny)
         ? summaryFieldsAny.map((x) => String(x).trim()).filter(Boolean)
@@ -55,6 +57,13 @@ export function EntityDetailBody({ entityKey, uiSpec, record, }) {
     const fieldsMap = asRecord(uiSpec?.fields) || {};
     const fallback = Object.keys(fieldsMap).filter((k) => k && k !== 'id').slice(0, 8);
     const keysToRender = summaryFields.length ? summaryFields : fallback;
-    return (_jsxs(Card, { children: [_jsx("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4", children: keysToRender.map((k) => (_jsx(DetailField, { uiSpec: uiSpec, record: record, fieldKey: k }, k))) }), !keysToRender.length ? (_jsxs("div", { className: "text-sm text-gray-500", children: ["No detail fields configured for ", entityKey, "."] })) : null] }));
+    const inner = (_jsxs(Card, { children: [_jsx("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4", children: keysToRender.map((k) => (_jsx(DetailField, { uiSpec: uiSpec, record: record, fieldKey: k }, k))) }), !keysToRender.length ? (_jsxs("div", { className: "text-sm text-gray-500", children: ["No detail fields configured for ", entityKey, "."] })) : null] }));
+    return wrapWithLinkedEntityTabsIfConfigured({
+        linkedEntityTabs,
+        entityKey,
+        record,
+        navigate,
+        overview: inner,
+    });
 }
 //# sourceMappingURL=EntityDetailBody.js.map

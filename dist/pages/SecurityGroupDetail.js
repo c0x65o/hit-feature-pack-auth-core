@@ -52,7 +52,7 @@ async function loadFeaturePackRoutes() {
     }
 }
 function parseExclusiveActionModeGroup(actionKey) {
-    const m = String(actionKey || '').trim().match(/^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
+    const m = String(actionKey || '').trim().match(/^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/);
     if (!m)
         return null;
     const basePrefix = m[1];
@@ -91,7 +91,7 @@ function titleFromGroupKey(groupKey) {
         : `${moduleLabel} ${verbLabel} Scope`;
 }
 function scopeValueForKey(key) {
-    const m = String(key || '').match(/\.scope\.(none|own|ldd|any)$/);
+    const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all)$/);
     return m ? m[1] : null;
 }
 // Pages are derived-gated from `authz` + actions and are not edited directly in the Security Groups UI.
@@ -173,7 +173,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             return 'user';
         return null;
     })();
-    const defaultScopeMode = templateRoleEffective === 'admin' ? 'any' : templateRoleEffective === 'user' ? 'own' : 'none';
+    const defaultScopeMode = templateRoleEffective === 'admin' ? 'all' : templateRoleEffective === 'user' ? 'own' : 'none';
     // ─────────────────────────────────────────────────────────────────────────
     // DERIVED DATA
     // ─────────────────────────────────────────────────────────────────────────
@@ -247,12 +247,12 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         return actionGrantSet.has(key);
     }, [pendingActionChanges, actionGrantSet]);
     const packRootScopeSummaryByPack = useMemo(() => {
-        const precedence = ['none', 'own', 'ldd', 'any'];
+        const precedence = ['none', 'own', 'location', 'department', 'division', 'all'];
         // index: pack -> verb -> present scope modes
         const present = new Map();
         for (const a of actionCatalog) {
             const k = String(a.key || '').trim().toLowerCase();
-            const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
+            const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/);
             if (!m)
                 continue;
             const pack = m[1];
@@ -266,11 +266,13 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             const modes = present.get(pack)?.[verb];
             const allowed = modes ? Array.from(modes.values()) : [];
             const isOnOffOnly = allowed.includes('none') &&
-                allowed.includes('any') &&
+                allowed.includes('all') &&
                 !allowed.includes('own') &&
-                !allowed.includes('ldd');
+                !allowed.includes('location') &&
+                !allowed.includes('department') &&
+                !allowed.includes('division');
             if (isOnOffOnly)
-                return templateRoleEffective === 'admin' ? 'any' : 'none';
+                return templateRoleEffective === 'admin' ? 'all' : 'none';
             return defaultScopeMode;
         }
         function pick(pack, verb) {
@@ -471,7 +473,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             grouped.get(parsed.groupKey).actions.push(a);
             grouped.get(parsed.groupKey).values.set(parsed.value, a);
         }
-        const precedenceValues = ['none', 'own', 'ldd', 'any'];
+        const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'];
         function getDeclaredModes(rows) {
             const out = new Set();
             let saw = false;
@@ -482,16 +484,22 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 saw = true;
                 for (const x of ms) {
                     const v = String(x || '').trim().toLowerCase();
-                    if (v === 'none' || v === 'own' || v === 'ldd' || v === 'any')
+                    if (v === 'none' ||
+                        v === 'own' ||
+                        v === 'location' ||
+                        v === 'department' ||
+                        v === 'division' ||
+                        v === 'all') {
                         out.add(v);
+                    }
                 }
             }
             return saw ? Array.from(out.values()) : null;
         }
         function buildGroup(groupKey, g) {
             const declaredModes = getDeclaredModes(g.actions);
-            // Infer allowed values from what keys actually exist, so `none/any`-only groups
-            // don't get misclassified as having `own/ldd` (which would make `any` look like an override).
+            // Infer allowed values from what keys actually exist, so `none/all`-only groups
+            // don't get misclassified as L/D/D (which would make `all` look like an override).
             const presentValues = Array.from(precedenceValues).filter((v) => g.values.has(v));
             const allowedValues = declaredModes && declaredModes.length
                 ? declaredModes.filter((v) => g.values.has(v))
@@ -531,12 +539,12 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             const verb = parts?.verb;
             const base = parts?.base || '';
             const isOnOffOnly = g.allowedValues.includes('none') &&
-                g.allowedValues.includes('any') &&
+                g.allowedValues.includes('all') &&
                 !g.allowedValues.includes('own') &&
-                !g.allowedValues.includes('ldd');
-            const baseDefault = isOnOffOnly
-                ? (isAdminTemplate ? 'any' : 'none')
-                : defaultScopeMode;
+                !g.allowedValues.includes('location') &&
+                !g.allowedValues.includes('department') &&
+                !g.allowedValues.includes('division');
+            const baseDefault = isOnOffOnly ? (isAdminTemplate ? 'all' : 'none') : defaultScopeMode;
             // Walk up base ancestry to find inherited value for this verb (pack-root -> entity -> ...).
             const findInherited = () => {
                 if (!verb || !base)
@@ -551,7 +559,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 return null;
             };
             const inherited = findInherited();
-            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/all-only),
             // treat it as "no inheritance" and fall back to baseDefault.
             const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
             const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
@@ -583,12 +591,12 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             const verb = parts?.verb;
             const base = parts?.base || '';
             const isOnOffOnly = g.allowedValues.includes('none') &&
-                g.allowedValues.includes('any') &&
+                g.allowedValues.includes('all') &&
                 !g.allowedValues.includes('own') &&
-                !g.allowedValues.includes('ldd');
-            const baseDefault = isOnOffOnly
-                ? (isAdminTemplate ? 'any' : 'none')
-                : defaultScopeMode;
+                !g.allowedValues.includes('location') &&
+                !g.allowedValues.includes('department') &&
+                !g.allowedValues.includes('division');
+            const baseDefault = isOnOffOnly ? (isAdminTemplate ? 'all' : 'none') : defaultScopeMode;
             const findInherited = () => {
                 if (!verb || !base)
                     return null;
@@ -602,7 +610,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                 return null;
             };
             const inherited = findInherited();
-            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+            // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/all-only),
             // treat it as "no inheritance" and fall back to baseDefault.
             const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
             const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
@@ -902,7 +910,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         const pfx = String(prefix || '').trim();
         if (!pfx)
             return;
-        const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|ldd|any)$`, 'i');
+        const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|location|department|division|all)$`, 'i');
         setPendingActionChanges((prev) => {
             const next = new Map(prev);
             // Revoke any currently granted scope-mode key matching the prefix
@@ -965,7 +973,37 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                 const hasEffective = accessSummary.effective > 0 || pack.grantedMetrics > 0;
                                 const packKey = String(pack.name || '').trim().toLowerCase();
                                 const rootSummary = packRootScopeSummaryByPack.get(packKey);
-                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [rootSummary && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R: ", rootSummary.read === 'none' ? 'None' : rootSummary.read === 'any' ? 'Any' : rootSummary.read === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W: ", rootSummary.write === 'none' ? 'None' : rootSummary.write === 'any' ? 'Any' : rootSummary.write === 'ldd' ? 'LDD' : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D: ", rootSummary.delete === 'none' ? 'None' : rootSummary.delete === 'any' ? 'Any' : rootSummary.delete === 'ldd' ? 'LDD' : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                return (_jsxs("div", { className: "border rounded-lg overflow-hidden", children: [_jsxs("button", { onClick: () => togglePack(pack.name), className: `w-full flex items-center justify-between p-4 text-left transition-colors ${hasEffective ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`, children: [_jsxs("div", { className: "flex items-center gap-3", children: [isExpanded ? _jsx(ChevronDown, { size: 18 }) : _jsx(ChevronRight, { size: 18 }), _jsx(Package, { size: 18, className: "text-gray-500" }), _jsx("span", { className: "font-semibold", children: pack.title || titleCase(pack.name) })] }), _jsxs("div", { className: "flex items-center gap-3 text-xs", children: [rootSummary && (_jsxs("div", { className: "flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0", children: [_jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["R:", ' ', rootSummary.read === 'none'
+                                                                            ? 'None'
+                                                                            : rootSummary.read === 'all'
+                                                                                ? 'All'
+                                                                                : rootSummary.read === 'division'
+                                                                                    ? 'Division'
+                                                                                    : rootSummary.read === 'department'
+                                                                                        ? 'Department'
+                                                                                        : rootSummary.read === 'location'
+                                                                                            ? 'Location'
+                                                                                            : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W:", ' ', rootSummary.write === 'none'
+                                                                            ? 'None'
+                                                                            : rootSummary.write === 'all'
+                                                                                ? 'All'
+                                                                                : rootSummary.write === 'division'
+                                                                                    ? 'Division'
+                                                                                    : rootSummary.write === 'department'
+                                                                                        ? 'Department'
+                                                                                        : rootSummary.write === 'location'
+                                                                                            ? 'Location'
+                                                                                            : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D:", ' ', rootSummary.delete === 'none'
+                                                                            ? 'None'
+                                                                            : rootSummary.delete === 'all'
+                                                                                ? 'All'
+                                                                                : rootSummary.delete === 'division'
+                                                                                    ? 'Division'
+                                                                                    : rootSummary.delete === 'department'
+                                                                                        ? 'Department'
+                                                                                        : rootSummary.delete === 'location'
+                                                                                            ? 'Location'
+                                                                                            : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
                                                         const grouped = new Map();
                                                         const other = [];
                                                         for (const a of pack.actions) {
@@ -982,7 +1020,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                         }
                                                         const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
                                                             // Fixed precedence (most restrictive -> least restrictive)
-                                                            const precedenceValues = ['none', 'own', 'ldd', 'any'];
+                                                            const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'];
                                                             // Optional: restrict options based on action metadata (scope_modes on any option wins).
                                                             const declaredModes = (() => {
                                                                 const anyOpt = Array.from(g.values.values()).find((x) => Array.isArray(x.scope_modes));
@@ -990,7 +1028,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 if (!Array.isArray(ms) || ms.length === 0)
                                                                     return null;
                                                                 const norm = ms.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
-                                                                const allowed = norm.filter((x) => ['none', 'own', 'ldd', 'any'].includes(x));
+                                                                const allowed = norm.filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(x));
                                                                 return allowed.length ? allowed : null;
                                                             })();
                                                             const valuesToUse = declaredModes ? declaredModes : precedenceValues;
@@ -1030,12 +1068,16 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                         function labelForValue(v) {
                                                             if (v === 'none')
                                                                 return 'None';
-                                                            if (v === 'any')
-                                                                return 'Any';
                                                             if (v === 'own')
                                                                 return 'Own';
-                                                            if (v === 'ldd')
-                                                                return 'LDD';
+                                                            if (v === 'location')
+                                                                return 'Location';
+                                                            if (v === 'department')
+                                                                return 'Department';
+                                                            if (v === 'division')
+                                                                return 'Division';
+                                                            if (v === 'all')
+                                                                return 'All';
                                                             return v;
                                                         }
                                                         function shortLabelForValue(v, fallback) {
@@ -1043,12 +1085,16 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 return shortLabelForValue(fallback, fallback);
                                                             if (v === 'none')
                                                                 return 'None';
-                                                            if (v === 'any')
-                                                                return 'Any';
                                                             if (v === 'own')
                                                                 return 'Own';
-                                                            if (v === 'ldd')
-                                                                return 'LDD';
+                                                            if (v === 'location')
+                                                                return 'Loc';
+                                                            if (v === 'department')
+                                                                return 'Dept';
+                                                            if (v === 'division')
+                                                                return 'Div';
+                                                            if (v === 'all')
+                                                                return 'All';
                                                             return String(v);
                                                         }
                                                         const nodeById = new Map();
@@ -1187,15 +1233,17 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             const explicitValue = explicitValueForGroup(group);
                                                             const allowedModes = group.options
                                                                 .map((o) => o.value)
-                                                                .filter((x) => ['none', 'own', 'ldd', 'any'].includes(String(x)));
+                                                                .filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(String(x)));
                                                             const isOnOffOnly = allowedModes.includes('none') &&
-                                                                allowedModes.includes('any') &&
+                                                                allowedModes.includes('all') &&
                                                                 !allowedModes.includes('own') &&
-                                                                !allowedModes.includes('ldd');
-                                                            // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
-                                                            // Admin templates default to ANY (on). User templates default to NONE (off).
+                                                                !allowedModes.includes('location') &&
+                                                                !allowedModes.includes('department') &&
+                                                                !allowedModes.includes('division');
+                                                            // For non-LDD entities (none/all only), do NOT inherit "own" from pack/global scope.
+                                                            // Admin templates default to ALL (on). User templates default to NONE (off).
                                                             const baseDefault = isOnOffOnly
-                                                                ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                                                 : defaultScopeMode;
                                                             const inheritedModeSafe = inheritedMode && allowedModes.includes(inheritedMode) ? inheritedMode : null;
                                                             const baselineValue = inheritedModeSafe ?? baseDefault;
@@ -1244,13 +1292,20 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                     const explicit = explicitValueForGroup(group);
                                                                     const allowedModes = group.options
                                                                         .map((o) => o.value)
-                                                                        .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                        .filter((x) => x === 'none' ||
+                                                                        x === 'own' ||
+                                                                        x === 'location' ||
+                                                                        x === 'department' ||
+                                                                        x === 'division' ||
+                                                                        x === 'all');
                                                                     const isOnOffOnly = allowedModes.includes('none') &&
-                                                                        allowedModes.includes('any') &&
+                                                                        allowedModes.includes('all') &&
                                                                         !allowedModes.includes('own') &&
-                                                                        !allowedModes.includes('ldd');
+                                                                        !allowedModes.includes('location') &&
+                                                                        !allowedModes.includes('department') &&
+                                                                        !allowedModes.includes('division');
                                                                     const baseDefault = isOnOffOnly
-                                                                        ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                        ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                                                         : defaultScopeMode;
                                                                     const inheritedModeSafe = inh[verb] && allowedModes.includes(inh[verb]) ? inh[verb] : null;
                                                                     const baseline = inheritedModeSafe ?? baseDefault;
@@ -1268,13 +1323,20 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                     const verb = c.verb;
                                                                     const allowedModes = group.options
                                                                         .map((o) => o.value)
-                                                                        .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                        .filter((x) => x === 'none' ||
+                                                                        x === 'own' ||
+                                                                        x === 'location' ||
+                                                                        x === 'department' ||
+                                                                        x === 'division' ||
+                                                                        x === 'all');
                                                                     const isOnOffOnly = allowedModes.includes('none') &&
-                                                                        allowedModes.includes('any') &&
+                                                                        allowedModes.includes('all') &&
                                                                         !allowedModes.includes('own') &&
-                                                                        !allowedModes.includes('ldd');
+                                                                        !allowedModes.includes('location') &&
+                                                                        !allowedModes.includes('department') &&
+                                                                        !allowedModes.includes('division');
                                                                     const baseDefault = isOnOffOnly
-                                                                        ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                        ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                                                         : defaultScopeMode;
                                                                     const inheritedModeSafe = inh[verb] && allowedModes.includes(inh[verb]) ? inh[verb] : null;
                                                                     const baseline = inheritedModeSafe ?? baseDefault;
@@ -1317,13 +1379,20 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 const verb = c.verb;
                                                                 const allowedModes = group.options
                                                                     .map((o) => o.value)
-                                                                    .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                                                    .filter((x) => x === 'none' ||
+                                                                    x === 'own' ||
+                                                                    x === 'location' ||
+                                                                    x === 'department' ||
+                                                                    x === 'division' ||
+                                                                    x === 'all');
                                                                 const isOnOffOnly = allowedModes.includes('none') &&
-                                                                    allowedModes.includes('any') &&
+                                                                    allowedModes.includes('all') &&
                                                                     !allowedModes.includes('own') &&
-                                                                    !allowedModes.includes('ldd');
+                                                                    !allowedModes.includes('location') &&
+                                                                    !allowedModes.includes('department') &&
+                                                                    !allowedModes.includes('division');
                                                                 const baseDefault = isOnOffOnly
-                                                                    ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                                                    ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                                                     : defaultScopeMode;
                                                                 const inheritedModeSafe = inherited[verb] && allowedModes.includes(inherited[verb]) ? inherited[verb] : null;
                                                                 const baseline = inheritedModeSafe ?? baseDefault;

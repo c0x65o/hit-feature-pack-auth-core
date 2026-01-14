@@ -77,7 +77,10 @@ type ActionCatalogItem = {
   default_enabled: boolean; // indicates if enabled by default for all users
 };
 
-type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
+// Scope modes used by the Security Groups UI for LDD-enabled pages.
+// - own is the default for user templates
+// - all means full access (no L/D/D scoping)
+type ScopeModeValue = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
 
 type GeneratedRoute = {
   path: string;
@@ -125,14 +128,19 @@ type ExclusiveActionModeGroup = {
 
 function parseExclusiveActionModeGroup(
   actionKey: string
-): { groupKey: string; value: 'none' | 'own' | 'ldd' | 'any'; basePrefix: string; verb: 'read' | 'write' | 'delete' } | null {
+): {
+  groupKey: string;
+  value: ScopeModeValue;
+  basePrefix: string;
+  verb: 'read' | 'write' | 'delete';
+} | null {
   const m = String(actionKey || '').trim().match(
-    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/
+    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/
   );
   if (!m) return null;
   const basePrefix = m[1];
   const verb = m[2] as 'read' | 'write' | 'delete';
-  const value = m[3] as 'none' | 'own' | 'ldd' | 'any';
+  const value = m[3] as ScopeModeValue;
   return { groupKey: `${basePrefix}.${verb}.scope`, value, basePrefix, verb };
 }
 
@@ -166,7 +174,7 @@ function titleFromGroupKey(groupKey: string): string {
 }
 
 function scopeValueForKey(key: string): ScopeModeValue | null {
-  const m = String(key || '').match(/\.scope\.(none|own|ldd|any)$/);
+  const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all)$/);
   return m ? (m[1] as ScopeModeValue) : null;
 }
 
@@ -257,7 +265,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   })();
 
   const defaultScopeMode: ScopeModeValue =
-    templateRoleEffective === 'admin' ? 'any' : templateRoleEffective === 'user' ? 'own' : 'none';
+    templateRoleEffective === 'admin' ? 'all' : templateRoleEffective === 'user' ? 'own' : 'none';
 
   // ─────────────────────────────────────────────────────────────────────────
   // DERIVED DATA
@@ -336,13 +344,15 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   const packRootScopeSummaryByPack = useMemo(() => {
     type ScopeVerb = 'read' | 'write' | 'delete';
-    const precedence: ScopeModeValue[] = ['none', 'own', 'ldd', 'any'];
+    const precedence: ScopeModeValue[] = ['none', 'own', 'location', 'department', 'division', 'all'];
 
     // index: pack -> verb -> present scope modes
     const present = new Map<string, Record<ScopeVerb, Set<ScopeModeValue>>>();
     for (const a of actionCatalog) {
       const k = String(a.key || '').trim().toLowerCase();
-      const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|ldd|any)$/);
+      const m = k.match(
+        /^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/
+      );
       if (!m) continue;
       const pack = m[1];
       const verb = m[2] as ScopeVerb;
@@ -356,10 +366,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const allowed = modes ? Array.from(modes.values()) : [];
       const isOnOffOnly =
         allowed.includes('none') &&
-        allowed.includes('any') &&
+        allowed.includes('all') &&
         !allowed.includes('own') &&
-        !allowed.includes('ldd');
-      if (isOnOffOnly) return templateRoleEffective === 'admin' ? 'any' : 'none';
+        !allowed.includes('location') &&
+        !allowed.includes('department') &&
+        !allowed.includes('division');
+      if (isOnOffOnly) return templateRoleEffective === 'admin' ? 'all' : 'none';
       return defaultScopeMode;
     }
 
@@ -596,10 +608,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       grouped.get(parsed.groupKey)!.values.set(parsed.value, a);
     }
 
-    const precedenceValues = ['none', 'own', 'ldd', 'any'] as const;
+    const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'] as const;
 
-    function getDeclaredModes(rows: ActionRow[]): Array<'none' | 'own' | 'ldd' | 'any'> | null {
-      const out = new Set<'none' | 'own' | 'ldd' | 'any'>();
+    function getDeclaredModes(rows: ActionRow[]): ScopeModeValue[] | null {
+      const out = new Set<ScopeModeValue>();
       let saw = false;
       for (const r of rows) {
         const ms = (r as any)?.scope_modes;
@@ -607,7 +619,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         saw = true;
         for (const x of ms) {
           const v = String(x || '').trim().toLowerCase();
-          if (v === 'none' || v === 'own' || v === 'ldd' || v === 'any') out.add(v);
+          if (
+            v === 'none' ||
+            v === 'own' ||
+            v === 'location' ||
+            v === 'department' ||
+            v === 'division' ||
+            v === 'all'
+          ) {
+            out.add(v as ScopeModeValue);
+          }
         }
       }
       return saw ? Array.from(out.values()) : null;
@@ -615,8 +636,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
     function buildGroup(groupKey: string, g: GroupBuild) {
       const declaredModes = getDeclaredModes(g.actions);
-      // Infer allowed values from what keys actually exist, so `none/any`-only groups
-      // don't get misclassified as having `own/ldd` (which would make `any` look like an override).
+      // Infer allowed values from what keys actually exist, so `none/all`-only groups
+      // don't get misclassified as L/D/D (which would make `all` look like an override).
       const presentValues = Array.from(precedenceValues).filter((v) => g.values.has(v));
       const allowedValues =
         declaredModes && declaredModes.length
@@ -634,7 +655,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       return { base: m[1], verb: m[2] as any };
     }
 
-    function effectiveModeForGroupKey(groupKey: string): 'none' | 'own' | 'ldd' | 'any' {
+    function effectiveModeForGroupKey(groupKey: string): ScopeModeValue {
       const g = groups.find((x) => x.groupKey === groupKey);
       if (!g) return 'none';
       // Explicit selection (first in precedence order; local state includes pending changes)
@@ -659,16 +680,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
       const isOnOffOnly =
         g.allowedValues.includes('none') &&
-        g.allowedValues.includes('any') &&
+        g.allowedValues.includes('all') &&
         !g.allowedValues.includes('own') &&
-        !g.allowedValues.includes('ldd');
+        !g.allowedValues.includes('location') &&
+        !g.allowedValues.includes('department') &&
+        !g.allowedValues.includes('division');
 
-      const baseDefault: 'none' | 'own' | 'ldd' | 'any' = isOnOffOnly
-        ? (isAdminTemplate ? 'any' : 'none')
-        : (defaultScopeMode as any);
+      const baseDefault: ScopeModeValue = isOnOffOnly ? (isAdminTemplate ? 'all' : 'none') : defaultScopeMode;
 
       // Walk up base ancestry to find inherited value for this verb (pack-root -> entity -> ...).
-      const findInherited = (): ('none' | 'own' | 'ldd' | 'any') | null => {
+      const findInherited = (): ScopeModeValue | null => {
         if (!verb || !base) return null;
         const segs = base.split('.');
         for (let i = segs.length - 1; i >= 1; i--) {
@@ -680,11 +701,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       };
 
       const inherited = findInherited();
-      // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+      // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/all-only),
       // treat it as "no inheritance" and fall back to baseDefault.
       const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
       const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
-      return (explicitMode ?? inheritedOrDefault) as any;
+      return (explicitMode ?? inheritedOrDefault) as ScopeModeValue;
     }
 
     function isOverrideForGroupKey(groupKey: string): boolean {
@@ -711,14 +732,14 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
       const isOnOffOnly =
         g.allowedValues.includes('none') &&
-        g.allowedValues.includes('any') &&
+        g.allowedValues.includes('all') &&
         !g.allowedValues.includes('own') &&
-        !g.allowedValues.includes('ldd');
-      const baseDefault: 'none' | 'own' | 'ldd' | 'any' = isOnOffOnly
-        ? (isAdminTemplate ? 'any' : 'none')
-        : (defaultScopeMode as any);
+        !g.allowedValues.includes('location') &&
+        !g.allowedValues.includes('department') &&
+        !g.allowedValues.includes('division');
+      const baseDefault: ScopeModeValue = isOnOffOnly ? (isAdminTemplate ? 'all' : 'none') : defaultScopeMode;
 
-      const findInherited = (): ('none' | 'own' | 'ldd' | 'any') | null => {
+      const findInherited = (): ScopeModeValue | null => {
         if (!verb || !base) return null;
         const segs = base.split('.');
         for (let i = segs.length - 1; i >= 1; i--) {
@@ -730,7 +751,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       };
 
       const inherited = findInherited();
-      // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/any-only),
+      // If parent inherits a mode not supported by this group (e.g. parent=own, child is none/all-only),
       // treat it as "no inheritance" and fall back to baseDefault.
       const inheritedModeSafe = inherited && g.allowedValues.includes(inherited) ? inherited : null;
       const inheritedOrDefault = inheritedModeSafe ?? baseDefault;
@@ -1032,7 +1053,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const clearScopeOverridesByPrefix = useCallback((prefix: string) => {
     const pfx = String(prefix || '').trim();
     if (!pfx) return;
-    const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|ldd|any)$`, 'i');
+    const re = new RegExp(
+      `^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|location|department|division|all)$`,
+      'i'
+    );
     setPendingActionChanges((prev) => {
       const next = new Map(prev);
       // Revoke any currently granted scope-mode key matching the prefix
@@ -1321,13 +1345,46 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {rootSummary && (
                       <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
                         <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
-                          R: {rootSummary.read === 'none' ? 'None' : rootSummary.read === 'any' ? 'Any' : rootSummary.read === 'ldd' ? 'LDD' : 'Own'}
+                          R:{' '}
+                          {rootSummary.read === 'none'
+                            ? 'None'
+                            : rootSummary.read === 'all'
+                              ? 'All'
+                              : rootSummary.read === 'division'
+                                ? 'Division'
+                                : rootSummary.read === 'department'
+                                  ? 'Department'
+                                  : rootSummary.read === 'location'
+                                    ? 'Location'
+                                    : 'Own'}
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
-                          W: {rootSummary.write === 'none' ? 'None' : rootSummary.write === 'any' ? 'Any' : rootSummary.write === 'ldd' ? 'LDD' : 'Own'}
+                          W:{' '}
+                          {rootSummary.write === 'none'
+                            ? 'None'
+                            : rootSummary.write === 'all'
+                              ? 'All'
+                              : rootSummary.write === 'division'
+                                ? 'Division'
+                                : rootSummary.write === 'department'
+                                  ? 'Department'
+                                  : rootSummary.write === 'location'
+                                    ? 'Location'
+                                    : 'Own'}
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
-                          D: {rootSummary.delete === 'none' ? 'None' : rootSummary.delete === 'any' ? 'Any' : rootSummary.delete === 'ldd' ? 'LDD' : 'Own'}
+                          D:{' '}
+                          {rootSummary.delete === 'none'
+                            ? 'None'
+                            : rootSummary.delete === 'all'
+                              ? 'All'
+                              : rootSummary.delete === 'division'
+                                ? 'Division'
+                                : rootSummary.delete === 'department'
+                                  ? 'Department'
+                                  : rootSummary.delete === 'location'
+                                    ? 'Location'
+                                    : 'Own'}
                         </span>
                       </div>
                     )}
@@ -1368,8 +1425,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                       <div className="p-4">
                         {(() => {
                           // Build "dropdown" groups for exclusive scope-mode action keys like:
-                          //   crm.read.scope.{own,ldd_manager,ldd_lead,ldd_member,any}
-                          //   crm.contacts.read.scope.{own,ldd_manager,ldd_lead,ldd_member,any}
+                          //   crm.read.scope.{none,own,location,department,division,all}
+                          //   crm.contacts.read.scope.{none,own,location,department,division,all}
                           type ActionRow = ActionCatalogItem & { explicit: boolean; effective: boolean };
                           type GroupBuild = { actions: ActionRow[]; values: Map<string, ActionRow> };
                           const grouped = new Map<string, GroupBuild>();
@@ -1390,15 +1447,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
                             // Fixed precedence (most restrictive -> least restrictive)
-                            const precedenceValues = ['none', 'own', 'ldd', 'any'] as const;
+                            const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'] as const;
                             // Optional: restrict options based on action metadata (scope_modes on any option wins).
                             const declaredModes = (() => {
                               const anyOpt = Array.from(g.values.values()).find((x: any) => Array.isArray((x as any).scope_modes));
                               const ms = (anyOpt as any)?.scope_modes;
                               if (!Array.isArray(ms) || ms.length === 0) return null;
                               const norm = ms.map((x: any) => String(x || '').trim().toLowerCase()).filter(Boolean);
-                              const allowed = norm.filter((x: string) => ['none', 'own', 'ldd', 'any'].includes(x));
-                              return allowed.length ? (allowed as Array<'none'|'own'|'ldd'|'any'>) : null;
+                              const allowed = norm.filter((x: string) =>
+                                ['none', 'own', 'location', 'department', 'division', 'all'].includes(x)
+                              );
+                              return allowed.length ? (allowed as ScopeModeValue[]) : null;
                             })();
                             const valuesToUse = declaredModes ? declaredModes : (precedenceValues as any);
 
@@ -1439,18 +1498,22 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           function labelForValue(v: string): string {
                             if (v === 'none') return 'None';
-                            if (v === 'any') return 'Any';
                             if (v === 'own') return 'Own';
-                            if (v === 'ldd') return 'LDD';
+                            if (v === 'location') return 'Location';
+                            if (v === 'department') return 'Department';
+                            if (v === 'division') return 'Division';
+                            if (v === 'all') return 'All';
                             return v;
                           }
 
                           function shortLabelForValue(v: ScopeModeValue | null, fallback: ScopeModeValue): string {
                             if (!v) return shortLabelForValue(fallback, fallback);
                             if (v === 'none') return 'None';
-                            if (v === 'any') return 'Any';
                             if (v === 'own') return 'Own';
-                            if (v === 'ldd') return 'LDD';
+                            if (v === 'location') return 'Loc';
+                            if (v === 'department') return 'Dept';
+                            if (v === 'division') return 'Div';
+                            if (v === 'all') return 'All';
                             return String(v);
                           }
 
@@ -1465,7 +1528,6 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           //     Contacts / Prospects / ...         (entity nodes)
                           //       Read/Write/Delete Scope          (overrides, inherit from parent verb)
                           type ScopeVerb = 'read' | 'write' | 'delete';
-                          type ScopeModeValue = 'none' | 'own' | 'ldd' | 'any';
                           type InheritedByVerb = Record<ScopeVerb, ScopeModeValue | null>;
 
                           type ScopeNode = {
@@ -1614,18 +1676,22 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const explicitValue = explicitValueForGroup(group);
                             const allowedModes = group.options
                               .map((o) => o.value as ScopeModeValue)
-                              .filter((x) => ['none', 'own', 'ldd', 'any'].includes(String(x)));
+                              .filter((x) =>
+                                ['none', 'own', 'location', 'department', 'division', 'all'].includes(String(x))
+                              );
 
                             const isOnOffOnly =
                               allowedModes.includes('none') &&
-                              allowedModes.includes('any') &&
+                              allowedModes.includes('all') &&
                               !allowedModes.includes('own') &&
-                              !allowedModes.includes('ldd');
+                              !allowedModes.includes('location') &&
+                              !allowedModes.includes('department') &&
+                              !allowedModes.includes('division');
 
-                            // For system/non-LDD entities (none/any only), do NOT inherit "own" from pack/global scope.
-                            // Admin templates default to ANY (on). User templates default to NONE (off).
+                            // For non-LDD entities (none/all only), do NOT inherit "own" from pack/global scope.
+                            // Admin templates default to ALL (on). User templates default to NONE (off).
                             const baseDefault: ScopeModeValue = isOnOffOnly
-                              ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                              ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                               : defaultScopeMode;
 
                             const inheritedModeSafe: ScopeModeValue | null =
@@ -1728,14 +1794,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 const explicit = explicitValueForGroup(group);
                                 const allowedModes = group.options
                                   .map((o) => o.value as ScopeModeValue)
-                                  .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                  .filter((x) =>
+                                    x === 'none' ||
+                                    x === 'own' ||
+                                    x === 'location' ||
+                                    x === 'department' ||
+                                    x === 'division' ||
+                                    x === 'all'
+                                  );
                                 const isOnOffOnly =
                                   allowedModes.includes('none') &&
-                                  allowedModes.includes('any') &&
+                                  allowedModes.includes('all') &&
                                   !allowedModes.includes('own') &&
-                                  !allowedModes.includes('ldd');
+                                  !allowedModes.includes('location') &&
+                                  !allowedModes.includes('department') &&
+                                  !allowedModes.includes('division');
                                 const baseDefault: ScopeModeValue = isOnOffOnly
-                                  ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                  ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                   : defaultScopeMode;
                                 const inheritedModeSafe: ScopeModeValue | null =
                                   inh[verb] && allowedModes.includes(inh[verb] as any) ? (inh[verb] as any) : null;
@@ -1753,14 +1828,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 const verb = c.verb;
                                 const allowedModes = group.options
                                   .map((o) => o.value as ScopeModeValue)
-                                  .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                  .filter((x) =>
+                                    x === 'none' ||
+                                    x === 'own' ||
+                                    x === 'location' ||
+                                    x === 'department' ||
+                                    x === 'division' ||
+                                    x === 'all'
+                                  );
                                 const isOnOffOnly =
                                   allowedModes.includes('none') &&
-                                  allowedModes.includes('any') &&
+                                  allowedModes.includes('all') &&
                                   !allowedModes.includes('own') &&
-                                  !allowedModes.includes('ldd');
+                                  !allowedModes.includes('location') &&
+                                  !allowedModes.includes('department') &&
+                                  !allowedModes.includes('division');
                                 const baseDefault: ScopeModeValue = isOnOffOnly
-                                  ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                  ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                   : defaultScopeMode;
                                 const inheritedModeSafe: ScopeModeValue | null =
                                   inh[verb] && allowedModes.includes(inh[verb] as any) ? (inh[verb] as any) : null;
@@ -1804,14 +1888,23 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               const verb = c.verb;
                               const allowedModes = group.options
                                 .map((o) => o.value as ScopeModeValue)
-                                .filter((x) => x === 'none' || x === 'own' || x === 'ldd' || x === 'any');
+                                .filter((x) =>
+                                  x === 'none' ||
+                                  x === 'own' ||
+                                  x === 'location' ||
+                                  x === 'department' ||
+                                  x === 'division' ||
+                                  x === 'all'
+                                );
                               const isOnOffOnly =
                                 allowedModes.includes('none') &&
-                                allowedModes.includes('any') &&
+                                allowedModes.includes('all') &&
                                 !allowedModes.includes('own') &&
-                                !allowedModes.includes('ldd');
+                                !allowedModes.includes('location') &&
+                                !allowedModes.includes('department') &&
+                                !allowedModes.includes('division');
                               const baseDefault: ScopeModeValue = isOnOffOnly
-                                ? (templateRoleEffective === 'admin' ? 'any' : 'none')
+                                ? (templateRoleEffective === 'admin' ? 'all' : 'none')
                                 : defaultScopeMode;
                               const inheritedModeSafe: ScopeModeValue | null =
                                 inherited[verb] && allowedModes.includes(inherited[verb] as any) ? (inherited[verb] as any) : null;

@@ -492,17 +492,17 @@ This is the execution checklist for making Auth Core FP fully self-contained. Ch
   - [ ] invites
   - [ ] impersonation sessions
   - [ ] profile field metadata + profile fields storage
-  - [ ] groups + memberships
+  - [x] groups + memberships
 - [ ] Create FP migrations for Auth V2 authorization schema
   - [ ] page permissions (role/group/user)
-  - [ ] action permissions registry + overrides
-  - [ ] permission sets (“Security Groups”) + grants + seed keys
+  - [x] action permissions registry + overrides
+  - [x] permission sets (“Security Groups”) + grants + seed keys
 
 ### Phase 2 — Core auth API (SDK/UI contract) — implement in TS V2
 
 These must be supported because the TypeScript SDK calls them:
 
-- [ ] `POST /register`
+- [x] `POST /register`
 - [x] `POST /login`
 - [x] `POST /refresh`
 - [x] `POST /logout`
@@ -534,7 +534,7 @@ Email-driven and security flows:
 
 ### Phase 3 — Admin + directory APIs (used by Auth Core FP UI)
 
-- [ ] Directory:
+- [x] Directory:
   - [x] `GET /directory/users`
 - [ ] Users:
   - [x] `GET /users`
@@ -568,24 +568,25 @@ Email-driven and security flows:
   - [ ] `POST /impersonate/start`
   - [ ] `POST /impersonate/end`
 - [ ] Groups + principals:
-  - [ ] `GET /admin/groups`
-  - [ ] `POST /admin/groups`
-  - [ ] `GET /admin/groups/{group_id}`
-  - [ ] `PUT /admin/groups/{group_id}`
-  - [ ] `DELETE /admin/groups/{group_id}`
-  - [ ] `GET /me/groups`
-  - [ ] `GET /admin/groups/{group_id}/users`
-  - [ ] `GET /admin/users/{user_email}/groups`
+  - [x] `GET /admin/groups`
+  - [x] `POST /admin/groups`
+  - [x] `GET /admin/groups/{group_id}`
+  - [x] `PUT /admin/groups/{group_id}`
+  - [x] `DELETE /admin/groups/{group_id}`
+  - [x] `GET /me/groups`
+  - [x] `GET /admin/groups/{group_id}/users`
+  - [x] `GET /admin/users/{user_email}/groups`
 
 ### Phase 4 — Authorization engine (replace `/api/proxy/auth/permissions/*`)
 
 - [ ] Catalog ingestion reads from app-local compiled artifacts (no HTTP hop)
 - [ ] Implement action checks:
-  - [ ] `GET /permissions/actions/check/{action_key:path}`
+  - [x] `GET /permissions/actions/check/{action_key:path}`
 - [ ] Implement page checks + batch checks (used by router/middleware/admin UI)
 - [ ] Implement metric checks (if required by dashboard/metrics packs)
 - [ ] Implement admin permission management surfaces (roles/users/groups/pages/actions)
-- [ ] Implement permission sets (“Security Groups”) CRUD + assignment + grant APIs
+  - [x] Actions registry (list + upsert): `GET/POST /admin/permissions/actions`
+- [x] Implement permission sets (“Security Groups”) CRUD + assignment + grant APIs
 - [ ] Replace `requireAuthCoreAction` to evaluate locally (no proxy call)
 
 ### Phase 5 — Final cutover + deletion
