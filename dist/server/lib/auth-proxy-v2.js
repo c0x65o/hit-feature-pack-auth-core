@@ -495,6 +495,86 @@ function normalizeGroupRow(g) {
         updated_at: g?.updated_at ? new Date(g.updated_at).toISOString() : null,
     };
 }
+export async function checkActionPermissionV2(req, actionKey) {
+    const u = requireUser(req);
+    if (u instanceof NextResponse)
+        return { errorResponse: u };
+    if (!actionKey)
+        return { ok: false, source: 'missing_action_key' };
+    const db = getDb();
+    const actionRes = await db.execute(sql `SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`);
+    const actionRow = actionRes?.rows?.[0];
+    if (!actionRow) {
+        return { ok: false, source: 'unknown_action' };
+    }
+    // 1) User overrides (highest precedence)
+    const userOv = await db.execute(sql `
+    SELECT enabled
+    FROM hit_auth_v2_user_action_overrides
+    WHERE user_email = ${u.email} AND action_key = ${actionKey}
+    LIMIT 1
+  `);
+    const uRow = userOv?.rows?.[0];
+    if (uRow && typeof uRow.enabled === 'boolean') {
+        return { ok: Boolean(uRow.enabled), source: 'user_override' };
+    }
+    // Resolve role (simple model: admin/user)
+    const role = u.roles.includes('admin') ? 'admin' : 'user';
+    // Resolve group memberships
+    const groupsRes = await db.execute(sql `SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`);
+    const groupIds = (groupsRes?.rows || [])
+        .map((r) => String(r?.id || '').trim())
+        .filter(Boolean);
+    // 2) Permission Set grants (Security Groups)
+    let assignmentWhere = sql `(a.principal_type = 'user' AND a.principal_id = ${u.email})
+    OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
+    if (groupIds.length > 0) {
+        assignmentWhere = sql `${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)}))`;
+    }
+    const ps = await db.execute(sql `
+    SELECT 1 AS ok
+    FROM hit_auth_v2_permission_set_assignments a
+    JOIN hit_auth_v2_permission_set_action_grants g
+      ON g.permission_set_id = a.permission_set_id
+     AND g.action_key = ${actionKey}
+    WHERE ${assignmentWhere}
+    LIMIT 1
+  `);
+    if ((ps?.rows || []).length > 0) {
+        return { ok: true, source: 'permission_set' };
+    }
+    // 3) Group action permissions (deny-precedence within group overrides)
+    if (groupIds.length > 0) {
+        const gp = await db.execute(sql `
+      SELECT enabled
+      FROM hit_auth_v2_group_action_permissions
+      WHERE action_key = ${actionKey}
+        AND group_id::text IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)})
+    `);
+        const rows = (gp?.rows || []);
+        if (rows.length > 0) {
+            const anyDeny = rows.some((r) => r && r.enabled === false);
+            const anyAllow = rows.some((r) => r && r.enabled === true);
+            return {
+                ok: anyDeny ? false : anyAllow ? true : false,
+                source: 'group_action_permission',
+            };
+        }
+    }
+    // 4) Role action permissions
+    const rp = await db.execute(sql `
+    SELECT enabled
+    FROM hit_auth_v2_role_action_permissions
+    WHERE role = ${role} AND action_key = ${actionKey}
+    LIMIT 1
+  `);
+    const rRow = rp?.rows?.[0];
+    if (rRow && typeof rRow.enabled === 'boolean') {
+        return { ok: Boolean(rRow.enabled), source: 'role_action_permission' };
+    }
+    // 5) Default
+    return { ok: Boolean(actionRow.default_enabled), source: 'default' };
+}
 /**
  * V2 Auth Proxy Handler (TypeScript-only)
  *
@@ -1391,86 +1471,15 @@ export async function tryHandleAuthV2Proxy(opts) {
     // PERMISSIONS (action checks)
     // ---------------------------------------------------------------------------
     if (p0 === 'permissions' && (p1 || '').trim() === 'actions' && (pathSegments[2] || '').trim() === 'check' && m === 'GET') {
-        const u = requireUser(req);
-        if (u instanceof NextResponse)
-            return u;
         const actionKey = pathSegments
             .slice(3)
             .map((s) => safeDecodePathSegment(String(s || '')).trim())
             .filter(Boolean)
             .join('/');
-        if (!actionKey)
-            return json({ has_permission: false, source: 'missing_action_key' }, { status: 200 });
-        const db = getDb();
-        const actionRes = await db.execute(sql `SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`);
-        const actionRow = actionRes?.rows?.[0];
-        if (!actionRow) {
-            return json({ has_permission: false, source: 'unknown_action' }, { status: 200 });
-        }
-        // 1) User overrides (highest precedence)
-        const userOv = await db.execute(sql `
-      SELECT enabled
-      FROM hit_auth_v2_user_action_overrides
-      WHERE user_email = ${u.email} AND action_key = ${actionKey}
-      LIMIT 1
-    `);
-        const uRow = userOv?.rows?.[0];
-        if (uRow && typeof uRow.enabled === 'boolean') {
-            return json({ has_permission: Boolean(uRow.enabled), source: 'user_override' }, { status: 200 });
-        }
-        // Resolve role (simple model: admin/user)
-        const role = u.roles.includes('admin') ? 'admin' : 'user';
-        // Resolve group memberships
-        const groupsRes = await db.execute(sql `SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`);
-        const groupIds = (groupsRes?.rows || [])
-            .map((r) => String(r?.id || '').trim())
-            .filter(Boolean);
-        // 2) Permission Set grants (Security Groups)
-        let assignmentWhere = sql `(a.principal_type = 'user' AND a.principal_id = ${u.email})
-      OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
-        if (groupIds.length > 0) {
-            assignmentWhere = sql `${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)}))`;
-        }
-        const ps = await db.execute(sql `
-      SELECT 1 AS ok
-      FROM hit_auth_v2_permission_set_assignments a
-      JOIN hit_auth_v2_permission_set_action_grants g
-        ON g.permission_set_id = a.permission_set_id
-       AND g.action_key = ${actionKey}
-      WHERE ${assignmentWhere}
-      LIMIT 1
-    `);
-        if ((ps?.rows || []).length > 0) {
-            return json({ has_permission: true, source: 'permission_set' }, { status: 200 });
-        }
-        // 3) Group action permissions (deny-precedence within group overrides)
-        if (groupIds.length > 0) {
-            const gp = await db.execute(sql `
-        SELECT enabled
-        FROM hit_auth_v2_group_action_permissions
-        WHERE action_key = ${actionKey}
-          AND group_id::text IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)})
-      `);
-            const rows = (gp?.rows || []);
-            if (rows.length > 0) {
-                const anyDeny = rows.some((r) => r && r.enabled === false);
-                const anyAllow = rows.some((r) => r && r.enabled === true);
-                return json({ has_permission: anyDeny ? false : anyAllow ? true : false, source: 'group_action_permission' }, { status: 200 });
-            }
-        }
-        // 4) Role action permissions
-        const rp = await db.execute(sql `
-      SELECT enabled
-      FROM hit_auth_v2_role_action_permissions
-      WHERE role = ${role} AND action_key = ${actionKey}
-      LIMIT 1
-    `);
-        const rRow = rp?.rows?.[0];
-        if (rRow && typeof rRow.enabled === 'boolean') {
-            return json({ has_permission: Boolean(rRow.enabled), source: 'role_action_permission' }, { status: 200 });
-        }
-        // 5) Default
-        return json({ has_permission: Boolean(actionRow.default_enabled), source: 'default' }, { status: 200 });
+        const result = await checkActionPermissionV2(req, actionKey);
+        if ('errorResponse' in result)
+            return result.errorResponse;
+        return json({ has_permission: result.ok, source: result.source }, { status: 200 });
     }
     // ---------------------------------------------------------------------------
     // PERMISSIONS (page checks)

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 export type AuthBackendMode = 'python' | 'ts';
+export type ActionPermissionCheckV2 = {
+    ok: boolean;
+    source: string;
+} | {
+    errorResponse: NextResponse;
+};
+export declare function checkActionPermissionV2(req: NextRequest, actionKey: string): Promise<ActionPermissionCheckV2>;
 /**
  * V2 Auth Proxy Handler (TypeScript-only)
  *
