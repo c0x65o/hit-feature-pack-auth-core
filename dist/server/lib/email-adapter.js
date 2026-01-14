@@ -40,10 +40,12 @@ export async function sendPasswordResetEmail(req, args) {
 export async function sendVerifyEmail(req, args) {
     const base = frontendBaseUrlFromRequest(req);
     const verifyUrl = args.verifyUrl || (base ? `${base}/verify-email` : '');
+    const code = args.code ? String(args.code).trim() : '';
+    const codeLine = code ? `\n\nVerification code: ${code}\n` : '\n';
     await enqueueEmail({
         to: args.to,
         subject: 'Verify your email',
-        text: `Verify your email:\n\nOpen: ${verifyUrl}\n`,
+        text: `Verify your email:\n\nOpen: ${verifyUrl}${codeLine}`,
     });
 }
 export async function sendMagicLinkEmail(req, args) {

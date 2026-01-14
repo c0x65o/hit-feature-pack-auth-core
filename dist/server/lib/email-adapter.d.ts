@@ -10,6 +10,7 @@ export declare function sendPasswordResetEmail(req: NextRequest, args: {
 export declare function sendVerifyEmail(req: NextRequest, args: {
     to: string;
     verifyUrl: string;
+    code?: string | null;
 }): Promise<void>;
 export declare function sendMagicLinkEmail(req: NextRequest, args: {
     to: string;

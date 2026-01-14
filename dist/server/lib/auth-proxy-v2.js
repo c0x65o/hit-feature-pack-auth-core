@@ -3,6 +3,7 @@ import { HIT_CONFIG } from '@/lib/hit-config.generated';
 import { getDb } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import crypto from 'crypto';
+import { sendVerifyEmail, } from './email-adapter';
 function json(data, init) {
     return NextResponse.json(data, {
         status: init?.status ?? 200,
@@ -32,6 +33,14 @@ function base64ToBase64Url(s) {
 }
 function base64UrlEncode(buf) {
     return base64ToBase64Url(buf.toString('base64'));
+}
+function frontendBaseUrlFromRequest(req) {
+    const hdr = req.headers.get('x-frontend-base-url');
+    if (hdr && String(hdr).trim())
+        return String(hdr).trim();
+    const proto = req.headers.get('x-forwarded-proto') || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+    return host ? `${proto}://${host}` : null;
 }
 function parseJwtClaims(token) {
     try {
@@ -213,6 +222,13 @@ function randomToken(bytes = 32) {
 function sha256Hex(s) {
     return crypto.createHash('sha256').update(s).digest('hex');
 }
+function shortCode(length = 6) {
+    let out = '';
+    for (let i = 0; i < length; i += 1) {
+        out += String(crypto.randomInt(0, 10));
+    }
+    return out;
+}
 function nowSeconds() {
     return Math.floor(Date.now() / 1000);
 }
@@ -224,6 +240,10 @@ function getAccessTtlSeconds() {
 function getRefreshTtlSeconds() {
     const raw = Number(process.env.HIT_AUTH_REFRESH_TTL_SECONDS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30 * 24 * 60 * 60; // 30d
+}
+function getBootstrapPassword() {
+    const raw = String(process.env.HIT_AUTH_BOOTSTRAP_PASSWORD || '').trim();
+    return raw ? raw : 'CHANGEME';
 }
 function issueAccessToken(opts) {
     const secret = getJwtSecret();
@@ -303,6 +323,47 @@ async function revokeAllRefreshTokensForUser(db, email) {
     SET revoked_at = now()
     WHERE user_email = ${email} AND revoked_at IS NULL
   `);
+}
+async function createEmailVerificationToken(db, email) {
+    const token = randomToken(32);
+    const code = shortCode(6);
+    const token_hash = sha256Hex(token);
+    const code_hash = sha256Hex(code);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await db.execute(sql `
+    INSERT INTO hit_auth_v2_email_verification_tokens (
+      email, token_hash, code_hash, expires_at, used_at, created_at
+    ) VALUES (
+      ${email}, ${token_hash}, ${code_hash}, ${expiresAt}, NULL, now()
+    )
+  `);
+    return { token, code, expiresAt };
+}
+async function createPasswordResetToken(db, email) {
+    const token = randomToken(32);
+    const token_hash = sha256Hex(token);
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    await db.execute(sql `
+    INSERT INTO hit_auth_v2_password_reset_tokens (
+      email, token_hash, expires_at, used_at, created_at
+    ) VALUES (
+      ${email}, ${token_hash}, ${expiresAt}, NULL, now()
+    )
+  `);
+    return { token, expiresAt };
+}
+async function createMagicLinkToken(db, email) {
+    const token = randomToken(32);
+    const token_hash = sha256Hex(token);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await db.execute(sql `
+    INSERT INTO hit_auth_v2_magic_link_tokens (
+      email, token_hash, expires_at, used_at, created_at
+    ) VALUES (
+      ${email}, ${token_hash}, ${expiresAt}, NULL, now()
+    )
+  `);
+    return { token, expiresAt };
 }
 function isEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -414,6 +475,17 @@ export async function tryHandleAuthV2Proxy(opts) {
       RETURNING email, email_verified, role
     `);
         const row = ins?.rows?.[0];
+        if (emailVerificationEnabled && !row?.email_verified) {
+            try {
+                const ver = await createEmailVerificationToken(db, email);
+                const base = frontendBaseUrlFromRequest(req);
+                const verifyUrl = base ? `${base}/verify-email?token=${encodeURIComponent(ver.token)}` : '';
+                await sendVerifyEmail(req, { to: email, verifyUrl, code: ver.code });
+            }
+            catch {
+                // Best-effort; registration shouldn't fail if email fails.
+            }
+        }
         const tokenOrErr = issueAccessToken({
             email,
             role: String(row?.role || 'user').toLowerCase(),
@@ -459,9 +531,25 @@ export async function tryHandleAuthV2Proxy(opts) {
         }
         if (row.locked)
             return err('Account is locked', 403);
-        if (!row.password_hash)
-            return err('Invalid credentials', 401);
-        const ok = await verifyPassword(password, String(row.password_hash));
+        if (getEmailVerificationEnabledFromConfig() && !row.email_verified) {
+            return err('Email verification required', 403);
+        }
+        const storedHash = row.password_hash ? String(row.password_hash) : '';
+        let ok = false;
+        if (!storedHash) {
+            ok = password === getBootstrapPassword();
+            if (ok) {
+                const password_hash = await hashPassword(password);
+                await db.execute(sql `
+          UPDATE hit_auth_v2_users
+          SET password_hash = ${password_hash}, updated_at = now()
+          WHERE email = ${email}
+        `);
+            }
+        }
+        else {
+            ok = await verifyPassword(password, storedHash);
+        }
         if (!ok) {
             await tryWriteAuthAuditEvent({
                 req,

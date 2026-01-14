@@ -43,7 +43,10 @@ export async function sendInviteEmail(req: NextRequest, args: { to: string; invi
   });
 }
 
-export async function sendPasswordResetEmail(req: NextRequest, args: { to: string; resetUrl: string }) {
+export async function sendPasswordResetEmail(
+  req: NextRequest,
+  args: { to: string; resetUrl: string }
+) {
   const base = frontendBaseUrlFromRequest(req);
   const resetUrl = args.resetUrl || (base ? `${base}/reset-password` : '');
 
@@ -54,14 +57,19 @@ export async function sendPasswordResetEmail(req: NextRequest, args: { to: strin
   });
 }
 
-export async function sendVerifyEmail(req: NextRequest, args: { to: string; verifyUrl: string }) {
+export async function sendVerifyEmail(
+  req: NextRequest,
+  args: { to: string; verifyUrl: string; code?: string | null }
+) {
   const base = frontendBaseUrlFromRequest(req);
   const verifyUrl = args.verifyUrl || (base ? `${base}/verify-email` : '');
+  const code = args.code ? String(args.code).trim() : '';
+  const codeLine = code ? `\n\nVerification code: ${code}\n` : '\n';
 
   await enqueueEmail({
     to: args.to,
     subject: 'Verify your email',
-    text: `Verify your email:\n\nOpen: ${verifyUrl}\n`,
+    text: `Verify your email:\n\nOpen: ${verifyUrl}${codeLine}`,
   });
 }
 
