@@ -13,6 +13,7 @@ This document enumerates what FP Auth Core must include (responsibilities, data 
 - **No Python services**: no `/api/proxy/auth` routing to Python, no `HIT_AUTH_URL` usage.
 - **No provisioner / no service tokens**: no `X-HIT-Service-Token` flows, no “resolve config via provisioner”, no shared-db/SSO coupling, no cross-project semantics.
 - **Single app DB**: Auth Core uses the app’s database connection directly (Drizzle) with no indirection.
+- **Not backward compatible (data/runtime)**: V2 does **not** preserve Python auth DB state, active sessions, tokens, or legacy schema/behavior. Feature parity is maintained, not data compatibility.
 - **Self-contained**: all endpoints required by Auth Core UI + SDK + other feature packs are served by FP-owned TypeScript server handlers.
 
 ## Current architecture (what exists today)
@@ -124,11 +125,9 @@ Note: email delivery must be done via a TypeScript email capability (likely the 
   - `/me/groups` (non-admin)
   - `/admin/groups/{group_id}/users`
   - `/admin/users/{user_email}/groups`
-- Support “dynamic groups” behavior if enabled:
-  - Python implementation integrates with a metrics segments query endpoint (`POST /api/metrics/segments/query`)
-  - Auth Core FP must either:
-    - provide an equivalent TypeScript-only integration, or
-    - explicitly drop dynamic groups and remove dependent UI.
+- **No dynamic groups in V2**:
+  - We do not support segment-backed/dynamic membership.
+  - Use **Permission Sets (“Security Groups”)** for access control, templates, and defaults.
 
 ### 9) Authorization / permissions (pages, actions, metrics)
 
@@ -152,7 +151,7 @@ Auth Core FP must expose a config surface compatible with existing consumers:
 
 - `GET /config` and/or `GET /features` returning:
   - `allow_signup`, `password_login`, `password_reset`, `magic_link_login`, `email_verification`, `two_factor_auth`, `oauth_providers`
-  - `available_roles` and group-related flags used by principals picker UI (`user_groups_enabled`, `dynamic_groups_enabled`)
+  - `available_roles` (V2 defaults to **only** `admin` and `user`) and group-related flags used by principals picker UI (`user_groups_enabled`, `dynamic_groups_enabled=false`)
 
 Important: current `useAuthConfig()` reads from `window.__HIT_CONFIG.auth` (static build-time config). Admin hooks also call `/features` (runtime). Decide whether `/features` becomes purely derived from config or includes runtime capability checks.
 
@@ -215,9 +214,9 @@ Also from `hit-modules/hit-module-auth/app/models.py`:
 
 ### Guiding principles
 
-- Prefer **SQL migrations** in `hit-feature-pack-auth-core/migrations/*` (already the pattern for org dimensions).
-- Ordering must support existing deployments:
-  - If auth tables already exist in DB (from historical Python module), migrations must be **idempotent** or include a controlled data migration path.
+- Prefer **FP-owned SQL schema installs** in `hit-feature-pack-auth-core/migrations/*` (already the pattern for org dimensions).
+- Terminology note: these are “migrations” only in the mechanical sense (how HIT applies schema changes). **We are not migrating data from Python auth to V2.** We are installing a replacement schema (`hit_auth_v2_*`).
+- This is a **new auth schema**. Do not carry forward Python-era compatibility logic.
 
 ### Migration source mapping (Python → FP)
 
@@ -240,7 +239,8 @@ Python auth schema is evolved via Alembic scripts:
 - `.../015_add_permission_seed_keys.py`
 - `.../016_add_permission_set_template_role.py`
 
-Auth Core FP must create equivalent SQL migrations (new files after `0003_*`) that reproduce the final schema.
+Auth Core FP must create SQL migrations (new files after `0003_*`) that reproduce the **required feature set**.
+This does **not** require matching historical Alembic evolution or carrying legacy columns/behaviors.
 
 Recommended grouping for FP SQL migrations:
 
@@ -421,11 +421,13 @@ In TS-only world, **do not** introduce a new privileged HTTP surface. Prefer det
 
 ## Notes on compatibility (what to preserve)
 
-- **User identity key**: existing org assignments use `userKey` as a string (currently email). Preserve email as primary identifier unless an explicit migration is planned.
-- **Cookie name**: `hit_token` is used widely by UI + proxy logic. Preserve.
-- **Response shapes**:
-  - `TokenResponse`: `token`, `refresh_token`, `email_verified`, `two_factor_required?`, `expires_in?`
-  - Users in admin UI expect fields like `email_verified`, `two_factor_enabled`, `role`, `locked`, `profile_fields`, `last_login`.
+Even though V2 is not backward compatible at the data/runtime level, preserving these *integration contracts* reduces churn:
+
+- **User identity key**: org assignments use `userKey` as a string (currently email). Keep email as the canonical user key for now.
+- **Cookie name**: keep `hit_token` so existing UI/middleware continues to function.
+- **Response shapes** (SDK/UI contract):
+  - Keep `TokenResponse` fields (`token`, `refresh_token`, `email_verified`, `two_factor_required?`, `expires_in?`).
+  - Keep user fields expected by admin UI (`email_verified`, `two_factor_enabled`, `role`, `locked`, `profile_fields`, `last_login`).
 
 ## Immediate next steps (execution)
 
@@ -434,3 +436,161 @@ In TS-only world, **do not** introduce a new privileged HTTP surface. Prefer det
 3) Replace `requireAuthCoreAction` to evaluate permissions locally (no `/api/proxy/auth`).
 4) Remove app-level `api/proxy/auth` route and delete Python auth module from manifests and runtime.
 
+## Incremental cutover strategy (recommended)
+
+To avoid a “flag day” migration, run a **dual-backend** phase where `/api/proxy/auth/*` can be served by:
+
+- **Python (current)**: the existing Python auth service
+- **TypeScript V2 (new)**: feature-pack-owned handlers running inside the app runtime
+
+### Proposed toggle
+
+Use `HIT_AUTH_BACKEND`:
+
+- `python` (default): proxy to Python auth
+- `ts` (or `v2`): route to TS V2 only; return 501 for unimplemented endpoints
+
+This enables building endpoints **one-by-one** while Python remains the active backend, then flipping to TS when complete, and deleting Python immediately after.
+
+### Non-backward-compatible cutover (DB)
+
+V2 does not migrate data from Python auth. Choose one cutover approach:
+
+- **Destructive cutover (simplest)**:
+  - Add an FP migration that drops Python-era `hit_auth_*` tables (if present) and creates the V2 schema.
+  - Outcome: users/sessions/invites/audit are reset; everyone re-onboards.
+- **Side-by-side schema (recommended)**:
+  - Create V2 tables under a new prefix: **`hit_auth_v2_*`** and point V2 runtime at them.
+  - After full rollout and verification, add a later migration to drop the old Python-era `hit_auth_*` tables.
+
+Either way, the endpoint surface can remain stable via the `HIT_AUTH_BACKEND` dual-backend switch.
+
+## Implementation checklist (go one-by-one)
+
+This is the execution checklist for making Auth Core FP fully self-contained. Check items off as they land.
+
+### Phase 0 — Wiring / scaffolding (keep the system fundamentally the same)
+
+- [x] Add `/api/proxy/auth/*` backend toggle: `HIT_AUTH_BACKEND=python|ts`
+- [x] Add TypeScript V2 shim handler (feature-pack-owned) and route a few endpoints through it
+  - [x] `GET /healthz`
+  - [x] `GET /config`
+  - [x] `GET /features`
+- [x] V2 DB cutover mode: side-by-side prefix **`hit_auth_v2_*`**
+
+### Phase 1 — Schema + migrations (TypeScript-owned)
+
+- [ ] Create FP migrations for Auth V2 identity/security schema (tables + indexes)
+  - [x] users (`hit_auth_v2_users`)
+  - [x] refresh tokens/sessions (`hit_auth_v2_refresh_tokens`)
+  - [ ] login attempts + rate limiting (`hit_auth_v2_login_attempts` or equivalent)
+  - [ ] audit/events (`hit_auth_v2_events`)
+  - [ ] email verification/reset/magic link tokens
+  - [ ] 2FA (totp + backup codes)
+  - [ ] OAuth accounts
+  - [ ] devices
+  - [ ] invites
+  - [ ] impersonation sessions
+  - [ ] profile field metadata + profile fields storage
+  - [ ] groups + memberships
+- [ ] Create FP migrations for Auth V2 authorization schema
+  - [ ] page permissions (role/group/user)
+  - [ ] action permissions registry + overrides
+  - [ ] permission sets (“Security Groups”) + grants + seed keys
+
+### Phase 2 — Core auth API (SDK/UI contract) — implement in TS V2
+
+These must be supported because the TypeScript SDK calls them:
+
+- [ ] `POST /register`
+- [x] `POST /login`
+- [x] `POST /refresh`
+- [x] `POST /logout`
+- [x] `POST /logout-all`
+- [x] `POST /validate`
+- [x] `GET /me`
+
+Email-driven and security flows:
+
+- [ ] `POST /verify-email`
+- [ ] `POST /resend-verification`
+- [ ] `GET /verification-status`
+- [ ] `POST /forgot-password`
+- [ ] `POST /reset-password`
+- [ ] `POST /magic-link/request`
+- [ ] `POST /magic-link/verify`
+
+2FA + OAuth (keep endpoint compatibility with current SDK where applicable):
+
+- [ ] `POST /enable-2fa` (legacy alias)
+- [ ] `POST /verify-2fa` (legacy alias)
+- [ ] `POST /2fa/setup`
+- [ ] `POST /2fa/verify-setup`
+- [ ] `POST /2fa/disable`
+- [ ] `GET /2fa/backup-codes`
+- [ ] `POST /oauth/url` (alias)
+- [ ] `POST /oauth/callback`
+- [ ] Provider-scoped URLs (if still needed by UI): `GET/POST /oauth/{provider}/url`
+
+### Phase 3 — Admin + directory APIs (used by Auth Core FP UI)
+
+- [ ] Directory:
+  - [x] `GET /directory/users`
+- [ ] Users:
+  - [x] `GET /users`
+  - [x] `GET /users/{email}`
+  - [x] `POST /users`
+  - [x] `PUT /users/{email}`
+  - [x] `DELETE /users/{email}`
+  - [ ] `POST /admin/users/{email}/resend-verification`
+  - [ ] `PUT /admin/users/{email}/verify`
+  - [ ] `POST /admin/users/{email}/reset-password`
+- [ ] Sessions:
+  - [ ] `GET /sessions`
+  - [ ] `DELETE /sessions/{session_id}`
+  - [ ] `GET /admin/sessions`
+  - [ ] `GET /admin/users/{email}/sessions`
+  - [ ] `DELETE /admin/users/{email}/sessions`
+- [ ] Devices:
+  - [ ] `GET /devices`
+  - [ ] `POST /devices/{device_id}/trust`
+  - [ ] `DELETE /devices/{device_id}`
+- [ ] Invites:
+  - [ ] `POST /invites`
+  - [ ] `GET /invites`
+  - [ ] `POST /invites/accept`
+  - [ ] `POST /invites/reject`
+  - [ ] `POST /invites/{invite_id}/resend`
+  - [ ] `DELETE /invites/{invite_id}`
+- [ ] Audit log:
+  - [ ] `GET /audit-log`
+- [ ] Impersonation:
+  - [ ] `POST /impersonate/start`
+  - [ ] `POST /impersonate/end`
+- [ ] Groups + principals:
+  - [ ] `GET /admin/groups`
+  - [ ] `POST /admin/groups`
+  - [ ] `GET /admin/groups/{group_id}`
+  - [ ] `PUT /admin/groups/{group_id}`
+  - [ ] `DELETE /admin/groups/{group_id}`
+  - [ ] `GET /me/groups`
+  - [ ] `GET /admin/groups/{group_id}/users`
+  - [ ] `GET /admin/users/{user_email}/groups`
+
+### Phase 4 — Authorization engine (replace `/api/proxy/auth/permissions/*`)
+
+- [ ] Catalog ingestion reads from app-local compiled artifacts (no HTTP hop)
+- [ ] Implement action checks:
+  - [ ] `GET /permissions/actions/check/{action_key:path}`
+- [ ] Implement page checks + batch checks (used by router/middleware/admin UI)
+- [ ] Implement metric checks (if required by dashboard/metrics packs)
+- [ ] Implement admin permission management surfaces (roles/users/groups/pages/actions)
+- [ ] Implement permission sets (“Security Groups”) CRUD + assignment + grant APIs
+- [ ] Replace `requireAuthCoreAction` to evaluate locally (no proxy call)
+
+### Phase 5 — Final cutover + deletion
+
+- [ ] Set `HIT_AUTH_BACKEND=ts` in the app(s) once coverage is complete
+- [ ] Remove `/api/proxy/auth` route (or reduce to a thin internal router to V2 only)
+- [ ] Remove Python auth module from manifests/runtime and delete dead code
+- [ ] Remove any remaining Python-derived assumptions (service tokens, provisioner config lookup)

@@ -3,6 +3,7 @@
 import React from 'react';
 import { Mail } from 'lucide-react';
 import { useUi } from '@hit/ui-kit';
+import { splitLinkedEntityTabsExtra, wrapWithLinkedEntityTabsIfConfigured } from '@hit/feature-pack-form-core';
 
 function asRecord(v: unknown): Record<string, any> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as any) : null;
@@ -69,6 +70,7 @@ export function EntityDetailBody({
   entityKey,
   uiSpec,
   record,
+  navigate,
 }: {
   entityKey: string;
   uiSpec: any;
@@ -77,6 +79,7 @@ export function EntityDetailBody({
 }) {
   const { Card } = useUi();
   const detail = asRecord(uiSpec?.detail) || {};
+  const { linkedEntityTabs } = splitLinkedEntityTabsExtra((detail as any).extras);
   const summaryFieldsAny = detail.summaryFields;
   const summaryFields: string[] = Array.isArray(summaryFieldsAny)
     ? summaryFieldsAny.map((x) => String(x).trim()).filter(Boolean)
@@ -86,7 +89,7 @@ export function EntityDetailBody({
   const fallback = Object.keys(fieldsMap).filter((k) => k && k !== 'id').slice(0, 8);
   const keysToRender = summaryFields.length ? summaryFields : fallback;
 
-  return (
+  const inner = (
     <Card>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {keysToRender.map((k) => (
@@ -98,5 +101,13 @@ export function EntityDetailBody({
       ) : null}
     </Card>
   );
+
+  return wrapWithLinkedEntityTabsIfConfigured({
+    linkedEntityTabs,
+    entityKey,
+    record,
+    navigate,
+    overview: inner,
+  });
 }
 
