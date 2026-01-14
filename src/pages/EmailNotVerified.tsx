@@ -13,12 +13,8 @@ interface EmailNotVerifiedProps {
   appName?: string;
 }
 
-// Get the auth module URL
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl(): string {
-  if (typeof window !== 'undefined') {
-    const win = window as unknown as Record<string, string>;
-    return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-  }
   return '/api/proxy/auth';
 }
 

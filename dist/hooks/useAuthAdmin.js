@@ -42,14 +42,8 @@ export function useAuthFeatures() {
     }, [refresh]);
     return { data: features, loading, error, refresh };
 }
-// Get the auth module URL from environment or defaults
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    if (typeof window !== 'undefined') {
-        // Client-side: check window config or default to proxy
-        const win = window;
-        return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
-    // Server-side: use proxy (env vars handled by Next.js)
     return '/api/proxy/auth';
 }
 function getAuthHeaders() {

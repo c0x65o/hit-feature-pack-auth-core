@@ -10,14 +10,6 @@ export type EntityActionHandlerArgs = {
 export type EntityActionHandler = (args: EntityActionHandlerArgs) => void | Promise<void>;
 
 function getAuthUrl(): string {
-  try {
-    if (typeof window !== 'undefined') {
-      const win = window as any;
-      return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
-  } catch {
-    // ignore
-  }
   return '/api/proxy/auth';
 }
 

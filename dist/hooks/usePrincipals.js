@@ -5,12 +5,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useUsers, useGroups } from './useAuthAdmin';
-// Get the auth module URL from environment or defaults
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    if (typeof window !== 'undefined') {
-        const win = window;
-        return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
     return '/api/proxy/auth';
 }
 function getAuthHeaders() {

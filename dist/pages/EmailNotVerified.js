@@ -5,12 +5,8 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
 import { AuthCard, AuthLayout, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
-// Get the auth module URL
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    if (typeof window !== 'undefined') {
-        const win = window;
-        return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
     return '/api/proxy/auth';
 }
 function EmailNotVerifiedContent({ email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {

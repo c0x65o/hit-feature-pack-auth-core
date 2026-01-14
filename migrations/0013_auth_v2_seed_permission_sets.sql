@@ -34,13 +34,6 @@ INSERT INTO "hit_auth_v2_permission_set_assignments" (
   "created_at"
 )
 SELECT "id", 'role', 'user', now() FROM default_set
-ON CONFLICT ("permission_set_id", "principal_type", "principal_id") DO NOTHING;
-
-INSERT INTO "hit_auth_v2_permission_set_assignments" (
-  "permission_set_id",
-  "principal_type",
-  "principal_id",
-  "created_at"
-)
+UNION ALL
 SELECT "id", 'role', 'admin', now() FROM system_set
 ON CONFLICT ("permission_set_id", "principal_type", "principal_id") DO NOTHING;

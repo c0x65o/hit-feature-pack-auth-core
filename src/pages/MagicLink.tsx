@@ -14,10 +14,6 @@ interface MagicLinkProps {
 }
 
 function getAuthUrl(): string {
-  if (typeof window !== 'undefined') {
-    const win = window as unknown as Record<string, string>;
-    return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-  }
   return '/api/proxy/auth';
 }
 

@@ -1,14 +1,5 @@
 'use client';
 function getAuthUrl() {
-    try {
-        if (typeof window !== 'undefined') {
-            const win = window;
-            return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-        }
-    }
-    catch {
-        // ignore
-    }
     return '/api/proxy/auth';
 }
 function getAuthHeaders() {

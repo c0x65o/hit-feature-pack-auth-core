@@ -3,14 +3,8 @@
  * Auth hooks for authentication operations
  */
 import { useState, useCallback, useEffect } from 'react';
-// Get the auth module URL
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    if (typeof window !== 'undefined') {
-        // Client-side: check window config or default to proxy
-        const win = window;
-        return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
-    // Server-side: use proxy (env vars handled by Next.js)
     return '/api/proxy/auth';
 }
 // Check if debug mode is enabled

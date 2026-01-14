@@ -6,10 +6,6 @@ import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
 import { AuthCard, AuthLayout, FormInput, styles } from '@hit/ui-kit';
 import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 function getAuthUrl() {
-    if (typeof window !== 'undefined') {
-        const win = window;
-        return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-    }
     return '/api/proxy/auth';
 }
 async function fetchAuth(endpoint, options) {

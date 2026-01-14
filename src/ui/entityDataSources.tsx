@@ -93,10 +93,7 @@ function useAvailableRolesOptionSource() {
     const run = async () => {
       try {
         setLoading(true);
-        const authUrl =
-          typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_HIT_AUTH_URL
-            ? (window as any).NEXT_PUBLIC_HIT_AUTH_URL
-            : '/api/proxy/auth';
+        const authUrl = '/api/proxy/auth';
         const res = await fetch(`${authUrl}/features`, { credentials: 'include', headers: { 'Content-Type': 'application/json' } });
         const json = await res.json().catch(() => ({}));
         const rolesAny = json?.features?.available_roles;

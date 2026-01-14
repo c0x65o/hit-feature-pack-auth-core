@@ -38,14 +38,8 @@ interface AuthResponse {
   message?: string;
 }
 
-// Get the auth module URL
+// Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl(): string {
-  if (typeof window !== 'undefined') {
-    // Client-side: check window config or default to proxy
-    const win = window as unknown as Record<string, string>;
-    return win.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-  }
-  // Server-side: use proxy (env vars handled by Next.js)
   return '/api/proxy/auth';
 }
 

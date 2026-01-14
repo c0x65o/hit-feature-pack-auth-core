@@ -188,6 +188,11 @@ function getEmailVerificationEnabledFromConfig(): boolean {
   return normalizeBool(auth.emailVerification, true);
 }
 
+function getMagicLinkEnabledFromConfig(): boolean {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  return normalizeBool(auth.magicLinkLogin, false);
+}
+
 // Node's `promisify(crypto.scrypt)` loses the overload that accepts `options`, which we use.
 // Wrap it ourselves so TS is happy and we can pass N/r/p.
 function scryptAsync(
@@ -217,9 +222,20 @@ async function hashPassword(password: string): Promise<string> {
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
   try {
     const parts = String(stored || '').split('$');
-    if (parts.length !== 7) return false;
-    const [kind, empty, nStr, rStr, pStr, saltB64, dkB64] = parts;
-    if (kind !== 'scrypt' || empty !== '') return false;
+    let kind = '';
+    let nStr = '';
+    let rStr = '';
+    let pStr = '';
+    let saltB64 = '';
+    let dkB64 = '';
+    if (parts.length === 7) {
+      [kind, , nStr, rStr, pStr, saltB64, dkB64] = parts;
+    } else if (parts.length === 6) {
+      [kind, nStr, rStr, pStr, saltB64, dkB64] = parts;
+    } else {
+      return false;
+    }
+    if (kind !== 'scrypt') return false;
     const N = Number(nStr);
     const r = Number(rStr);
     const p = Number(pStr);
@@ -266,9 +282,13 @@ function getRefreshTtlSeconds(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30 * 24 * 60 * 60; // 30d
 }
 
+function getBootstrapEmail(): string {
+  return String(process.env.HIT_AUTH_USERNAME || '').trim().toLowerCase();
+}
+
 function getBootstrapPassword(): string {
-  const raw = String(process.env.HIT_AUTH_BOOTSTRAP_PASSWORD || '').trim();
-  return raw ? raw : 'CHANGEME';
+  const raw = String(process.env.HIT_AUTH_PASSWORD || '').trim();
+  return raw ? raw : '';
 }
 
 function issueAccessToken(opts: {
@@ -385,6 +405,48 @@ async function revokeAllRefreshTokensForUser(db: any, email: string) {
     UPDATE hit_auth_v2_refresh_tokens
     SET revoked_at = now()
     WHERE user_email = ${email} AND revoked_at IS NULL
+  `);
+}
+
+async function ensureBootstrapAdmin(db: any, email: string, password: string): Promise<void> {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail || !isEmail(normalizedEmail)) return;
+  const configuredEmail = getBootstrapEmail();
+  const configuredPassword = getBootstrapPassword();
+
+  if (!configuredEmail || !configuredPassword) {
+    return;
+  }
+
+  if (configuredEmail !== normalizedEmail) {
+    return;
+  }
+
+  if (password !== configuredPassword) {
+    return;
+  }
+
+  const countRes = await db.execute(sql`
+    SELECT COUNT(*)::int AS c FROM hit_auth_v2_users
+  `);
+  const count = Number(countRes?.rows?.[0]?.c || 0);
+  if (count > 0) {
+    const exists = await db.execute(
+      sql`SELECT 1 FROM hit_auth_v2_users WHERE email = ${normalizedEmail} LIMIT 1`
+    );
+    if ((exists?.rows || []).length > 0) return;
+  }
+
+  const password_hash = await hashPassword(password);
+  await db.execute(sql`
+    INSERT INTO hit_auth_v2_users (
+      email, password_hash, email_verified, two_factor_enabled, locked, role, metadata,
+      profile_fields, created_at, updated_at
+    ) VALUES (
+      ${normalizedEmail}, ${password_hash}, true, false, false, 'admin', '{}'::jsonb,
+      '{}'::jsonb, now(), now()
+    )
+    ON CONFLICT (email) DO NOTHING
   `);
 }
 
@@ -592,6 +654,9 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (!email || !isEmail(email)) return err('Invalid credentials', 401);
     if (!password) return err('Invalid credentials', 401);
 
+    // Bootstrap admin if configured or if this is the first user and CHANGEME is used.
+    await ensureBootstrapAdmin(db, email, password);
+
     const res = await db.execute(sql`
       SELECT email, password_hash, email_verified, two_factor_enabled, locked, role
       FROM hit_auth_v2_users
@@ -751,6 +816,258 @@ export async function tryHandleAuthV2Proxy(opts: {
       entityId: u.email,
     });
     return json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------------------
+  // EMAIL VERIFICATION + PASSWORD RESET + MAGIC LINK
+  // ---------------------------------------------------------------------------
+  if (p0 === 'verify-email' && m === 'POST') {
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const token = String(body?.token || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
+    const code = String(body?.code || '').trim();
+
+    if (token) {
+      const token_hash = sha256Hex(token);
+      const res = await db.execute(sql`
+        SELECT email
+        FROM hit_auth_v2_email_verification_tokens
+        WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
+        LIMIT 1
+      `);
+      const row = res?.rows?.[0] as any;
+      if (!row?.email) return err('Invalid or expired verification token', 400);
+      await db.execute(sql`
+        UPDATE hit_auth_v2_users
+        SET email_verified = true, updated_at = now()
+        WHERE email = ${String(row.email).toLowerCase()}
+      `);
+      await db.execute(sql`
+        UPDATE hit_auth_v2_email_verification_tokens
+        SET used_at = now()
+        WHERE token_hash = ${token_hash}
+      `);
+      return json({ ok: true, email: String(row.email).toLowerCase() });
+    }
+
+    if (email && code) {
+      const code_hash = sha256Hex(code);
+      const res = await db.execute(sql`
+        SELECT id, email
+        FROM hit_auth_v2_email_verification_tokens
+        WHERE email = ${email} AND code_hash = ${code_hash}
+          AND used_at IS NULL AND expires_at > now()
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      const row = res?.rows?.[0] as any;
+      if (!row?.email) return err('Invalid verification code', 400);
+      await db.execute(sql`
+        UPDATE hit_auth_v2_users
+        SET email_verified = true, updated_at = now()
+        WHERE email = ${email}
+      `);
+      await db.execute(sql`
+        UPDATE hit_auth_v2_email_verification_tokens
+        SET used_at = now()
+        WHERE id = ${row.id}::uuid
+      `);
+      return json({ ok: true, email });
+    }
+
+    return err('Token or email+code required', 400);
+  }
+
+  if (p0 === 'verification-status' && m === 'GET') {
+    if (!getEmailVerificationEnabledFromConfig()) return err('Email verification is disabled', 403);
+    const url = new URL(req.url);
+    const email = String(url.searchParams.get('email') || '').trim().toLowerCase();
+    if (!email || !isEmail(email)) return err('Invalid email', 400);
+    const db = getDb();
+    const u = await db.execute(sql`
+      SELECT email_verified FROM hit_auth_v2_users WHERE email = ${email} LIMIT 1
+    `);
+    const user = u?.rows?.[0] as any;
+    if (!user) return json({ email_verified: false, verification_sent_at: null });
+    if (user.email_verified) return json({ email_verified: true, verification_sent_at: null });
+
+    const t = await db.execute(sql`
+      SELECT created_at
+      FROM hit_auth_v2_email_verification_tokens
+      WHERE email = ${email} AND used_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const tokenRow = t?.rows?.[0] as any;
+    const sentAt = tokenRow?.created_at ? new Date(tokenRow.created_at).toISOString() : null;
+    return json({ email_verified: false, verification_sent_at: sentAt });
+  }
+
+  if (p0 === 'resend-verification' && m === 'POST') {
+    if (!getEmailVerificationEnabledFromConfig()) return err('Email verification is disabled', 403);
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!email || !isEmail(email)) return json({ ok: true });
+
+    const res = await db.execute(sql`
+      SELECT email, email_verified
+      FROM hit_auth_v2_users
+      WHERE email = ${email}
+      LIMIT 1
+    `);
+    const user = res?.rows?.[0] as any;
+    if (!user || user.email_verified) return json({ ok: true });
+
+    try {
+      const ver = await createEmailVerificationToken(db, email);
+      const base = frontendBaseUrlFromRequest(req);
+      const verifyUrl = base ? `${base}/verify-email?token=${encodeURIComponent(ver.token)}` : '';
+      await sendVerifyEmail(req, { to: email, verifyUrl, code: ver.code });
+    } catch {
+      // best-effort
+    }
+    return json({ ok: true });
+  }
+
+  if (p0 === 'forgot-password' && m === 'POST') {
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!email || !isEmail(email)) return json({ ok: true });
+
+    const res = await db.execute(sql`
+      SELECT email
+      FROM hit_auth_v2_users
+      WHERE email = ${email}
+      LIMIT 1
+    `);
+    const user = res?.rows?.[0] as any;
+    if (!user?.email) return json({ ok: true });
+
+    try {
+      const reset = await createPasswordResetToken(db, email);
+      const base = frontendBaseUrlFromRequest(req);
+      const resetUrl = base ? `${base}/reset-password?token=${encodeURIComponent(reset.token)}` : '';
+      await sendPasswordResetEmail(req, { to: email, resetUrl });
+    } catch {
+      // best-effort
+    }
+    return json({ ok: true });
+  }
+
+  if (p0 === 'reset-password' && m === 'POST') {
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const token = String(body?.token || '').trim();
+    const password = String(body?.password || '').trim();
+    if (!token || !password) return err('Token and password are required', 400);
+
+    const token_hash = sha256Hex(token);
+    const res = await db.execute(sql`
+      SELECT email
+      FROM hit_auth_v2_password_reset_tokens
+      WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
+      LIMIT 1
+    `);
+    const row = res?.rows?.[0] as any;
+    if (!row?.email) return err('Invalid or expired reset token', 400);
+
+    const password_hash = await hashPassword(password);
+    await db.execute(sql`
+      UPDATE hit_auth_v2_users
+      SET password_hash = ${password_hash}, updated_at = now()
+      WHERE email = ${String(row.email).toLowerCase()}
+    `);
+    await db.execute(sql`
+      UPDATE hit_auth_v2_password_reset_tokens
+      SET used_at = now()
+      WHERE token_hash = ${token_hash}
+    `);
+    await revokeAllRefreshTokensForUser(db, String(row.email).toLowerCase());
+    return json({ ok: true });
+  }
+
+  if (p0 === 'magic-link' && p1 === 'request' && m === 'POST') {
+    if (!getMagicLinkEnabledFromConfig()) return err('Magic link login is disabled', 403);
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!email || !isEmail(email)) return json({ ok: true });
+
+    const res = await db.execute(sql`
+      SELECT email, locked
+      FROM hit_auth_v2_users
+      WHERE email = ${email}
+      LIMIT 1
+    `);
+    const user = res?.rows?.[0] as any;
+    if (!user?.email || user.locked) return json({ ok: true });
+
+    try {
+      const magic = await createMagicLinkToken(db, email);
+      const base = frontendBaseUrlFromRequest(req);
+      const magicUrl = base ? `${base}/magic-link?token=${encodeURIComponent(magic.token)}` : '';
+      await sendMagicLinkEmail(req, { to: email, magicUrl });
+    } catch {
+      // best-effort
+    }
+    return json({ ok: true });
+  }
+
+  if (p0 === 'magic-link' && p1 === 'verify' && m === 'POST') {
+    const db = getDb();
+    const body = (await req.json().catch(() => ({}))) as any;
+    const token = String(body?.token || '').trim();
+    if (!token) return err('Token is required', 400);
+    const token_hash = sha256Hex(token);
+    const res = await db.execute(sql`
+      SELECT email
+      FROM hit_auth_v2_magic_link_tokens
+      WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
+      LIMIT 1
+    `);
+    const row = res?.rows?.[0] as any;
+    if (!row?.email) return err('Invalid or expired token', 400);
+
+    const userRes = await db.execute(sql`
+      SELECT email, role, email_verified, locked
+      FROM hit_auth_v2_users
+      WHERE email = ${String(row.email).toLowerCase()}
+      LIMIT 1
+    `);
+    const user = userRes?.rows?.[0] as any;
+    if (!user?.email || user.locked) return err('Invalid credentials', 401);
+
+    if (getEmailVerificationEnabledFromConfig() && !user.email_verified) {
+      await db.execute(sql`
+        UPDATE hit_auth_v2_users
+        SET email_verified = true, updated_at = now()
+        WHERE email = ${String(user.email).toLowerCase()}
+      `);
+    }
+
+    const tokenOrErr = issueAccessToken({
+      email: String(user.email).toLowerCase(),
+      role: String(user.role || 'user').toLowerCase(),
+      emailVerified: Boolean(user.email_verified) || getEmailVerificationEnabledFromConfig() === false,
+    });
+    if (tokenOrErr instanceof NextResponse) return tokenOrErr;
+    const refresh = await createRefreshToken(db, { email: String(user.email).toLowerCase(), req });
+
+    await db.execute(sql`
+      UPDATE hit_auth_v2_magic_link_tokens
+      SET used_at = now()
+      WHERE token_hash = ${token_hash}
+    `);
+
+    return json({
+      token: tokenOrErr,
+      refresh_token: refresh.token,
+      email_verified: true,
+      expires_in: getAccessTtlSeconds(),
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1033,6 +1350,85 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (m === 'DELETE') {
       await db.execute(sql`DELETE FROM hit_auth_v2_users WHERE email = ${email}`);
       return json({}, { status: 204 });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ADMIN: USER EMAIL + PASSWORD ACTIONS
+  // ---------------------------------------------------------------------------
+  if (p0 === 'admin' && (p1 || '').trim() === 'users' && (pathSegments[2] || '').trim()) {
+    const gate = requireAdmin(req);
+    if (gate) return gate;
+    const email = safeDecodePathSegment(String(pathSegments[2] || '')).trim().toLowerCase();
+    const action = String(pathSegments[3] || '').trim();
+    if (!email || !isEmail(email)) return err('Invalid user email', 400);
+
+    const db = getDb();
+
+    if (action === 'resend-verification' && m === 'POST') {
+      if (!getEmailVerificationEnabledFromConfig()) return err('Email verification is disabled', 403);
+      const userRes = await db.execute(sql`
+        SELECT email, email_verified
+        FROM hit_auth_v2_users
+        WHERE email = ${email}
+        LIMIT 1
+      `);
+      const user = userRes?.rows?.[0] as any;
+      if (!user?.email || user.email_verified) return json({ ok: true });
+      try {
+        const ver = await createEmailVerificationToken(db, email);
+        const base = frontendBaseUrlFromRequest(req);
+        const verifyUrl = base ? `${base}/verify-email?token=${encodeURIComponent(ver.token)}` : '';
+        await sendVerifyEmail(req, { to: email, verifyUrl, code: ver.code });
+      } catch {
+        // best-effort
+      }
+      return json({ ok: true });
+    }
+
+    if (action === 'verify' && (m === 'PUT' || m === 'POST')) {
+      await db.execute(sql`
+        UPDATE hit_auth_v2_users
+        SET email_verified = true, updated_at = now()
+        WHERE email = ${email}
+      `);
+      return json({ ok: true });
+    }
+
+    if (action === 'reset-password' && m === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const send_email = body?.send_email !== false;
+      const password = String(body?.password || '').trim();
+
+      if (send_email) {
+        const userRes = await db.execute(sql`
+          SELECT email
+          FROM hit_auth_v2_users
+          WHERE email = ${email}
+          LIMIT 1
+        `);
+        const user = userRes?.rows?.[0] as any;
+        if (!user?.email) return json({ ok: true });
+        try {
+          const reset = await createPasswordResetToken(db, email);
+          const base = frontendBaseUrlFromRequest(req);
+          const resetUrl = base ? `${base}/reset-password?token=${encodeURIComponent(reset.token)}` : '';
+          await sendPasswordResetEmail(req, { to: email, resetUrl });
+        } catch {
+          // best-effort
+        }
+        return json({ ok: true });
+      }
+
+      if (!password) return err('Password is required when send_email is false', 400);
+      const password_hash = await hashPassword(password);
+      await db.execute(sql`
+        UPDATE hit_auth_v2_users
+        SET password_hash = ${password_hash}, updated_at = now()
+        WHERE email = ${email}
+      `);
+      await revokeAllRefreshTokensForUser(db, email);
+      return json({ ok: true });
     }
   }
 
