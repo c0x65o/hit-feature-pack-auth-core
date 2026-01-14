@@ -525,51 +525,75 @@ permissions:
       label: "Auth-Core Assignments Read Scope = None"
       description: "Deny all assignment read access."
       default_enabled: false
-    - key: auth-core.assignments.read.scope.any
-      label: "Auth-Core Assignments Read Scope = Any"
-      description: "Read assignments regardless of scope."
-      default_enabled: false
     - key: auth-core.assignments.read.scope.own
       label: "Auth-Core Assignments Read Scope = Own"
       description: "Read only assignments you own (your own assignment)."
       default_enabled: false
-    - key: auth-core.assignments.read.scope.ldd
-      label: "Auth-Core Assignments Read Scope = LDD"
-      description: "Read assignments you own, or that match your L/D/D scope."
+    - key: auth-core.assignments.read.scope.location
+      label: "Auth-Core Assignments Read Scope = Location"
+      description: "Read assignments in your location."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.department
+      label: "Auth-Core Assignments Read Scope = Department"
+      description: "Read assignments in your department."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.division
+      label: "Auth-Core Assignments Read Scope = Division"
+      description: "Read assignments in your division."
+      default_enabled: false
+    - key: auth-core.assignments.read.scope.all
+      label: "Auth-Core Assignments Read Scope = All"
+      description: "Read all assignments (full access)."
       default_enabled: false
 
     - key: auth-core.assignments.write.scope.none
       label: "Auth-Core Assignments Write Scope = None"
       description: "Deny all assignment write access."
       default_enabled: false
-    - key: auth-core.assignments.write.scope.any
-      label: "Auth-Core Assignments Write Scope = Any"
-      description: "Edit assignments regardless of scope."
-      default_enabled: false
     - key: auth-core.assignments.write.scope.own
       label: "Auth-Core Assignments Write Scope = Own"
       description: "Edit only assignments you own (your own assignment)."
       default_enabled: false
-    - key: auth-core.assignments.write.scope.ldd
-      label: "Auth-Core Assignments Write Scope = LDD"
-      description: "Edit assignments you own, or that match your L/D/D scope."
+    - key: auth-core.assignments.write.scope.location
+      label: "Auth-Core Assignments Write Scope = Location"
+      description: "Edit assignments in your location."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.department
+      label: "Auth-Core Assignments Write Scope = Department"
+      description: "Edit assignments in your department."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.division
+      label: "Auth-Core Assignments Write Scope = Division"
+      description: "Edit assignments in your division."
+      default_enabled: false
+    - key: auth-core.assignments.write.scope.all
+      label: "Auth-Core Assignments Write Scope = All"
+      description: "Edit all assignments (full access)."
       default_enabled: false
 
     - key: auth-core.assignments.delete.scope.none
       label: "Auth-Core Assignments Delete Scope = None"
       description: "Deny all assignment delete access."
       default_enabled: false
-    - key: auth-core.assignments.delete.scope.any
-      label: "Auth-Core Assignments Delete Scope = Any"
-      description: "Delete assignments regardless of scope."
-      default_enabled: false
     - key: auth-core.assignments.delete.scope.own
       label: "Auth-Core Assignments Delete Scope = Own"
       description: "Delete only assignments you own (your own assignment)."
       default_enabled: false
-    - key: auth-core.assignments.delete.scope.ldd
-      label: "Auth-Core Assignments Delete Scope = LDD"
-      description: "Delete assignments you own, or that match your L/D/D scope."
+    - key: auth-core.assignments.delete.scope.location
+      label: "Auth-Core Assignments Delete Scope = Location"
+      description: "Delete assignments in your location."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.department
+      label: "Auth-Core Assignments Delete Scope = Department"
+      description: "Delete assignments in your department."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.division
+      label: "Auth-Core Assignments Delete Scope = Division"
+      description: "Delete assignments in your division."
+      default_enabled: false
+    - key: auth-core.assignments.delete.scope.all
+      label: "Auth-Core Assignments Delete Scope = All"
+      description: "Delete all assignments (full access)."
       default_enabled: false
 
     - key: auth-core.assignments.create
