@@ -291,6 +291,28 @@ function getBootstrapPassword(): string {
   return raw ? raw : '';
 }
 
+function withAuthCookie(res: NextResponse, token: string) {
+  res.cookies.set('hit_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: getAccessTtlSeconds(),
+  });
+  return res;
+}
+
+function clearAuthCookie(res: NextResponse) {
+  res.cookies.set('hit_token', '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 0,
+  });
+  return res;
+}
+
 function issueAccessToken(opts: {
   email: string;
   role: string;
@@ -560,7 +582,7 @@ export async function tryHandleAuthV2Proxy(opts: {
 
   // Minimal health check so wiring can be validated immediately.
   if (m === 'GET' && (p0 === 'healthz' || p0 === 'health')) {
-    return json({ ok: true });
+    return clearAuthCookie(json({ ok: true }));
   }
 
   // Config surfaces used by SDK/admin hooks. These are config-derived in V2.
@@ -635,7 +657,7 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (tokenOrErr instanceof NextResponse) return tokenOrErr;
 
     const refresh = await createRefreshToken(db, { email, req });
-    return json(
+    const res = json(
       {
         token: tokenOrErr,
         refresh_token: refresh.token,
@@ -644,6 +666,7 @@ export async function tryHandleAuthV2Proxy(opts: {
       },
       { status: 201 }
     );
+    return withAuthCookie(res, tokenOrErr);
   }
 
   if (p0 === 'login' && m === 'POST') {
@@ -657,13 +680,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     // Bootstrap admin if configured or if this is the first user and CHANGEME is used.
     await ensureBootstrapAdmin(db, email, password);
 
-    const res = await db.execute(sql`
+    const loginRes = await db.execute(sql`
       SELECT email, password_hash, email_verified, two_factor_enabled, locked, role
       FROM hit_auth_v2_users
       WHERE email = ${email}
       LIMIT 1
     `);
-    const row = res?.rows?.[0] as any;
+    const row = loginRes?.rows?.[0] as any;
     if (!row) {
       await tryWriteAuthAuditEvent({
         req,
@@ -727,12 +750,13 @@ export async function tryHandleAuthV2Proxy(opts: {
       entityKind: 'auth.user',
       entityId: row.email,
     });
-    return json({
+    const loginJson = json({
       token: tokenOrErr,
       refresh_token: refresh.token,
       email_verified: Boolean(row.email_verified),
       expires_in: getAccessTtlSeconds(),
     });
+    return withAuthCookie(loginJson, tokenOrErr);
   }
 
   if (p0 === 'refresh' && m === 'POST') {
@@ -742,14 +766,14 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (!refreshToken) return err('Invalid refresh token', 401);
     const token_hash = sha256Hex(refreshToken);
 
-    const res = await db.execute(sql`
+    const refreshRes = await db.execute(sql`
       SELECT rt.user_email, rt.expires_at, rt.revoked_at, u.role, u.email_verified
       FROM hit_auth_v2_refresh_tokens rt
       JOIN hit_auth_v2_users u ON u.email = rt.user_email
       WHERE rt.token_hash = ${token_hash}
       LIMIT 1
     `);
-    const row = res?.rows?.[0] as any;
+    const row = refreshRes?.rows?.[0] as any;
     if (!row) return err('Invalid refresh token', 401);
     if (row.revoked_at) return err('Invalid refresh token', 401);
     const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
@@ -773,12 +797,13 @@ export async function tryHandleAuthV2Proxy(opts: {
       entityKind: 'auth.user',
       entityId: email,
     });
-    return json({
+    const refreshJson = json({
       token: tokenOrErr,
       refresh_token: refresh.token,
       email_verified: Boolean(row.email_verified),
       expires_in: getAccessTtlSeconds(),
     });
+    return withAuthCookie(refreshJson, tokenOrErr);
   }
 
   if (p0 === 'logout' && m === 'POST') {
@@ -799,7 +824,7 @@ export async function tryHandleAuthV2Proxy(opts: {
         entityId: u.email,
       });
     }
-    return json({ ok: true });
+    return clearAuthCookie(json({ ok: true }));
   }
 
   if ((p0 === 'logout-all' || p0 === 'logout_all') && m === 'POST') {
@@ -1022,13 +1047,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     const token = String(body?.token || '').trim();
     if (!token) return err('Token is required', 400);
     const token_hash = sha256Hex(token);
-    const res = await db.execute(sql`
+    const magicTokenRes = await db.execute(sql`
       SELECT email
       FROM hit_auth_v2_magic_link_tokens
       WHERE token_hash = ${token_hash} AND used_at IS NULL AND expires_at > now()
       LIMIT 1
     `);
-    const row = res?.rows?.[0] as any;
+    const row = magicTokenRes?.rows?.[0] as any;
     if (!row?.email) return err('Invalid or expired token', 400);
 
     const userRes = await db.execute(sql`
@@ -1062,12 +1087,13 @@ export async function tryHandleAuthV2Proxy(opts: {
       WHERE token_hash = ${token_hash}
     `);
 
-    return json({
+    const magicJson = json({
       token: tokenOrErr,
       refresh_token: refresh.token,
       email_verified: true,
       expires_in: getAccessTtlSeconds(),
     });
+    return withAuthCookie(magicJson, tokenOrErr);
   }
 
   // ---------------------------------------------------------------------------
@@ -1085,13 +1111,13 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (!isEmail(user_email)) return err('user_email is required', 400);
 
     const db = getDb();
-    const res = await db.execute(sql`
+    const userRes = await db.execute(sql`
       SELECT email, role, email_verified
       FROM hit_auth_v2_users
       WHERE email = ${user_email}
       LIMIT 1
     `);
-    const u = res?.rows?.[0] as any;
+    const u = userRes?.rows?.[0] as any;
     if (!u?.email) return err('User not found', 404);
 
     const ip = getClientIp(req);
@@ -1125,11 +1151,12 @@ export async function tryHandleAuthV2Proxy(opts: {
       details: { admin_email: admin.email, impersonated_email: u.email },
     });
 
-    return json({
+    const impersonateJson = json({
       token: tokenOrErr,
       admin_email: admin.email,
       impersonated_user: { email: u.email, email_verified: Boolean(u.email_verified), roles: [String(u.role || 'user')] },
     });
+    return withAuthCookie(impersonateJson, tokenOrErr);
   }
 
   if (p0 === 'impersonate' && p1 === 'end' && m === 'POST') {
@@ -1558,6 +1585,162 @@ export async function tryHandleAuthV2Proxy(opts: {
       { has_permission: Boolean(actionRow.default_enabled), source: 'default' },
       { status: 200 }
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // PERMISSIONS (page checks)
+  // ---------------------------------------------------------------------------
+  if (p0 === 'permissions' && (p1 || '').trim() === 'pages') {
+    const u = requireUser(req);
+    if (u instanceof NextResponse) return u;
+    const db = getDb();
+    const role = u.roles.includes('admin') ? 'admin' : 'user';
+
+    const groupRes = await db.execute(
+      sql`SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`
+    );
+    const groupIds = (groupRes?.rows || [])
+      .map((r: any) => String(r?.id || '').trim())
+      .filter(Boolean);
+
+    const normalizePagePath = (p: string) => {
+      const trimmed = String(p || '').trim();
+      if (!trimmed) return '';
+      return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    };
+
+    const matchesWildcard = (pattern: string, path: string) => {
+      if (!pattern.endsWith('/*')) return false;
+      const base = pattern.slice(0, -2);
+      if (!base || base === '/') return true;
+      return path === base || path.startsWith(`${base}/`);
+    };
+
+    const evaluatePages = async (pagePaths: string[]): Promise<Record<string, boolean>> => {
+      const paths = pagePaths
+        .map((p) => normalizePagePath(p))
+        .filter(Boolean);
+      if (paths.length === 0) return {};
+
+      const userOvRes = await db.execute(
+        sql`SELECT page_path, enabled FROM hit_auth_v2_user_page_overrides WHERE user_email = ${u.email} AND page_path IN (${sql.join(
+          paths.map((p) => sql`${p}`),
+          sql`, `
+        )})`
+      );
+      const userOverrides = new Map<string, boolean>();
+      for (const row of userOvRes?.rows || []) {
+        userOverrides.set(String((row as any).page_path), Boolean((row as any).enabled));
+      }
+
+      const groupOverrides = new Map<string, boolean[]>();
+      if (groupIds.length > 0) {
+        const groupRes2 = await db.execute(
+          sql`SELECT page_path, enabled FROM hit_auth_v2_group_page_permissions WHERE group_id::text IN (${sql.join(
+            groupIds.map((gid: string) => sql`${gid}`),
+            sql`, `
+          )}) AND page_path IN (${sql.join(paths.map((p) => sql`${p}`), sql`, `)})`
+        );
+        for (const row of groupRes2?.rows || []) {
+          const key = String((row as any).page_path);
+          const enabled = Boolean((row as any).enabled);
+          const arr = groupOverrides.get(key) || [];
+          arr.push(enabled);
+          groupOverrides.set(key, arr);
+        }
+      }
+
+      const roleRes = await db.execute(
+        sql`SELECT page_path, enabled FROM hit_auth_v2_role_page_permissions WHERE role = ${role} AND page_path IN (${sql.join(
+          paths.map((p) => sql`${p}`),
+          sql`, `
+        )})`
+      );
+      const roleOverrides = new Map<string, boolean>();
+      for (const row of roleRes?.rows || []) {
+        roleOverrides.set(String((row as any).page_path), Boolean((row as any).enabled));
+      }
+
+      let assignmentWhere = sql`(a.principal_type = 'user' AND a.principal_id = ${u.email})
+        OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
+      if (groupIds.length > 0) {
+        assignmentWhere = sql`${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(
+          groupIds.map((gid: string) => sql`${gid}`),
+          sql`, `
+        )}))`;
+      }
+      const psRes = await db.execute(sql`
+        SELECT g.page_path
+        FROM hit_auth_v2_permission_set_page_grants g
+        JOIN hit_auth_v2_permission_set_assignments a
+          ON a.permission_set_id = g.permission_set_id
+        WHERE ${assignmentWhere}
+      `);
+      const psAllow = new Set<string>(
+        (psRes?.rows || []).map((r: any) => normalizePagePath(String(r?.page_path || '')))
+      );
+
+      const out: Record<string, boolean> = {};
+      for (const p of paths) {
+        if (userOverrides.has(p)) {
+          out[p] = Boolean(userOverrides.get(p));
+          continue;
+        }
+        const groupList = groupOverrides.get(p) || [];
+        if (groupList.length > 0) {
+          if (groupList.some((v) => v === false)) {
+            out[p] = false;
+            continue;
+          }
+          if (groupList.some((v) => v === true)) {
+            out[p] = true;
+            continue;
+          }
+        }
+        if (roleOverrides.has(p)) {
+          out[p] = Boolean(roleOverrides.get(p));
+          continue;
+        }
+        if (psAllow.has(p)) {
+          out[p] = true;
+          continue;
+        }
+        const wildcardAllowed = Array.from(psAllow.values()).some((pattern) => matchesWildcard(pattern, p));
+        if (wildcardAllowed) {
+          out[p] = true;
+          continue;
+        }
+        // Default: allow
+        out[p] = true;
+      }
+      return out;
+    };
+
+    if ((pathSegments[2] || '').trim() === 'check-batch' && m === 'POST') {
+      const body = (await req.json().catch(() => ([]))) as any;
+      const paths = Array.isArray(body)
+        ? body
+        : Array.isArray(body?.paths)
+          ? body.paths
+          : Array.isArray(body?.page_paths)
+            ? body.page_paths
+            : [];
+      const allowedByPath = await evaluatePages(paths);
+      return json(allowedByPath, { status: 200 });
+    }
+
+    if ((pathSegments[2] || '').trim() === 'check' && m === 'GET') {
+      const rawPath = pathSegments
+        .slice(3)
+        .map((s) => safeDecodePathSegment(String(s || '')).trim())
+        .filter(Boolean)
+        .join('/');
+      const pagePath = rawPath ? normalizePagePath(rawPath) : '';
+      if (!pagePath) return json({ has_permission: false }, { status: 200 });
+      const allowedByPath = await evaluatePages([pagePath]);
+      const has_permission = Boolean(allowedByPath[pagePath]);
+      return json({ has_permission }, { status: 200 });
+    }
   }
 
   // ---------------------------------------------------------------------------
