@@ -140,6 +140,15 @@ Auth Core owns platform authorization, including:
   - `GET /permissions/actions/check/{action_key}` (used by `requireAuthCoreAction`)
   - Page checks and batch checks used by router/middleware
   - Metric checks (for dashboards/metrics access)
+- **Scope-mode actions (LDD-enabled pages)**:
+  - For entities/pages that opt into org-dimension scoping, the permission set selects exactly one scope per verb via exclusive action keys:
+    - `{pack}[.{entity}].{read|write|delete}.scope.{none|own|location|department|division|all}`
+  - Semantics:
+    - `none`: no access
+    - `own`: only records owned/created by the user
+    - `location|department|division`: records matching the user’s org assignment(s) for that dimension
+    - `all`: full access (no scoping)
+  - For non-LDD pages/entities, keep this as a simple on/off gate using only `{none|all}` (no inheritance of `own`).
 - **Admin management APIs**:
   - Role/group/user overrides
   - Permission sets (“Security Groups”) + assignments + grants
