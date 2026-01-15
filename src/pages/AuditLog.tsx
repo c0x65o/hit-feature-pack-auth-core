@@ -245,7 +245,7 @@ export function AuditLog({ onNavigate }: AuditLogProps) {
             {selectedEntry.details && Object.keys(selectedEntry.details).length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1">Additional Details</label>
-                <pre className="bg-gray-800 rounded-lg p-3 text-sm overflow-auto">
+                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3 text-sm text-gray-900 dark:text-gray-100 overflow-auto">
                   {JSON.stringify(selectedEntry.details, null, 2)}
                 </pre>
               </div>

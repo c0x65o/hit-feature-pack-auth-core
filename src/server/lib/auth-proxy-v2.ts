@@ -255,6 +255,7 @@ function buildFeaturesFromConfig(): Record<string, unknown> {
 
     // Admin tooling.
     admin_impersonation: true,
+    audit_log: normalizeBool(auth.auditLog, true),
   };
 }
 
@@ -266,6 +267,11 @@ function getAllowSignupFromConfig(): boolean {
 function getAllowInvitedFromConfig(): boolean {
   const auth = (HIT_CONFIG as any)?.auth ?? {};
   return normalizeBool(auth.allowInvited, false);
+}
+
+function getAuditLogEnabledFromConfig(): boolean {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  return normalizeBool(auth.auditLog, true);
 }
 
 function getEmailVerificationEnabledFromConfig(): boolean {
@@ -1899,6 +1905,78 @@ export async function tryHandleAuthV2Proxy(opts: {
     const row = meRes?.rows?.[0];
     if (!row) return err('User not found', 404);
     return json(normalizeUserRow(row));
+  }
+
+  // ---------------------------------------------------------------------------
+  // AUDIT LOG (admin)
+  // ---------------------------------------------------------------------------
+  if (p0 === 'audit-log' && m === 'GET') {
+    const gate = requireAdmin(req);
+    if (gate) return gate;
+    if (!getAuditLogEnabledFromConfig()) return err('Audit log disabled', 403);
+
+    const url = new URL(req.url);
+    const eventType = String(url.searchParams.get('event_type') || '').trim();
+    const userEmail = String(url.searchParams.get('user_email') || '').trim().toLowerCase();
+    const actorEmail = String(url.searchParams.get('actor_email') || '').trim().toLowerCase();
+    const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+    const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+
+    const whereParts: any[] = [sql`COALESCE(pack_name, '') = 'auth-core'`];
+    if (eventType) {
+      whereParts.push(sql`COALESCE(event_type, action) = ${eventType}`);
+    }
+    if (userEmail) {
+      whereParts.push(
+        sql`LOWER(COALESCE(target_id, entity_id, actor_id, '')) = ${userEmail}`
+      );
+    }
+    if (actorEmail) {
+      whereParts.push(sql`LOWER(COALESCE(actor_id, '')) = ${actorEmail}`);
+    }
+    const whereClause =
+      whereParts.length > 0 ? sql`WHERE ${sql.join(whereParts, sql` AND `)}` : sql``;
+
+    const db = getDb();
+    const [eventsRes, countRes] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          id::text AS id,
+          COALESCE(event_type, action) AS event_type,
+          COALESCE(target_id, entity_id, actor_id) AS user_email,
+          actor_id AS actor_email,
+          ip_address,
+          user_agent,
+          details AS metadata,
+          created_at
+        FROM audit_events
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `),
+      db.execute(sql`
+        SELECT COUNT(*)::int AS total
+        FROM audit_events
+        ${whereClause}
+      `),
+    ]);
+
+    const total = Number(countRes?.rows?.[0]?.total || 0);
+    return json({
+      events: (eventsRes?.rows || []).map((r: any) => ({
+        id: String(r?.id || ''),
+        event_type: String(r?.event_type || ''),
+        user_email: String(r?.user_email || ''),
+        actor_email: r?.actor_email ? String(r.actor_email) : null,
+        ip_address: r?.ip_address ? String(r.ip_address) : null,
+        user_agent: r?.user_agent ? String(r.user_agent) : null,
+        metadata: r?.metadata && typeof r.metadata === 'object' ? r.metadata : {},
+        created_at: r?.created_at ? new Date(r.created_at).toISOString() : null,
+      })),
+      total,
+      limit,
+      offset,
+    });
   }
 
   // ---------------------------------------------------------------------------
