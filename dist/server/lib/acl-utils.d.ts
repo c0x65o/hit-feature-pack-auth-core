@@ -60,6 +60,7 @@ export interface ResolveUserPrincipalsOptions {
      */
     extraGroupIds?: () => Promise<string[]>;
 }
+export declare function getAuthBaseUrl(request?: RequestLike): string | null;
 /**
  * Resolve the current user's principals for ACL checks.
  *

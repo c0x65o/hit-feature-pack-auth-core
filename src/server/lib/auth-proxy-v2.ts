@@ -9,6 +9,7 @@ import { promisify } from 'util';
 import {
   sendMagicLinkEmail,
   sendPasswordResetEmail,
+  sendInviteEmail,
   sendVerifyEmail,
 } from './email-adapter';
 
@@ -236,6 +237,7 @@ function buildFeaturesFromConfig(): Record<string, unknown> {
   // We derive it purely from app-local build config (hit.yaml -> hit-config.generated).
   return {
     allow_signup: normalizeBool(auth.allowSignup, false),
+    allow_invited: normalizeBool(auth.allowInvited, false),
     password_login: normalizeBool(auth.passwordLogin, true),
     password_reset: normalizeBool(auth.passwordReset, true),
     magic_link_login: normalizeBool(auth.magicLinkLogin, false),
@@ -261,6 +263,11 @@ function getAllowSignupFromConfig(): boolean {
   return normalizeBool(auth.allowSignup, false);
 }
 
+function getAllowInvitedFromConfig(): boolean {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  return normalizeBool(auth.allowInvited, false);
+}
+
 function getEmailVerificationEnabledFromConfig(): boolean {
   const auth = (HIT_CONFIG as any)?.auth ?? {};
   return normalizeBool(auth.emailVerification, true);
@@ -269,6 +276,20 @@ function getEmailVerificationEnabledFromConfig(): boolean {
 function getMagicLinkEnabledFromConfig(): boolean {
   const auth = (HIT_CONFIG as any)?.auth ?? {};
   return normalizeBool(auth.magicLinkLogin, false);
+}
+
+function getInviteExpiryDaysFromConfig(): number {
+  const auth = (HIT_CONFIG as any)?.auth ?? {};
+  const raw =
+    auth.inviteExpiryDays ??
+    process.env.HIT_AUTH_INVITE_EXPIRY_DAYS ??
+    process.env.HIT_INVITE_EXPIRY_DAYS ??
+    '';
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(365, Math.max(1, Math.floor(parsed)));
+  }
+  return 7;
 }
 
 // Node's `promisify(crypto.scrypt)` loses the overload that accepts `options`, which we use.
@@ -598,6 +619,12 @@ function isEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
 function safeDecodePathSegment(seg: string): string {
   try {
     return decodeURIComponent(seg);
@@ -646,6 +673,25 @@ function normalizeSessionRow(s: any): Record<string, unknown> {
     created_at: s?.created_at ? new Date(s.created_at).toISOString() : null,
     expires_at: s?.expires_at ? new Date(s.expires_at).toISOString() : null,
     current: false,
+  };
+}
+
+function normalizeInviteRow(inv: any): Record<string, unknown> {
+  const role = inv?.role ? String(inv.role) : null;
+  return {
+    id: String(inv?.id || ''),
+    email: String(inv?.email || ''),
+    inviter_email: String(inv?.inviter_email || ''),
+    invited_by: String(inv?.inviter_email || ''),
+    role,
+    roles: role ? [role] : [],
+    message: inv?.message ?? null,
+    status: String(inv?.status || 'pending'),
+    expires_at: inv?.expires_at ? new Date(inv.expires_at).toISOString() : null,
+    created_at: inv?.created_at ? new Date(inv.created_at).toISOString() : null,
+    accepted_at: inv?.accepted_at ? new Date(inv.accepted_at).toISOString() : null,
+    rejected_at: inv?.rejected_at ? new Date(inv.rejected_at).toISOString() : null,
+    cancelled_at: inv?.cancelled_at ? new Date(inv.cancelled_at).toISOString() : null,
   };
 }
 
@@ -1776,6 +1822,375 @@ export async function tryHandleAuthV2Proxy(opts: {
           AND user_email = ${u.email}
       `);
       return json({ status: 'revoked' });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // INVITES (admin + accept)
+  // ---------------------------------------------------------------------------
+  if (p0 === 'invites') {
+    const allowInvited = getAllowInvitedFromConfig();
+
+    // POST /invites (admin create)
+    if (m === 'POST' && !p1) {
+      if (!allowInvited) return err('Invites are disabled', 403);
+      const gate = requireAdmin(req);
+      if (gate) return gate;
+      const admin = requireUser(req);
+      if (admin instanceof NextResponse) return admin;
+
+      const body = (await req.json().catch(() => ({}))) as any;
+      const email = String(body?.email || '').trim().toLowerCase();
+      const roleRaw = String(body?.role || '').trim().toLowerCase();
+      const message = body?.message != null ? String(body.message).trim() : null;
+      if (!email || !isEmail(email)) return err('Invalid email', 400);
+
+      const db = getDb();
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET status = 'expired'
+        WHERE status = 'pending' AND expires_at < now()
+      `);
+
+      const existing = await db.execute(sql`
+        SELECT id
+        FROM hit_auth_v2_invites
+        WHERE email = ${email}
+          AND status = 'pending'
+          AND expires_at > now()
+        LIMIT 1
+      `);
+      if ((existing?.rows || []).length > 0) {
+        return err('Pending invite already exists for this email', 400);
+      }
+
+      const token = randomToken(32);
+      const token_hash = sha256Hex(token);
+      const expiresAt = new Date(Date.now() + getInviteExpiryDaysFromConfig() * 24 * 60 * 60 * 1000);
+
+      const availableRoles = ['admin', 'user'];
+      const role = availableRoles.includes(roleRaw) ? roleRaw : 'user';
+
+      const ins = await db.execute(sql`
+        INSERT INTO hit_auth_v2_invites (
+          email,
+          inviter_email,
+          token_hash,
+          role,
+          message,
+          status,
+          expires_at,
+          created_at
+        ) VALUES (
+          ${email},
+          ${admin.email},
+          ${token_hash},
+          ${role},
+          ${message},
+          'pending',
+          ${expiresAt},
+          now()
+        )
+        RETURNING id, email, inviter_email, role, message, status, expires_at, created_at, accepted_at, rejected_at, cancelled_at
+      `);
+      const row = ins?.rows?.[0] as any;
+      if (!row?.id) return err('Failed to create invite', 500);
+
+      try {
+        const base = frontendBaseUrlFromRequest(req);
+        const inviteUrl = base ? `${base}/invites/accept?token=${encodeURIComponent(token)}` : '';
+        await sendInviteEmail(req, { to: email, inviteUrl, inviterName: admin.email, message });
+      } catch (e) {
+        await db.execute(sql`DELETE FROM hit_auth_v2_invites WHERE id = ${row.id}::uuid`);
+        return err('Failed to send invite email', 500);
+      }
+
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: admin.email,
+        action: 'auth.invite_sent',
+        summary: `Invite sent to ${email}`,
+        entityKind: 'auth.invite',
+        entityId: String(row.id),
+      });
+
+      return json(normalizeInviteRow(row), { status: 201 });
+    }
+
+    // GET /invites (admin list)
+    if (m === 'GET' && !p1) {
+      if (!allowInvited) return err('Invites are disabled', 403);
+      const gate = requireAdmin(req);
+      if (gate) return gate;
+
+      const db = getDb();
+      const url = new URL(req.url);
+      const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET status = 'expired'
+        WHERE status = 'pending' AND expires_at < now()
+      `);
+
+      const countRes = await db.execute(sql`
+        SELECT COUNT(*)::int AS total
+        FROM hit_auth_v2_invites
+      `);
+      const total = Number(countRes?.rows?.[0]?.total || 0);
+
+      const invitesRes = await db.execute(sql`
+        SELECT id::text AS id, email, inviter_email, role, message, status, expires_at, created_at, accepted_at, rejected_at, cancelled_at
+        FROM hit_auth_v2_invites
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      return json({
+        invites: (invitesRes?.rows || []).map(normalizeInviteRow),
+        total,
+        limit,
+        offset,
+      });
+    }
+
+    // POST /invites/accept
+    if (m === 'POST' && (p1 || '').trim() === 'accept') {
+      if (!allowInvited) return err('Invites disabled', 400);
+      const db = getDb();
+      const body = (await req.json().catch(() => ({}))) as any;
+      const token = String(body?.token || '').trim();
+      const password = String(body?.password || '').trim();
+      if (!token) return err('Invalid or expired invite', 400);
+
+      const token_hash = sha256Hex(token);
+      const inviteRes = await db.execute(sql`
+        SELECT id, email, inviter_email, role, message, status, expires_at
+        FROM hit_auth_v2_invites
+        WHERE token_hash = ${token_hash}
+          AND status = 'pending'
+          AND expires_at > now()
+        LIMIT 1
+      `);
+      const invite = inviteRes?.rows?.[0] as any;
+      if (!invite) return err('Invalid or expired invite', 400);
+
+      const exists = await db.execute(sql`
+        SELECT 1 FROM hit_auth_v2_users WHERE email = ${String(invite.email).toLowerCase()} LIMIT 1
+      `);
+      if ((exists?.rows || []).length > 0) return err('User already exists', 400);
+
+      const passwordLoginEnabled = buildFeaturesFromConfig().password_login === true;
+      if (passwordLoginEnabled && !password) {
+        return err('Password is required when password login is enabled', 400);
+      }
+
+      const password_hash = password ? await hashPassword(password) : null;
+      const availableRoles = ['admin', 'user'];
+      const inviteRole = String(invite?.role || '').trim().toLowerCase();
+      const role = availableRoles.includes(inviteRole) ? inviteRole : 'user';
+
+      await db.execute(sql`
+        INSERT INTO hit_auth_v2_users (
+          email,
+          password_hash,
+          email_verified,
+          two_factor_enabled,
+          locked,
+          role,
+          metadata,
+          profile_fields,
+          created_at,
+          updated_at
+        ) VALUES (
+          ${String(invite.email).toLowerCase()},
+          ${password_hash},
+          true,
+          false,
+          false,
+          ${role},
+          ${JSON.stringify({ invited_by: invite.inviter_email })}::jsonb,
+          '{}'::jsonb,
+          now(),
+          now()
+        )
+      `);
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET status = 'accepted', accepted_at = now()
+        WHERE id = ${invite.id}::uuid
+      `);
+
+      const tokenOrErr = issueAccessToken({
+        email: String(invite.email).toLowerCase(),
+        role,
+        emailVerified: true,
+      });
+      if (tokenOrErr instanceof NextResponse) return tokenOrErr;
+
+      const refresh = await createRefreshToken(db, { email: String(invite.email).toLowerCase(), req });
+
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: String(invite.inviter_email || invite.email).toLowerCase(),
+        action: 'auth.invite_accepted',
+        summary: `Invite accepted for ${String(invite.email).toLowerCase()}`,
+        entityKind: 'auth.invite',
+        entityId: String(invite.id),
+      });
+
+      const acceptJson = json({
+        token: tokenOrErr,
+        refresh_token: refresh.token,
+        email_verified: true,
+        expires_in: getAccessTtlSeconds(),
+      });
+      return withAuthCookie(acceptJson, tokenOrErr);
+    }
+
+    // POST /invites/reject
+    if (m === 'POST' && (p1 || '').trim() === 'reject') {
+      if (!allowInvited) return err('Invites disabled', 400);
+      const db = getDb();
+      const body = (await req.json().catch(() => ({}))) as any;
+      const token = String(body?.token || '').trim();
+      if (!token) return err('Invalid invite', 400);
+      const token_hash = sha256Hex(token);
+      const inviteRes = await db.execute(sql`
+        SELECT id, email, inviter_email
+        FROM hit_auth_v2_invites
+        WHERE token_hash = ${token_hash}
+          AND status = 'pending'
+          AND expires_at > now()
+        LIMIT 1
+      `);
+      const invite = inviteRes?.rows?.[0] as any;
+      if (!invite) return err('Invalid invite', 400);
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET status = 'rejected', rejected_at = now()
+        WHERE id = ${invite.id}::uuid
+      `);
+
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: String(invite.inviter_email || invite.email).toLowerCase(),
+        action: 'auth.invite_rejected',
+        summary: `Invite rejected for ${String(invite.email).toLowerCase()}`,
+        entityKind: 'auth.invite',
+        entityId: String(invite.id),
+      });
+
+      return json({ ok: true });
+    }
+
+    // POST /invites/{invite_id}/resend
+    if (m === 'POST' && p1 && (pathSegments[2] || '').trim() === 'resend') {
+      if (!allowInvited) return err('Invites are disabled', 403);
+      const gate = requireAdmin(req);
+      if (gate) return gate;
+      const admin = requireUser(req);
+      if (admin instanceof NextResponse) return admin;
+
+      const inviteId = String(p1).trim();
+      if (!inviteId || !isUuid(inviteId)) return err('Invalid invite ID', 400);
+
+      const db = getDb();
+      const inviteRes = await db.execute(sql`
+        SELECT id::text AS id, email, inviter_email, role, message, status
+        FROM hit_auth_v2_invites
+        WHERE id = ${inviteId}::uuid
+        LIMIT 1
+      `);
+      const invite = inviteRes?.rows?.[0] as any;
+      if (!invite) return err('Invite not found', 404);
+      if (!['pending', 'expired'].includes(String(invite.status || ''))) {
+        return err(`Cannot resend invite with status: ${String(invite.status)}`, 400);
+      }
+
+      const token = randomToken(32);
+      const token_hash = sha256Hex(token);
+      const expiresAt = new Date(Date.now() + getInviteExpiryDaysFromConfig() * 24 * 60 * 60 * 1000);
+
+      try {
+        const base = frontendBaseUrlFromRequest(req);
+        const inviteUrl = base ? `${base}/invites/accept?token=${encodeURIComponent(token)}` : '';
+        await sendInviteEmail(req, {
+          to: String(invite.email).toLowerCase(),
+          inviteUrl,
+          inviterName: admin.email,
+          message: invite.message ?? null,
+        });
+      } catch {
+        return err('Failed to send invite email', 500);
+      }
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET token_hash = ${token_hash},
+            expires_at = ${expiresAt},
+            status = 'pending'
+        WHERE id = ${inviteId}::uuid
+      `);
+
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: admin.email,
+        action: 'auth.invite_resent',
+        summary: `Invite resent to ${String(invite.email).toLowerCase()}`,
+        entityKind: 'auth.invite',
+        entityId: String(invite.id),
+      });
+
+      return json({
+        id: String(invite.id),
+        email: String(invite.email).toLowerCase(),
+        status: 'pending',
+        expires_at: expiresAt.toISOString(),
+      });
+    }
+
+    // DELETE /invites/{invite_id}
+    if (m === 'DELETE' && p1) {
+      if (!allowInvited) return err('Invites are disabled', 403);
+      const u = requireUser(req);
+      if (u instanceof NextResponse) return u;
+      const inviteId = String(p1).trim();
+      if (!inviteId || !isUuid(inviteId)) return err('Invalid invite ID', 400);
+
+      const db = getDb();
+      const inviteRes = await db.execute(sql`
+        SELECT id::text AS id, email, inviter_email, status
+        FROM hit_auth_v2_invites
+        WHERE id = ${inviteId}::uuid
+        LIMIT 1
+      `);
+      const invite = inviteRes?.rows?.[0] as any;
+      if (!invite) return err('Invite not found', 404);
+
+      const isAdmin = u.roles.includes('admin');
+      const isInviter = String(invite.inviter_email || '').toLowerCase() === u.email.toLowerCase();
+      if (!isAdmin && !isInviter) return err('Forbidden', 403);
+
+      await db.execute(sql`
+        UPDATE hit_auth_v2_invites
+        SET status = 'cancelled', cancelled_at = now()
+        WHERE id = ${inviteId}::uuid
+      `);
+
+      await tryWriteAuthAuditEvent({
+        req,
+        actorEmail: u.email,
+        action: 'auth.invite_cancelled',
+        summary: `Invite cancelled for ${String(invite.email).toLowerCase()}`,
+        entityKind: 'auth.invite',
+        entityId: String(invite.id),
+      });
+
+      return json({ ok: true });
     }
   }
 
