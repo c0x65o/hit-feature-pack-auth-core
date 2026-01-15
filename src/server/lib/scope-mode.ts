@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { checkAuthCoreAction } from './require-action';
+import { checkActionPermission, type ActionCheckResult } from './action-check';
 
 // Scope modes for LDD-enabled permission trees.
 // - own is the default for user templates
@@ -7,6 +7,95 @@ import { checkAuthCoreAction } from './require-action';
 export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
+
+export type ResolveScopeModeArgs = {
+  /**
+   * Pack name used in action keys (e.g. "auth-core", "job-core", "notepad").
+   */
+  pack: string;
+  /**
+   * Scope verb.
+   */
+  verb: ScopeVerb;
+  /**
+   * Optional entity key used in action keys (e.g. "tasks", "notes", "locations").
+   */
+  entity?: string;
+  /**
+   * Optional subset of supported modes for this entity.
+   * Example: system entities often only support none/all.
+   */
+  supportedModes?: ScopeMode[];
+  /**
+   * Fallback when no action keys are granted.
+   * Default: "own" (matches user template behavior).
+   */
+  fallbackMode?: ScopeMode;
+  /**
+   * Log prefix used for debugging.
+   */
+  logPrefix?: string;
+};
+
+/**
+ * Resolve effective scope mode using a tree:
+ * - entity override: {pack}.{entity}.{verb}.scope.{mode}
+ * - pack default:    {pack}.{verb}.scope.{mode}
+ * - fallback:        fallbackMode (default "own")
+ *
+ * Precedence if multiple are granted: most restrictive wins.
+ *
+ * Back-compat:
+ * - Treat `.scope.any` as `.scope.all`.
+ */
+export async function resolveScopeMode(
+  request: NextRequest,
+  args: ResolveScopeModeArgs
+): Promise<ScopeMode> {
+  const pack = String(args.pack || '').trim();
+  const verb = args.verb;
+  const entity = args.entity ? String(args.entity).trim() : '';
+  const logPrefix = args.logPrefix || 'Scope';
+  const fallbackMode: ScopeMode = args.fallbackMode ?? 'own';
+
+  if (!pack) return fallbackMode;
+
+  const entityPrefix = entity ? `${pack}.${entity}.${verb}.scope` : '';
+  const packPrefix = `${pack}.${verb}.scope`;
+
+  // Most restrictive wins (first match returned).
+  const modes: ScopeMode[] = args.supportedModes?.length
+    ? args.supportedModes
+    : ['none', 'own', 'location', 'department', 'division', 'all'];
+
+  const check = async (key: string): Promise<ActionCheckResult> =>
+    checkActionPermission(request, key, { logPrefix });
+
+  const checkPrefix = async (prefix: string): Promise<ScopeMode | null> => {
+    for (const m of modes) {
+      if (m === 'all') {
+        const allRes = await check(`${prefix}.all`);
+        if (allRes.ok) return 'all';
+        const anyRes = await check(`${prefix}.any`);
+        if (anyRes.ok) return 'all';
+        continue;
+      }
+      const res = await check(`${prefix}.${m}`);
+      if (res.ok) return m;
+    }
+    return null;
+  };
+
+  if (entityPrefix) {
+    const m = await checkPrefix(entityPrefix);
+    if (m) return m;
+  }
+
+  const m = await checkPrefix(packPrefix);
+  if (m) return m;
+
+  return fallbackMode;
+}
 
 /**
  * Resolve effective scope mode using a tree:
@@ -20,22 +109,11 @@ export async function resolveAuthCoreScopeMode(
   request: NextRequest,
   args: { entity?: ScopeEntity; verb: ScopeVerb }
 ): Promise<ScopeMode> {
-  const { entity, verb } = args;
-  const entityPrefix = entity ? `auth-core.${entity}.${verb}.scope` : `auth-core.${verb}.scope`;
-  const globalPrefix = `auth-core.${verb}.scope`;
-
-  // Most restrictive wins (first match returned).
-  const modes: ScopeMode[] = ['none', 'own', 'location', 'department', 'division', 'all'];
-
-  for (const m of modes) {
-    const res = await checkAuthCoreAction(request, `${entityPrefix}.${m}`);
-    if (res.ok) return m;
-  }
-
-  for (const m of modes) {
-    const res = await checkAuthCoreAction(request, `${globalPrefix}.${m}`);
-    if (res.ok) return m;
-  }
-
-  return 'own';
+  return resolveScopeMode(request, {
+    pack: 'auth-core',
+    verb: args.verb,
+    entity: args.entity,
+    fallbackMode: 'own',
+    logPrefix: 'Auth-Core',
+  });
 }

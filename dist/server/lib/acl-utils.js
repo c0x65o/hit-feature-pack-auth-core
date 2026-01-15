@@ -1,6 +1,5 @@
 let _warnedNoRequest = false;
 let _warnedNoAuthForMeGroups = false;
-let _warnedNoServiceTokenForAdminGroups = false;
 let _warnedNoAuthForMeGroupsOnce = false;
 let _warnedAdminGroupsForbidden = false;
 let _adminGroupsEndpointForbidden = false;
@@ -14,11 +13,6 @@ function warnOnce(kind, msg) {
         if (_warnedNoAuthForMeGroupsOnce)
             return;
         _warnedNoAuthForMeGroupsOnce = true;
-    }
-    else if (kind === 'no_service_token_admin_groups') {
-        if (_warnedNoServiceTokenForAdminGroups)
-            return;
-        _warnedNoServiceTokenForAdminGroups = true;
     }
     // eslint-disable-next-line no-console
     console.warn(msg);
@@ -101,10 +95,6 @@ async function fetchAuthMeGroupIds(request, strict) {
     const bearer = getBearerFromRequest(request);
     if (bearer)
         headers.Authorization = bearer;
-    // Service token helps the proxy/module fetch config; safe to include if present.
-    const serviceToken = process.env.HIT_SERVICE_TOKEN;
-    if (serviceToken)
-        headers['X-HIT-Service-Token'] = serviceToken;
     const res = await fetch(`${authBase}/me/groups`, { headers });
     if (!res.ok) {
         if (strict)
@@ -128,7 +118,7 @@ async function fetchAuthMeGroupIds(request, strict) {
 }
 // Kept for backwards compatibility / future use: some deployments may still hit this.
 async function fetchAuthAdminUserGroupIds(request, userEmail, strict) {
-    // If we've already learned this endpoint is forbidden in this deployment (service token lacks perms),
+    // If we've already learned this endpoint is forbidden in this deployment,
     // don't keep retrying on every request.
     if (_adminGroupsEndpointForbidden) {
         return [];
@@ -147,11 +137,7 @@ async function fetchAuthAdminUserGroupIds(request, userEmail, strict) {
     };
     // Same as above: required so auth can reach metrics-core segment APIs.
     headers['X-Frontend-Base-URL'] = baseUrlFromRequest(request);
-    // Prefer service token for admin endpoints.
-    const serviceToken = process.env.HIT_SERVICE_TOKEN;
-    if (serviceToken)
-        headers['X-HIT-Service-Token'] = serviceToken;
-    // Also forward caller auth if present (useful in dev / when service token is not set).
+    // Forward caller auth (required for admin endpoint access).
     const bearer = getBearerFromRequest(request);
     if (bearer)
         headers.Authorization = bearer;
@@ -212,12 +198,11 @@ export async function resolveUserPrincipals(options) {
         }
         else {
             const bearer = getBearerFromRequest(request);
-            const hasServiceToken = Boolean(process.env.HIT_SERVICE_TOKEN);
-            if (!bearer && !hasServiceToken) {
+            if (!bearer) {
                 if (strict) {
-                    throw new Error('[acl-utils] Cannot authenticate to auth module for group resolution (no Authorization/ hit_token cookie and no HIT_SERVICE_TOKEN).');
+                    throw new Error('[acl-utils] Cannot authenticate to auth module for group resolution (no Authorization/ hit_token cookie).');
                 }
-                warnOnce('no_auth_for_me_groups', '[acl-utils] resolveUserPrincipals(): no bearer/cookie auth and no HIT_SERVICE_TOKEN; dynamic groups may be missing.');
+                warnOnce('no_auth_for_me_groups', '[acl-utils] resolveUserPrincipals(): no bearer/cookie auth; dynamic groups may be missing.');
             }
             // /me/groups (user-auth) — best effort unless strict.
             try {
@@ -230,12 +215,11 @@ export async function resolveUserPrincipals(options) {
         }
     }
     // NOTE: Do NOT call auth admin endpoints for group membership here.
-    // `/admin/users/{email}/groups` is admin-gated and will return 403 for normal users even with a service token.
+    // `/admin/users/{email}/groups` is admin-gated and will return 403 for normal users.
     // Dynamic groups are included in `/me/groups` (when enabled) and that endpoint is what callers should use.
     //
     // fetchAuthAdminUserGroupIds() remains available for migrations / special deployments, but is intentionally unused.
     void fetchAuthAdminUserGroupIds;
-    void _warnedNoServiceTokenForAdminGroups;
     if (extraGroupIds) {
         try {
             groupIds.push(...(await extraGroupIds()));

@@ -27,10 +27,6 @@ async function authFetch(request, path, init) {
     const headers = { 'Content-Type': 'application/json' };
     if (bearer)
         headers.Authorization = bearer;
-    // Some auth module endpoints require the HIT service token (e.g. admin APIs).
-    const serviceToken = process.env.HIT_SERVICE_TOKEN;
-    if (serviceToken)
-        headers['X-HIT-Service-Token'] = serviceToken;
     const res = await fetch(`${authUrl}${path}`, {
         ...init,
         headers: { ...headers, ...(init.headers || {}) },

@@ -1,4 +1,57 @@
-import { checkAuthCoreAction } from './require-action';
+import { checkActionPermission } from './action-check';
+/**
+ * Resolve effective scope mode using a tree:
+ * - entity override: {pack}.{entity}.{verb}.scope.{mode}
+ * - pack default:    {pack}.{verb}.scope.{mode}
+ * - fallback:        fallbackMode (default "own")
+ *
+ * Precedence if multiple are granted: most restrictive wins.
+ *
+ * Back-compat:
+ * - Treat `.scope.any` as `.scope.all`.
+ */
+export async function resolveScopeMode(request, args) {
+    const pack = String(args.pack || '').trim();
+    const verb = args.verb;
+    const entity = args.entity ? String(args.entity).trim() : '';
+    const logPrefix = args.logPrefix || 'Scope';
+    const fallbackMode = args.fallbackMode ?? 'own';
+    if (!pack)
+        return fallbackMode;
+    const entityPrefix = entity ? `${pack}.${entity}.${verb}.scope` : '';
+    const packPrefix = `${pack}.${verb}.scope`;
+    // Most restrictive wins (first match returned).
+    const modes = args.supportedModes?.length
+        ? args.supportedModes
+        : ['none', 'own', 'location', 'department', 'division', 'all'];
+    const check = async (key) => checkActionPermission(request, key, { logPrefix });
+    const checkPrefix = async (prefix) => {
+        for (const m of modes) {
+            if (m === 'all') {
+                const allRes = await check(`${prefix}.all`);
+                if (allRes.ok)
+                    return 'all';
+                const anyRes = await check(`${prefix}.any`);
+                if (anyRes.ok)
+                    return 'all';
+                continue;
+            }
+            const res = await check(`${prefix}.${m}`);
+            if (res.ok)
+                return m;
+        }
+        return null;
+    };
+    if (entityPrefix) {
+        const m = await checkPrefix(entityPrefix);
+        if (m)
+            return m;
+    }
+    const m = await checkPrefix(packPrefix);
+    if (m)
+        return m;
+    return fallbackMode;
+}
 /**
  * Resolve effective scope mode using a tree:
  * - entity override: auth-core.{entity}.{verb}.scope.{mode}
@@ -8,21 +61,12 @@ import { checkAuthCoreAction } from './require-action';
  * Precedence if multiple are granted: most restrictive wins.
  */
 export async function resolveAuthCoreScopeMode(request, args) {
-    const { entity, verb } = args;
-    const entityPrefix = entity ? `auth-core.${entity}.${verb}.scope` : `auth-core.${verb}.scope`;
-    const globalPrefix = `auth-core.${verb}.scope`;
-    // Most restrictive wins (first match returned).
-    const modes = ['none', 'own', 'location', 'department', 'division', 'all'];
-    for (const m of modes) {
-        const res = await checkAuthCoreAction(request, `${entityPrefix}.${m}`);
-        if (res.ok)
-            return m;
-    }
-    for (const m of modes) {
-        const res = await checkAuthCoreAction(request, `${globalPrefix}.${m}`);
-        if (res.ok)
-            return m;
-    }
-    return 'own';
+    return resolveScopeMode(request, {
+        pack: 'auth-core',
+        verb: args.verb,
+        entity: args.entity,
+        fallbackMode: 'own',
+        logPrefix: 'Auth-Core',
+    });
 }
 //# sourceMappingURL=scope-mode.js.map

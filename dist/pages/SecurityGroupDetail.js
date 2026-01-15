@@ -52,12 +52,15 @@ async function loadFeaturePackRoutes() {
     }
 }
 function parseExclusiveActionModeGroup(actionKey) {
-    const m = String(actionKey || '').trim().match(/^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/);
+    const m = String(actionKey || '').trim().match(
+    // Back-compat: older packs used `.scope.any` instead of `.scope.all`.
+    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all|any)$/);
     if (!m)
         return null;
     const basePrefix = m[1];
     const verb = m[2];
-    const value = m[3];
+    const raw = m[3];
+    const value = (raw === 'any' ? 'all' : raw);
     return { groupKey: `${basePrefix}.${verb}.scope`, value, basePrefix, verb };
 }
 function baseIdFromScopeBasePrefix(prefix) {
@@ -78,21 +81,32 @@ function baseIdFromActionKey(key) {
     return null;
 }
 function titleFromGroupKey(groupKey) {
-    // Parse patterns like: crm.read.scope, crm.contacts.read.scope, crm.activities.write.scope
-    const m = groupKey.match(/^(crm)(?:\.([a-z]+))?\.(read|write|delete)\.scope$/);
+    const m = String(groupKey || '')
+        .trim()
+        .toLowerCase()
+        .match(/^(.+)\.(read|write|delete)\.scope$/);
     if (!m)
         return groupKey;
-    const [, module, entity, verb] = m;
-    const moduleLabel = module.toUpperCase(); // "CRM"
-    const entityLabel = entity ? entity.charAt(0).toUpperCase() + entity.slice(1) : null; // "Contacts", "Activities", etc.
-    const verbLabel = verb.charAt(0).toUpperCase() + verb.slice(1); // "Read", "Write", "Delete"
-    return entityLabel
-        ? `${moduleLabel} ${entityLabel} ${verbLabel} Scope`
-        : `${moduleLabel} ${verbLabel} Scope`;
+    const base = m[1] || '';
+    const verb = m[2] || '';
+    const segs = base.split('.').filter(Boolean);
+    const pack = segs[0] || '';
+    const entity = segs.slice(1).join('.') || '';
+    const titleCase = (s) => s
+        .split(/[-_]/g)
+        .filter(Boolean)
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ');
+    const packLabel = pack ? titleCase(pack) : base;
+    const entityLabel = entity ? titleCase(entity.replace(/\./g, ' ')) : null;
+    const verbLabel = verb ? verb.charAt(0).toUpperCase() + verb.slice(1) : '';
+    return entityLabel ? `${packLabel} ${entityLabel} ${verbLabel} Scope` : `${packLabel} ${verbLabel} Scope`;
 }
 function scopeValueForKey(key) {
-    const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all)$/);
-    return m ? m[1] : null;
+    const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all|any)$/);
+    if (!m)
+        return null;
+    return (m[1] === 'any' ? 'all' : m[1]);
 }
 // Pages are derived-gated from `authz` + actions and are not edited directly in the Security Groups UI.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -252,12 +266,13 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         const present = new Map();
         for (const a of actionCatalog) {
             const k = String(a.key || '').trim().toLowerCase();
-            const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all)$/);
+            const m = k.match(/^([a-z][a-z0-9_-]*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all|any)$/);
             if (!m)
                 continue;
             const pack = m[1];
             const verb = m[2];
-            const mode = m[3];
+            const raw = m[3];
+            const mode = (raw === 'any' ? 'all' : raw);
             if (!present.has(pack))
                 present.set(pack, { read: new Set(), write: new Set(), delete: new Set() });
             present.get(pack)[verb].add(mode);
@@ -910,7 +925,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         const pfx = String(prefix || '').trim();
         if (!pfx)
             return;
-        const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|location|department|division|all)$`, 'i');
+        const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?:\\.[a-z0-9_-]+)*\\.(read|write|delete)\\.scope\\.(none|own|location|department|division|all|any)$`, 'i');
         setPendingActionChanges((prev) => {
             const next = new Map(prev);
             // Revoke any currently granted scope-mode key matching the prefix

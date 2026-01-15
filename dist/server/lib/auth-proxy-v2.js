@@ -1,9 +1,34 @@
 import { NextResponse } from 'next/server';
 import { HIT_CONFIG } from '@/lib/hit-config.generated';
+import { featurePackRoutes as GENERATED_ROUTES } from '@/.hit/generated/routes-meta';
+import { featurePackActions as GENERATED_ACTIONS } from '@/.hit/generated/actions';
 import { getDb } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { sendMagicLinkEmail, sendPasswordResetEmail, sendVerifyEmail, } from './email-adapter';
+const DEFAULT_PERMISSION_SET_NAME = 'Default';
+const DEFAULT_PERMISSION_SET_DESC = 'Default security group';
+const ADMIN_PERMISSION_SET_NAME = 'System';
+const ADMIN_PERMISSION_SET_DESC = 'System security group (admin)';
+const BOOTSTRAP_SEED_TTL_MS = 60000;
+let bootstrapSeededAt = 0;
+const generatedActionUpserted = new Set();
+function getGeneratedActionDef(actionKey) {
+    const k = String(actionKey || '').trim();
+    if (!k)
+        return null;
+    const xs = Array.isArray(GENERATED_ACTIONS) ? GENERATED_ACTIONS : [];
+    const row = xs.find((a) => String(a?.key || '').trim() === k);
+    if (!row)
+        return null;
+    return {
+        key: String(row.key || '').trim(),
+        packName: String(row.packName || '').trim(),
+        label: String(row.label || row.key || '').trim(),
+        description: String(row.description || '').trim(),
+        defaultEnabled: Boolean(row.defaultEnabled),
+    };
+}
 function json(data, init) {
     return NextResponse.json(data, {
         status: init?.status ?? 200,
@@ -90,6 +115,15 @@ function verifyJwtHmac(token, secret) {
     return parseJwtClaims(token);
 }
 function extractBearer(req) {
+    // IMPORTANT:
+    // The app's feature-pack API dispatcher may rewrite Authorization/cookie tokens so
+    // handlers can `atob(jwtPayload)` (base64url -> base64). That *breaks* signature
+    // verification because the header+payload segments change.
+    //
+    // Prefer the preserved raw token when present.
+    const raw = req.headers.get('x-hit-token-raw');
+    if (raw && String(raw).trim())
+        return String(raw).trim();
     const auth = req.headers.get('authorization');
     if (auth?.startsWith('Bearer '))
         return auth.slice(7).trim();
@@ -495,6 +529,50 @@ function normalizeGroupRow(g) {
         updated_at: g?.updated_at ? new Date(g.updated_at).toISOString() : null,
     };
 }
+async function ensureBootstrapPermissionSets(db) {
+    const now = Date.now();
+    if (bootstrapSeededAt && now - bootstrapSeededAt < BOOTSTRAP_SEED_TTL_MS)
+        return;
+    try {
+        await db.execute(sql `
+      WITH existing_user AS (
+        SELECT id FROM hit_auth_v2_permission_sets WHERE template_role = 'user' LIMIT 1
+      ),
+      existing_admin AS (
+        SELECT id FROM hit_auth_v2_permission_sets WHERE template_role = 'admin' LIMIT 1
+      ),
+      upsert_default AS (
+        INSERT INTO hit_auth_v2_permission_sets (name, description, template_role, created_at, updated_at)
+        SELECT ${DEFAULT_PERMISSION_SET_NAME}, ${DEFAULT_PERMISSION_SET_DESC}, 'user', now(), now()
+        WHERE NOT EXISTS (SELECT 1 FROM existing_user)
+        ON CONFLICT (name) DO UPDATE
+          SET template_role = 'user',
+              description = COALESCE(hit_auth_v2_permission_sets.description, EXCLUDED.description),
+              updated_at = now()
+        RETURNING id
+      ),
+      upsert_admin AS (
+        INSERT INTO hit_auth_v2_permission_sets (name, description, template_role, created_at, updated_at)
+        SELECT ${ADMIN_PERMISSION_SET_NAME}, ${ADMIN_PERMISSION_SET_DESC}, 'admin', now(), now()
+        WHERE NOT EXISTS (SELECT 1 FROM existing_admin)
+        ON CONFLICT (name) DO UPDATE
+          SET template_role = 'admin',
+              description = COALESCE(hit_auth_v2_permission_sets.description, EXCLUDED.description),
+              updated_at = now()
+        RETURNING id
+      )
+      INSERT INTO hit_auth_v2_permission_set_assignments (permission_set_id, principal_type, principal_id, created_at)
+      SELECT id, 'role', template_role, now()
+      FROM hit_auth_v2_permission_sets
+      WHERE template_role IN ('user', 'admin')
+      ON CONFLICT (permission_set_id, principal_type, principal_id) DO NOTHING
+    `);
+        bootstrapSeededAt = Date.now();
+    }
+    catch (e) {
+        console.warn('Auth V2 bootstrap permission sets failed:', e);
+    }
+}
 export async function checkActionPermissionV2(req, actionKey) {
     const u = requireUser(req);
     if (u instanceof NextResponse)
@@ -502,10 +580,44 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (!actionKey)
         return { ok: false, source: 'missing_action_key' };
     const db = getDb();
+    // Ensure admin bootstrap exists (throttled). This prevents "new pack added" scenarios
+    // from 403'ing until an admin happens to hit an admin-only endpoint.
+    const inferredRole = u.roles.includes('admin') ? 'admin' : 'user';
+    if (inferredRole === 'admin') {
+        await ensureBootstrapPermissionSets(db);
+    }
     const actionRes = await db.execute(sql `SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`);
-    const actionRow = actionRes?.rows?.[0];
+    let actionRow = actionRes?.rows?.[0];
     if (!actionRow) {
-        return { ok: false, source: 'unknown_action' };
+        // Fall back to generated catalog (override-only model).
+        // This makes new action keys work immediately after `hit run`, even before any DB sync.
+        const gen = getGeneratedActionDef(actionKey);
+        if (!gen)
+            return { ok: false, source: 'unknown_action' };
+        actionRow = { key: gen.key, default_enabled: gen.defaultEnabled };
+        // Best-effort: lazily upsert into DB so admin UI can list/edit actions.
+        // Guard with an in-memory set to avoid repeated writes.
+        if (!generatedActionUpserted.has(gen.key)) {
+            generatedActionUpserted.add(gen.key);
+            try {
+                await db.execute(sql `
+          INSERT INTO hit_auth_v2_permission_actions (
+            key, pack_name, label, description, default_enabled, created_at, updated_at
+          ) VALUES (
+            ${gen.key}, ${gen.packName || null}, ${gen.label}, ${gen.description || null}, ${gen.defaultEnabled}, now(), now()
+          )
+          ON CONFLICT (key) DO UPDATE SET
+            pack_name = EXCLUDED.pack_name,
+            label = EXCLUDED.label,
+            description = EXCLUDED.description,
+            default_enabled = EXCLUDED.default_enabled,
+            updated_at = now()
+        `);
+            }
+            catch {
+                // ignore; we can still enforce using generated defaults
+            }
+        }
     }
     // 1) User overrides (highest precedence)
     const userOv = await db.execute(sql `
@@ -519,7 +631,7 @@ export async function checkActionPermissionV2(req, actionKey) {
         return { ok: Boolean(uRow.enabled), source: 'user_override' };
     }
     // Resolve role (simple model: admin/user)
-    const role = u.roles.includes('admin') ? 'admin' : 'user';
+    const role = inferredRole;
     // Resolve group memberships
     const groupsRes = await db.execute(sql `SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`);
     const groupIds = (groupsRes?.rows || [])
@@ -572,7 +684,43 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (rRow && typeof rRow.enabled === 'boolean') {
         return { ok: Boolean(rRow.enabled), source: 'role_action_permission' };
     }
-    // 5) Default
+    // 5) Scope-mode template defaults (QoL + consistency with Security Groups UI)
+    //
+    // If a scope-mode group has *no explicit grants* for this user/role/groups, treat:
+    // - admin template default as ".scope.any/.scope.all"
+    // - user template default as ".scope.own"
+    //
+    // This avoids requiring every pack to bootstrap grants just to make admins usable,
+    // while still allowing explicit restriction via granting ".scope.none".
+    const scopeMatch = String(actionKey || '').trim().match(/^(.+)\.(read|write|delete)\.scope\.(none|own|ldd|any|location|department|division|all)$/i);
+    if (scopeMatch) {
+        const basePrefix = String(scopeMatch[1] || '').trim();
+        const verb = String(scopeMatch[2] || '').trim().toLowerCase();
+        const mode = String(scopeMatch[3] || '').trim().toLowerCase();
+        const desired = role === 'admin'
+            ? mode === 'any' || mode === 'all'
+            : role === 'user'
+                ? mode === 'own'
+                : false;
+        if (desired && basePrefix && verb) {
+            // If ANY explicit permission-set grant exists for this scope group, do not apply template defaults.
+            // (i.e. explicit configuration wins over implicit template behavior.)
+            const prefix = `${basePrefix}.${verb}.scope.`;
+            const anyExplicit = await db.execute(sql `
+        SELECT 1 AS ok
+        FROM hit_auth_v2_permission_set_assignments a
+        JOIN hit_auth_v2_permission_set_action_grants g
+          ON g.permission_set_id = a.permission_set_id
+        WHERE ${assignmentWhere}
+          AND g.action_key ILIKE ${prefix + '%'}
+        LIMIT 1
+      `);
+            if ((anyExplicit?.rows || []).length === 0) {
+                return { ok: true, source: 'template_default' };
+            }
+        }
+    }
+    // 6) Default
     return { ok: Boolean(actionRow.default_enabled), source: 'default' };
 }
 /**
@@ -735,11 +883,15 @@ export async function tryHandleAuthV2Proxy(opts) {
             });
             return err('Invalid credentials', 401);
         }
+        const role = String(row.role || 'user').toLowerCase();
+        if (role === 'admin') {
+            await ensureBootstrapPermissionSets(db);
+        }
         // Update last_login best-effort
         await db.execute(sql `UPDATE hit_auth_v2_users SET last_login = now(), updated_at = now() WHERE email = ${email}`);
         const tokenOrErr = issueAccessToken({
             email,
-            role: String(row.role || 'user').toLowerCase(),
+            role,
             emailVerified: Boolean(row.email_verified),
         });
         if (tokenOrErr instanceof NextResponse)
@@ -1452,8 +1604,8 @@ export async function tryHandleAuthV2Proxy(opts) {
     // DIRECTORY (admin)
     // ---------------------------------------------------------------------------
     if (m === 'GET' && p0 === 'directory' && (p1 || '').trim() === 'users') {
-        const gate = requireAdmin(req);
-        if (gate)
+        const gate = requireUser(req);
+        if (gate instanceof NextResponse)
             return gate;
         const db = getDb();
         const directoryRes = await db.execute(sql `
@@ -1508,6 +1660,96 @@ export async function tryHandleAuthV2Proxy(opts) {
                 return true;
             return path === base || path.startsWith(`${base}/`);
         };
+        // Derived page gating: use route `authz` metadata (from feature packs) + action scope keys.
+        // This is the long-term model: pages are not granted directly; access is derived from actions.
+        const routeByPath = new Map();
+        for (const r of GENERATED_ROUTES || []) {
+            const p = normalizePagePath(String(r?.path || ''));
+            if (p)
+                routeByPath.set(p, r);
+        }
+        const scopePrecedence = ['none', 'own', 'location', 'department', 'division', 'all'];
+        async function checkActionOk(actionKey) {
+            const res = await checkActionPermissionV2(req, actionKey);
+            if ('errorResponse' in res)
+                return false;
+            return Boolean(res.ok);
+        }
+        async function resolveScopeModeForRoute(opts) {
+            const pack = String(opts.packName || '').trim();
+            const entity = String(opts.entity || '').trim();
+            const verb = String(opts.verb || '').trim();
+            const bases = [`${pack}.${entity}.${verb}.scope`, `${pack}.${verb}.scope`];
+            for (const base of bases) {
+                for (const mode of scopePrecedence) {
+                    if (mode === 'all') {
+                        // Back-compat: older packs used `.scope.any` instead of `.scope.all`.
+                        if (await checkActionOk(`${base}.all`))
+                            return 'all';
+                        if (await checkActionOk(`${base}.any`))
+                            return 'all';
+                        continue;
+                    }
+                    if (await checkActionOk(`${base}.${mode}`))
+                        return mode;
+                }
+            }
+            // Fallback defaults:
+            // - "require_mode:any" pages are system/global; default admin -> all, user -> none.
+            // - Otherwise: admin -> all, user -> own.
+            if (opts.requireModeAny)
+                return role === 'admin' ? 'all' : 'none';
+            return role === 'admin' ? 'all' : 'own';
+        }
+        async function deriveRouteAccess(pagePath) {
+            const r = routeByPath.get(pagePath);
+            const authz = r?.authz;
+            if (!authz)
+                return null;
+            const packName = String(r?.packName || '').trim();
+            const routeRoles = Array.isArray(r?.roles) ? r.roles : [];
+            const defaultRolesAllow = Array.isArray(r?.defaultRolesAllow)
+                ? r.defaultRolesAllow
+                : [];
+            const entity = String(authz?.entity || '').trim();
+            const verb = String(authz?.verb || '').trim().toLowerCase();
+            if (!packName || !entity || (verb !== 'read' && verb !== 'write' && verb !== 'delete')) {
+                // Bad metadata: fail closed so misconfig is loud.
+                return false;
+            }
+            // Role gating (defaults-first):
+            // - If a route declares default roles allow, enforce it.
+            // - Else if it declares explicit roles, enforce those.
+            const norm = (x) => String(x || '').trim().toLowerCase();
+            if (defaultRolesAllow.length > 0) {
+                if (!defaultRolesAllow.map(norm).includes(role))
+                    return false;
+            }
+            else if (routeRoles.length > 0) {
+                if (!routeRoles.map(norm).includes(role))
+                    return false;
+            }
+            const requireModeAny = String(authz?.require_mode || '').trim().toLowerCase() === 'any';
+            const requireCreate = Boolean(authz?.require_create);
+            const requireAction = authz?.require_action ? String(authz.require_action).trim() : '';
+            if (requireAction) {
+                const ok = await checkActionOk(requireAction);
+                if (!ok)
+                    return false;
+            }
+            const mode = await resolveScopeModeForRoute({ packName, entity, verb, requireModeAny });
+            if (mode === 'none')
+                return false;
+            if (requireModeAny && mode !== 'all')
+                return false;
+            if (requireCreate) {
+                const createKey = `${packName}.${entity}.create`;
+                const ok = await checkActionOk(createKey);
+                if (!ok)
+                    return false;
+            }
+            return true;
+        }
         const evaluatePages = async (pagePaths) => {
             const paths = pagePaths
                 .map((p) => normalizePagePath(p))
@@ -1578,7 +1820,12 @@ export async function tryHandleAuthV2Proxy(opts) {
                     out[p] = true;
                     continue;
                 }
-                // Default: allow
+                const derived = await deriveRouteAccess(p);
+                if (derived !== null) {
+                    out[p] = Boolean(derived);
+                    continue;
+                }
+                // Default: allow (legacy behavior for routes without authz metadata)
                 out[p] = true;
             }
             return out;
@@ -1622,12 +1869,19 @@ export async function tryHandleAuthV2Proxy(opts) {
         const tail = String(pathSegments[5] || '').trim();
         // GET /admin/permissions/sets
         if (m === 'GET' && !psId) {
+            const countRes = await db.execute(sql `SELECT COUNT(*)::int AS c FROM hit_auth_v2_permission_sets`);
+            const count = Number((countRes?.rows || [])[0]?.c || 0);
+            if (count === 0) {
+                await ensureBootstrapPermissionSets(db);
+            }
             const permissionSetsRes = await db.execute(sql `
         SELECT id, name, description, template_role, created_at, updated_at
         FROM hit_auth_v2_permission_sets
         ORDER BY updated_at DESC, name ASC
       `);
-            return json({ items: permissionSetsRes?.rows || [] });
+            const items = permissionSetsRes?.rows || [];
+            // Back-compat for UI hooks expecting { permission_sets: [...] }.
+            return json({ permission_sets: items, items });
         }
         // POST /admin/permissions/sets
         if (m === 'POST' && !psId) {
