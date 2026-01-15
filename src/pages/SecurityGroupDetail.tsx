@@ -1441,6 +1441,16 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                     {pack.actions.length > 0 && (
                       <div className="p-4">
                         {(() => {
+                          const packName = String(pack.name || '').trim().toLowerCase();
+                          const derivedPageActionKeys = new Set<string>();
+                          for (const r of routes) {
+                            const pn = String((r as any)?.packName || '').trim().toLowerCase();
+                            if (!pn || pn !== packName) continue;
+                            if (!(r as any)?.authz?.show_pages) continue;
+                            const req = String((r as any)?.authz?.require_action || (r as any)?.authz?.requireAction || '').trim();
+                            if (req) derivedPageActionKeys.add(req);
+                          }
+
                           // Build "dropdown" groups for exclusive scope-mode action keys like:
                           //   crm.read.scope.{none,own,location,department,division,all}
                           //   crm.contacts.read.scope.{none,own,location,department,division,all}
@@ -1450,7 +1460,9 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                           const other: ActionRow[] = [];
 
                           for (const a of pack.actions as ActionRow[]) {
-                            const parsed = parseExclusiveActionModeGroup(a.key);
+                            const key = String(a.key || '').trim();
+                            if (derivedPageActionKeys.has(key)) continue;
+                            const parsed = parseExclusiveActionModeGroup(key);
                             if (!parsed) {
                               other.push(a);
                               continue;

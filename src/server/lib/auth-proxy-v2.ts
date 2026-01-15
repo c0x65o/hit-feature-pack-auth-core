@@ -446,10 +446,11 @@ async function tryWriteAuthAuditEvent(args: {
   details?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
-    // NOTE: Keep module path non-literal so TS doesn't require the audit-core package at build time.
-    // (Audit-core may not be installed in all apps yet.)
-    const modulePath: string = '@hit/feature-pack-audit-core/server/lib/write-audit';
-    const mod = await import(modulePath).catch(() => null);
+    // NOTE: Keep audit-core optional without webpack bundling.
+    const mod = await import(
+      /* webpackIgnore: true */
+      '@hit/feature-pack-audit-core/server/lib/write-audit'
+    ).catch(() => null);
     const writeAuditEvent = (mod as any)?.writeAuditEvent as
       | ((
           dbOrTx: any,
@@ -2415,6 +2416,11 @@ export async function tryHandleAuthV2Proxy(opts: {
     if (u instanceof NextResponse) return u;
     const db = getDb();
     const role = u.roles.includes('admin') ? 'admin' : 'user';
+    const effectiveRoles = new Set(
+      u.roles.map((r) => String(r || '').trim().toLowerCase()).filter(Boolean)
+    );
+    if (role === 'admin') effectiveRoles.add('user');
+    effectiveRoles.add(role);
 
     const groupRes = await db.execute(
       sql`SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`
@@ -2505,9 +2511,11 @@ export async function tryHandleAuthV2Proxy(opts: {
       // - Else if it declares explicit roles, enforce those.
       const norm = (x: unknown) => String(x || '').trim().toLowerCase();
       if (defaultRolesAllow.length > 0) {
-        if (!defaultRolesAllow.map(norm).includes(role)) return false;
+        const allowed = defaultRolesAllow.map(norm).some((r) => effectiveRoles.has(r));
+        if (!allowed) return false;
       } else if (routeRoles.length > 0) {
-        if (!routeRoles.map(norm).includes(role)) return false;
+        const allowed = routeRoles.map(norm).some((r) => effectiveRoles.has(r));
+        if (!allowed) return false;
       }
 
       const requireModeAny = String(authz?.require_mode || '').trim().toLowerCase() === 'any';
