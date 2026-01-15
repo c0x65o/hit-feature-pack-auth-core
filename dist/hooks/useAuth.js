@@ -152,11 +152,15 @@ export function useAuthConfig() {
  * Helper to set token in both localStorage and cookie
  * Cookie is needed for middleware to check auth state
  */
-function setAuthToken(token, rememberMe = false) {
+function setAuthToken(token, rememberMe = false, refreshToken) {
     if (typeof window === 'undefined')
         return;
     // Store in localStorage
     localStorage.setItem('hit_token', token);
+    if (refreshToken) {
+        localStorage.setItem('hit_refresh_token', refreshToken);
+        localStorage.setItem('hit_auth_refresh_token', refreshToken);
+    }
     // Set cookie for middleware (with appropriate expiry)
     // Parse token to get expiry
     let maxAge = 3600; // Default 1 hour
@@ -179,6 +183,10 @@ function setAuthToken(token, rememberMe = false) {
     }
     // Set cookie (SameSite=Lax for CSRF protection while allowing redirects)
     document.cookie = `hit_token=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    if (refreshToken) {
+        const refreshMaxAge = Math.max(0, 30 * 24 * 60 * 60);
+        document.cookie = `hit_refresh_token=${refreshToken}; path=/; max-age=${refreshMaxAge}; SameSite=Lax`;
+    }
 }
 /**
  * Helper to clear auth tokens
@@ -187,7 +195,10 @@ function clearAuthToken() {
     if (typeof window === 'undefined')
         return;
     localStorage.removeItem('hit_token');
+    localStorage.removeItem('hit_refresh_token');
+    localStorage.removeItem('hit_auth_refresh_token');
     document.cookie = 'hit_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = 'hit_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 }
 export function useLogin() {
     const [loading, setLoading] = useState(false);
@@ -202,7 +213,7 @@ export function useLogin() {
             });
             // Store token in localStorage and cookie for middleware
             if (res.token && typeof window !== 'undefined') {
-                setAuthToken(res.token, payload.remember_me);
+                setAuthToken(res.token, payload.remember_me, res.refresh_token);
             }
             return res;
         }
@@ -235,7 +246,7 @@ export function useSignup() {
             });
             // Store token if returned (auto-login after signup)
             if (res.token && typeof window !== 'undefined') {
-                setAuthToken(res.token, false);
+                setAuthToken(res.token, false, res.refresh_token);
             }
             return res;
         }
@@ -376,7 +387,7 @@ export function useAcceptInvite() {
             });
             // Store token in localStorage and cookie for middleware
             if (res.token && typeof window !== 'undefined') {
-                setAuthToken(res.token, false);
+                setAuthToken(res.token, false, res.refresh_token);
             }
             setSuccess(true);
             return res;

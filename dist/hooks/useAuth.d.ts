@@ -19,6 +19,7 @@ interface SignupPayload {
 }
 interface AuthResponse {
     token?: string;
+    refresh_token?: string;
     user?: {
         id: string;
         email: string;

@@ -78,13 +78,18 @@ function MagicLinkContent({
     setVerifying(true);
 
     try {
-      const response = await fetchAuth<{ token?: string }>('/magic-link/verify', {
+      const response = await fetchAuth<{ token?: string; refresh_token?: string }>('/magic-link/verify', {
         method: 'POST',
         body: JSON.stringify({ token: tokenToVerify }),
       });
 
       if (response.token && typeof window !== 'undefined') {
         localStorage.setItem('hit_token', response.token);
+        if (response.refresh_token) {
+          localStorage.setItem('hit_refresh_token', response.refresh_token);
+          localStorage.setItem('hit_auth_refresh_token', response.refresh_token);
+          document.cookie = `hit_refresh_token=${response.refresh_token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+        }
       }
 
       setVerified(true);

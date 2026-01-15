@@ -2,6 +2,8 @@ import type { NextRequest } from 'next/server';
 export declare function sendInviteEmail(req: NextRequest, args: {
     to: string;
     inviteUrl: string;
+    inviterName?: string | null;
+    message?: string | null;
 }): Promise<void>;
 export declare function sendPasswordResetEmail(req: NextRequest, args: {
     to: string;
