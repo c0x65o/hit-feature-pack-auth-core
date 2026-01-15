@@ -580,12 +580,7 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (!actionKey)
         return { ok: false, source: 'missing_action_key' };
     const db = getDb();
-    // Ensure admin bootstrap exists (throttled). This prevents "new pack added" scenarios
-    // from 403'ing until an admin happens to hit an admin-only endpoint.
     const inferredRole = u.roles.includes('admin') ? 'admin' : 'user';
-    if (inferredRole === 'admin') {
-        await ensureBootstrapPermissionSets(db);
-    }
     const actionRes = await db.execute(sql `SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`);
     let actionRow = actionRes?.rows?.[0];
     if (!actionRow) {
@@ -630,13 +625,49 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (uRow && typeof uRow.enabled === 'boolean') {
         return { ok: Boolean(uRow.enabled), source: 'user_override' };
     }
-    // Resolve role (simple model: admin/user)
-    const role = inferredRole;
     // Resolve group memberships
     const groupsRes = await db.execute(sql `SELECT group_id::text AS id FROM hit_auth_v2_user_groups WHERE user_email = ${u.email}`);
     const groupIds = (groupsRes?.rows || [])
         .map((r) => String(r?.id || '').trim())
         .filter(Boolean);
+    // Resolve *effective* role.
+    //
+    // IMPORTANT:
+    // - JWT role is not the only source of "admin". A user can be effectively admin via
+    //   being assigned to a permission set whose template_role = 'admin' (e.g. "System Admin").
+    //
+    // This fixes the "System Admin group can't run jobs" class of issues: those users should
+    // get admin template defaults + role-level grants when the system intends them to be admins.
+    let role = inferredRole;
+    if (role !== 'admin') {
+        try {
+            // Check if this user is assigned (directly or via group) to any permission set marked as admin template.
+            let where = sql `(a.principal_type = 'user' AND a.principal_id = ${u.email})`;
+            if (groupIds.length > 0) {
+                where = sql `${where} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)}))`;
+            }
+            const adminPs = await db.execute(sql `
+        SELECT 1 AS ok
+        FROM hit_auth_v2_permission_set_assignments a
+        JOIN hit_auth_v2_permission_sets ps
+          ON ps.id = a.permission_set_id
+        WHERE ps.template_role = 'admin'
+          AND (${where})
+        LIMIT 1
+      `);
+            if ((adminPs?.rows || []).length > 0) {
+                role = 'admin';
+            }
+        }
+        catch {
+            // ignore - fall back to JWT role only
+        }
+    }
+    // Ensure admin bootstrap exists (throttled). This prevents "new pack added" scenarios
+    // from 403'ing until an admin happens to hit an admin-only endpoint.
+    if (role === 'admin') {
+        await ensureBootstrapPermissionSets(db);
+    }
     // 2) Permission Set grants (Security Groups)
     let assignmentWhere = sql `(a.principal_type = 'user' AND a.principal_id = ${u.email})
     OR (a.principal_type = 'role' AND a.principal_id = ${role})`;
