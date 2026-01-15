@@ -30,7 +30,7 @@ entities:
 
     list:
       tableId: admin.org.locations
-      platforms: [web]
+      platforms: [web, mobile]
       uiStateVersion: 1
       defaultVisibleOnly: true
       pageSize: 50

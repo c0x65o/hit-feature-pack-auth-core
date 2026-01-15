@@ -30,7 +30,7 @@ entities:
 
     list:
       tableId: admin.org.divisions
-      platforms: [web]
+      platforms: [web, mobile]
       uiStateVersion: 1
       defaultVisibleOnly: true
       pageSize: 50
