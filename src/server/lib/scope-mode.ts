@@ -45,7 +45,7 @@ export type ResolveScopeModeArgs = {
  *
  * Precedence if multiple are granted: most restrictive wins.
  *
- * Back-compat:
+ * Legacy back-compat (deprecated):
  * - Treat `.scope.any` as `.scope.all`.
  */
 export async function resolveScopeMode(

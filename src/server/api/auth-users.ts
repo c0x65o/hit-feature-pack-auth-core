@@ -140,6 +140,7 @@ export async function POST(request: NextRequest) {
     const email = String(body?.email || '').trim();
     const password = String(body?.password || '').trim();
     const role = String(body?.role || 'user').trim() || 'user';
+    const emailVerified = typeof body?.email_verified === 'boolean' ? Boolean(body.email_verified) : undefined;
     const firstName = body?.first_name != null ? String(body.first_name).trim() : '';
     const lastName = body?.last_name != null ? String(body.last_name).trim() : '';
 
@@ -147,9 +148,11 @@ export async function POST(request: NextRequest) {
     if (!password) return NextResponse.json({ error: 'Password is required' }, { status: 400 });
 
     // Create user
+    const payload: Record<string, unknown> = { email, password, roles: [role] };
+    if (typeof emailVerified === 'boolean') payload.email_verified = emailVerified;
     const createRes = await authFetch(request, '/users', {
       method: 'POST',
-      body: JSON.stringify({ email, password, roles: [role] }),
+      body: JSON.stringify(payload),
     });
     if (!createRes.ok) {
       const err = await createRes.json().catch(() => ({}));

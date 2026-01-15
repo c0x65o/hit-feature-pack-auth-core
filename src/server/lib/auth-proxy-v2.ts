@@ -863,23 +863,10 @@ export async function checkActionPermissionV2(
     return { ok: Boolean(rRow.enabled), source: 'role_action_permission' };
   }
 
-  // 4.5) Admin template default (QoL)
-  //
-  // Admins should not be blocked from core operations just because an action key's
-  // defaultEnabled=false and no explicit grants were created yet.
-  //
-  // Explicit denies still win via:
-  // - user overrides (step 1)
-  // - group action permissions (step 3, deny precedence)
-  // - role action permissions (step 4)
-  if (role === 'admin') {
-    return { ok: true, source: 'admin_template_default' };
-  }
-
-  // 5) Scope-mode template defaults (QoL + consistency with Security Groups UI)
+  // 4.5) Scope-mode template defaults (QoL + consistency with Security Groups UI)
   //
   // If a scope-mode group has *no explicit grants* for this user/role/groups, treat:
-  // - admin template default as ".scope.any/.scope.all"
+  // - admin template default as ".scope.all" (legacy ".scope.any" is treated as "all")
   // - user template default as ".scope.own"
   //
   // This avoids requiring every pack to bootstrap grants just to make admins usable,
@@ -891,8 +878,12 @@ export async function checkActionPermissionV2(
     const basePrefix = String(scopeMatch[1] || '').trim();
     const verb = String(scopeMatch[2] || '').trim().toLowerCase();
     const mode = String(scopeMatch[3] || '').trim().toLowerCase();
-    // At this point, role must be 'user' since we returned early for 'admin' above
-    const desired = role === 'user' ? mode === 'own' : false;
+    const desired =
+      role === 'admin'
+        ? mode === 'any' || mode === 'all'
+        : role === 'user'
+          ? mode === 'own'
+          : false;
 
     if (desired && basePrefix && verb) {
       // If ANY explicit permission-set grant exists for this scope group, do not apply template defaults.
@@ -911,6 +902,17 @@ export async function checkActionPermissionV2(
         return { ok: true, source: 'template_default' };
       }
     }
+  } else if (role === 'admin') {
+    // 5) Admin template default (QoL)
+    //
+    // Admins should not be blocked from core operations just because an action key's
+    // defaultEnabled=false and no explicit grants were created yet.
+    //
+    // Explicit denies still win via:
+    // - user overrides (step 1)
+    // - group action permissions (step 3, deny precedence)
+    // - role action permissions (step 4)
+    return { ok: true, source: 'admin_template_default' };
   }
 
   // 6) Default

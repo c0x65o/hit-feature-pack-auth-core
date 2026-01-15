@@ -135,7 +135,7 @@ function parseExclusiveActionModeGroup(
   verb: 'read' | 'write' | 'delete';
 } | null {
   const m = String(actionKey || '').trim().match(
-    // Back-compat: older packs used `.scope.any` instead of `.scope.all`.
+  // Legacy back-compat (deprecated): older packs used `.scope.any` instead of `.scope.all`.
     /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all|any)$/
   );
   if (!m) return null;
@@ -268,7 +268,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   }, []);
 
   // Template default for scope-mode dropdowns:
-  // - Admin template: ANY by default (admins are full-access by default; overrides restrict)
+  // - Admin template: ALL by default (admins are full-access by default; overrides restrict)
   // - User template: OWN by default
   // - Non-template groups: NONE until explicitly granted
   const templateRoleEffective: 'admin' | 'user' | null = (() => {

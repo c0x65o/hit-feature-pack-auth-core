@@ -104,12 +104,14 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
     // Allow updating a subset of fields used by our schema-driven form
     const role = body?.role != null ? String(body.role).trim() : '';
     const locked = typeof body?.locked === 'boolean' ? body.locked : undefined;
+    const emailVerified = typeof body?.email_verified === 'boolean' ? body.email_verified : undefined;
     const firstName = body?.first_name != null ? String(body.first_name).trim() : '';
     const lastName = body?.last_name != null ? String(body.last_name).trim() : '';
 
     const payload: any = {};
     if (role) payload.role = role;
     if (typeof locked === 'boolean') payload.locked = locked;
+    if (typeof emailVerified === 'boolean') payload.email_verified = emailVerified;
     if (firstName || lastName) {
       payload.profile_fields = {
         ...(firstName ? { first_name: firstName } : {}),
