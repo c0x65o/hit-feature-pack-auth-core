@@ -391,11 +391,6 @@ metrics:
 # ─────────────────────────────────────────────────────────────────────────────
 permissions:
   actions:
-    - key: auth-core.admin.access
-      label: Auth Core Admin Access
-      description: "Access auth-core admin-only helper endpoints (e.g., directory user list, org scope lookup, location type management)."
-      default_enabled: false
-
     # Scope Policy Tree: auth-core (global) -> entity overrides.
     #
     # Scope modes (V2):

@@ -1,6 +1,6 @@
 // src/server/api/users.ts
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthCoreAction } from "../lib/require-action";
+import { requireAuthCoreReadScope } from "../lib/require-action";
 import { getAuthBaseUrl } from "../lib/acl-utils";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ function getAuthUrl(): string {
  */
 export async function GET(request: NextRequest) {
   try {
-    const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+    const gate = await requireAuthCoreReadScope(request);
     if (gate) return gate;
 
     const { searchParams } = new URL(request.url);

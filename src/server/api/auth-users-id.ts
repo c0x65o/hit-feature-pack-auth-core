@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthCoreAction } from '../lib/require-action';
+import { requireAuthCoreReadScope } from '../lib/require-action';
 import { getAuthBaseUrl } from '../lib/acl-utils';
 
 export const dynamic = 'force-dynamic';
@@ -67,7 +67,7 @@ function toUserRow(u: any) {
 }
 
 export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+  const gate = await requireAuthCoreReadScope(request);
   if (gate) return gate;
 
   try {
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 }
 
 export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+  const gate = await requireAuthCoreReadScope(request);
   if (gate) return gate;
 
   try {
@@ -142,7 +142,7 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
 }
 
 export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+  const gate = await requireAuthCoreReadScope(request);
   if (gate) return gate;
 
   try {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthCoreAction } from '../lib/require-action';
+import { requireAuthCoreReadScope } from '../lib/require-action';
 import { getAuthBaseUrl } from '../lib/acl-utils';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +58,7 @@ function toGroupRow(g: any) {
  * - POST create: { name, description, kind, segment_key }
  */
 export async function GET(request: NextRequest) {
-  const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+  const gate = await requireAuthCoreReadScope(request);
   if (gate) return gate;
 
   try {
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+  const gate = await requireAuthCoreReadScope(request);
   if (gate) return gate;
 
   try {
