@@ -14,6 +14,9 @@ export async function checkAuthCoreReadScope(request) {
     if (!authCheck.ok && (authCheck.source === 'unauthenticated' || authCheck.source === 'auth_status_401')) {
         return authCheck;
     }
+    if (process.env.HIT_AUTH_DISABLE_SCOPES === '1') {
+        return { ok: true, source: 'scope_disabled' };
+    }
     const mode = await resolveAuthCoreScopeMode(request, { verb: 'read' });
     return { ok: mode !== 'none', source: `scope_${mode}` };
 }

@@ -28,6 +28,10 @@ export async function checkAuthCoreReadScope(request: NextRequest): Promise<Acti
     return authCheck;
   }
 
+  if (process.env.HIT_AUTH_DISABLE_SCOPES === '1') {
+    return { ok: true, source: 'scope_disabled' };
+  }
+
   const mode = await resolveAuthCoreScopeMode(request, { verb: 'read' });
   return { ok: mode !== 'none', source: `scope_${mode}` };
 }

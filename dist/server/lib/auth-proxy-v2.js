@@ -401,6 +401,36 @@ function issueAccessToken(opts) {
     };
     return signJwtHmac(payload, secret);
 }
+function normalizeAuthAuditEvent(args) {
+    const actionLower = args.action.toLowerCase();
+    const outcome = args.outcome ??
+        (actionLower.includes('failed')
+            ? 'failure'
+            : actionLower.includes('rejected') || actionLower.includes('denied')
+                ? 'denied'
+                : actionLower.includes('error')
+                    ? 'error'
+                    : 'success');
+    return {
+        actorEmail: String(args.actorEmail || '').trim().toLowerCase(),
+        action: args.action,
+        summary: args.summary,
+        entityKind: args.entityKind,
+        entityId: args.entityId ?? null,
+        details: args.details ?? null,
+        changes: args.changes ?? null,
+        eventType: args.eventType ?? args.action,
+        outcome,
+        targetKind: args.targetKind ?? null,
+        targetId: args.targetId ?? null,
+        targetName: args.targetName ?? null,
+        sessionId: args.sessionId ?? null,
+        authMethod: args.authMethod ?? null,
+        mfaMethod: args.mfaMethod ?? null,
+        errorCode: args.errorCode ?? null,
+        errorMessage: args.errorMessage ?? null,
+    };
+}
 async function tryWriteAuthAuditEvent(args) {
     try {
         // NOTE: Keep audit-core optional without webpack bundling.
@@ -411,14 +441,26 @@ async function tryWriteAuthAuditEvent(args) {
         if (!writeAuditEvent)
             return;
         const url = new URL(args.req.url);
+        const normalized = normalizeAuthAuditEvent(args);
         await writeAuditEvent(getDb(), {
-            entityKind: args.entityKind,
-            entityId: args.entityId ?? null,
-            action: args.action,
-            summary: args.summary,
-            details: args.details ?? null,
-            actorId: args.actorEmail,
-            actorName: args.actorEmail,
+            entityKind: normalized.entityKind,
+            entityId: normalized.entityId,
+            action: normalized.action,
+            summary: normalized.summary,
+            details: normalized.details,
+            changes: normalized.changes,
+            eventType: normalized.eventType,
+            outcome: normalized.outcome,
+            targetKind: normalized.targetKind,
+            targetId: normalized.targetId,
+            targetName: normalized.targetName,
+            sessionId: normalized.sessionId,
+            authMethod: normalized.authMethod,
+            mfaMethod: normalized.mfaMethod,
+            errorCode: normalized.errorCode,
+            errorMessage: normalized.errorMessage,
+            actorId: normalized.actorEmail,
+            actorName: normalized.actorEmail,
             actorType: 'user',
             packName: 'auth-core',
             method: args.req.method,
@@ -971,16 +1013,53 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: email,
                 action: 'auth.login_failed',
+                eventType: 'auth.login',
+                outcome: 'failure',
                 summary: `Login failed for ${email}`,
                 entityKind: 'auth.user',
                 entityId: email,
+                targetKind: 'auth.user',
+                targetId: email,
+                authMethod: 'password',
+                errorCode: 'user_not_found',
                 details: { reason: 'user_not_found' },
             });
             return err('Invalid credentials', 401);
         }
-        if (row.locked)
+        if (row.locked) {
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: row.email,
+                action: 'auth.login_denied',
+                eventType: 'auth.login',
+                outcome: 'denied',
+                summary: `Login denied for ${row.email} (locked)`,
+                entityKind: 'auth.user',
+                entityId: row.email,
+                targetKind: 'auth.user',
+                targetId: row.email,
+                authMethod: 'password',
+                errorCode: 'account_locked',
+                details: { reason: 'account_locked' },
+            });
             return err('Account is locked', 403);
+        }
         if (getEmailVerificationEnabledFromConfig() && !row.email_verified) {
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: row.email,
+                action: 'auth.login_denied',
+                eventType: 'auth.login',
+                outcome: 'denied',
+                summary: `Login denied for ${row.email} (verification required)`,
+                entityKind: 'auth.user',
+                entityId: row.email,
+                targetKind: 'auth.user',
+                targetId: row.email,
+                authMethod: 'password',
+                errorCode: 'email_verification_required',
+                details: { reason: 'email_verification_required' },
+            });
             return err('Email verification required', 403);
         }
         const storedHash = row.password_hash ? String(row.password_hash) : '';
@@ -1004,9 +1083,15 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: row.email,
                 action: 'auth.login_failed',
+                eventType: 'auth.login',
+                outcome: 'failure',
                 summary: `Login failed for ${row.email}`,
                 entityKind: 'auth.user',
                 entityId: row.email,
+                targetKind: 'auth.user',
+                targetId: row.email,
+                authMethod: 'password',
+                errorCode: 'bad_password',
                 details: { reason: 'bad_password' },
             });
             return err('Invalid credentials', 401);
@@ -1029,9 +1114,14 @@ export async function tryHandleAuthV2Proxy(opts) {
             req,
             actorEmail: row.email,
             action: 'auth.login',
+            eventType: 'auth.login',
+            outcome: 'success',
             summary: `Login successful for ${row.email}`,
             entityKind: 'auth.user',
             entityId: row.email,
+            targetKind: 'auth.user',
+            targetId: row.email,
+            authMethod: 'password',
         });
         const loginJson = json({
             token: tokenOrErr,
@@ -1078,9 +1168,13 @@ export async function tryHandleAuthV2Proxy(opts) {
             req,
             actorEmail: email,
             action: 'auth.refresh',
+            eventType: 'auth.refresh',
+            outcome: 'success',
             summary: `Token refreshed for ${email}`,
             entityKind: 'auth.user',
             entityId: email,
+            targetKind: 'auth.user',
+            targetId: email,
         });
         const refreshJson = json({
             token: tokenOrErr,
@@ -1103,9 +1197,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: u.email,
                 action: 'auth.logout',
+                eventType: 'auth.logout',
+                outcome: 'success',
                 summary: `Logout for ${u.email}`,
                 entityKind: 'auth.user',
                 entityId: u.email,
+                targetKind: 'auth.user',
+                targetId: u.email,
             });
         }
         return clearAuthCookie(json({ ok: true }));
@@ -1120,9 +1218,13 @@ export async function tryHandleAuthV2Proxy(opts) {
             req,
             actorEmail: u.email,
             action: 'auth.logout_all',
+            eventType: 'auth.logout_all',
+            outcome: 'success',
             summary: `Logout-all for ${u.email}`,
             entityKind: 'auth.user',
             entityId: u.email,
+            targetKind: 'auth.user',
+            targetId: u.email,
         });
         return json({ ok: true });
     }
@@ -1156,6 +1258,20 @@ export async function tryHandleAuthV2Proxy(opts) {
         SET used_at = now()
         WHERE token_hash = ${token_hash}
       `);
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: String(row.email).toLowerCase(),
+                action: 'auth.email_verified',
+                eventType: 'auth.email_verified',
+                outcome: 'success',
+                summary: `Email verified for ${String(row.email).toLowerCase()}`,
+                entityKind: 'auth.user',
+                entityId: String(row.email).toLowerCase(),
+                targetKind: 'auth.user',
+                targetId: String(row.email).toLowerCase(),
+                authMethod: 'email_token',
+                details: { method: 'token' },
+            });
             return json({ ok: true, email: String(row.email).toLowerCase() });
         }
         if (email && code) {
@@ -1181,6 +1297,20 @@ export async function tryHandleAuthV2Proxy(opts) {
         SET used_at = now()
         WHERE id = ${row.id}::uuid
       `);
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: email,
+                action: 'auth.email_verified',
+                eventType: 'auth.email_verified',
+                outcome: 'success',
+                summary: `Email verified for ${email}`,
+                entityKind: 'auth.user',
+                entityId: email,
+                targetKind: 'auth.user',
+                targetId: email,
+                authMethod: 'email_code',
+                details: { method: 'code' },
+            });
             return json({ ok: true, email });
         }
         return err('Token or email+code required', 400);
@@ -1234,6 +1364,19 @@ export async function tryHandleAuthV2Proxy(opts) {
             const base = frontendBaseUrlFromRequest(req);
             const verifyUrl = base ? `${base}/verify-email?token=${encodeURIComponent(ver.token)}` : '';
             await sendVerifyEmail(req, { to: email, verifyUrl, code: ver.code });
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: email,
+                action: 'auth.email_verification_sent',
+                eventType: 'auth.email_verification_sent',
+                outcome: 'success',
+                summary: `Verification email resent to ${email}`,
+                entityKind: 'auth.user',
+                entityId: email,
+                targetKind: 'auth.user',
+                targetId: email,
+                authMethod: 'email',
+            });
         }
         catch {
             // best-effort
@@ -1260,6 +1403,19 @@ export async function tryHandleAuthV2Proxy(opts) {
             const base = frontendBaseUrlFromRequest(req);
             const resetUrl = base ? `${base}/reset-password?token=${encodeURIComponent(reset.token)}` : '';
             await sendPasswordResetEmail(req, { to: email, resetUrl });
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: email,
+                action: 'auth.password_reset_requested',
+                eventType: 'auth.password_reset_requested',
+                outcome: 'success',
+                summary: `Password reset requested for ${email}`,
+                entityKind: 'auth.user',
+                entityId: email,
+                targetKind: 'auth.user',
+                targetId: email,
+                authMethod: 'email',
+            });
         }
         catch {
             // best-effort
@@ -1295,6 +1451,19 @@ export async function tryHandleAuthV2Proxy(opts) {
       WHERE token_hash = ${token_hash}
     `);
         await revokeAllRefreshTokensForUser(db, String(row.email).toLowerCase());
+        await tryWriteAuthAuditEvent({
+            req,
+            actorEmail: String(row.email).toLowerCase(),
+            action: 'auth.password_reset_completed',
+            eventType: 'auth.password_reset_completed',
+            outcome: 'success',
+            summary: `Password reset completed for ${String(row.email).toLowerCase()}`,
+            entityKind: 'auth.user',
+            entityId: String(row.email).toLowerCase(),
+            targetKind: 'auth.user',
+            targetId: String(row.email).toLowerCase(),
+            authMethod: 'email_token',
+        });
         return json({ ok: true });
     }
     if (p0 === 'magic-link' && p1 === 'request' && m === 'POST') {
@@ -1319,6 +1488,19 @@ export async function tryHandleAuthV2Proxy(opts) {
             const base = frontendBaseUrlFromRequest(req);
             const magicUrl = base ? `${base}/magic-link?token=${encodeURIComponent(magic.token)}` : '';
             await sendMagicLinkEmail(req, { to: email, magicUrl });
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: email,
+                action: 'auth.magic_link_requested',
+                eventType: 'auth.magic_link_requested',
+                outcome: 'success',
+                summary: `Magic link requested for ${email}`,
+                entityKind: 'auth.user',
+                entityId: email,
+                targetKind: 'auth.user',
+                targetId: email,
+                authMethod: 'magic_link',
+            });
         }
         catch {
             // best-effort
@@ -1370,6 +1552,19 @@ export async function tryHandleAuthV2Proxy(opts) {
       SET used_at = now()
       WHERE token_hash = ${token_hash}
     `);
+        await tryWriteAuthAuditEvent({
+            req,
+            actorEmail: String(user.email).toLowerCase(),
+            action: 'auth.magic_link_login',
+            eventType: 'auth.magic_link_login',
+            outcome: 'success',
+            summary: `Magic link login for ${String(user.email).toLowerCase()}`,
+            entityKind: 'auth.user',
+            entityId: String(user.email).toLowerCase(),
+            targetKind: 'auth.user',
+            targetId: String(user.email).toLowerCase(),
+            authMethod: 'magic_link',
+        });
         const magicJson = json({
             token: tokenOrErr,
             refresh_token: refresh.token,
@@ -1426,9 +1621,14 @@ export async function tryHandleAuthV2Proxy(opts) {
             req,
             actorEmail: admin.email,
             action: 'auth.impersonate_start',
+            eventType: 'auth.impersonate_start',
+            outcome: 'success',
             summary: `Impersonation started: ${admin.email} -> ${u.email}`,
             entityKind: 'auth.impersonation_session',
             entityId: sessionId || null,
+            targetKind: 'auth.user',
+            targetId: String(u.email).toLowerCase(),
+            sessionId: sessionId || null,
             details: { admin_email: admin.email, impersonated_email: u.email },
         });
         const impersonateJson = json({
@@ -1459,9 +1659,14 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: admin.email,
                 action: 'auth.impersonate_end',
+                eventType: 'auth.impersonate_end',
+                outcome: 'success',
                 summary: `Impersonation ended by admin: ${admin.email} (session ${session_id})`,
                 entityKind: 'auth.impersonation_session',
                 entityId: session_id,
+                targetKind: 'auth.user',
+                targetId: null,
+                sessionId: session_id,
             });
             return json({ ok: true });
         }
@@ -1495,9 +1700,14 @@ export async function tryHandleAuthV2Proxy(opts) {
             req,
             actorEmail: imp.toLowerCase(),
             action: 'auth.impersonate_end',
+            eventType: 'auth.impersonate_end',
+            outcome: 'success',
             summary: `Impersonation ended: ${imp} -> ${sub}`,
             entityKind: 'auth.impersonation_session',
             entityId: sid,
+            targetKind: 'auth.user',
+            targetId: sub.toLowerCase(),
+            sessionId: sid,
             details: { admin_email: imp, impersonated_email: sub },
         });
         return json({ ok: true });
@@ -1590,6 +1800,25 @@ export async function tryHandleAuthV2Proxy(opts) {
           RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
         `);
                 const row = insertRes?.rows?.[0];
+                const admin = requireUser(req);
+                if (!(admin instanceof NextResponse)) {
+                    await tryWriteAuthAuditEvent({
+                        req,
+                        actorEmail: admin.email,
+                        action: 'auth.user_created',
+                        eventType: 'auth.user_created',
+                        outcome: 'success',
+                        summary: `User created: ${email}`,
+                        entityKind: 'auth.user',
+                        entityId: email,
+                        targetKind: 'auth.user',
+                        targetId: email,
+                        changes: [
+                            { field: 'role', from: null, to: role || 'user' },
+                            { field: 'email_verified', from: null, to: emailVerified },
+                        ],
+                    });
+                }
                 return json(normalizeUserRow(row), { status: 201 });
             }
             catch (e) {
@@ -1640,11 +1869,49 @@ export async function tryHandleAuthV2Proxy(opts) {
             const row = userUpdateRes?.rows?.[0];
             if (!row)
                 return err('User not found', 404);
+            const admin = requireUser(req);
+            if (!(admin instanceof NextResponse)) {
+                const changes = [
+                    role !== undefined ? { field: 'role', from: null, to: role } : null,
+                    locked !== undefined ? { field: 'locked', from: null, to: locked } : null,
+                    email_verified !== undefined ? { field: 'email_verified', from: null, to: email_verified } : null,
+                    profile_fields !== undefined ? { field: 'profile_fields', from: null, to: profile_fields } : null,
+                    profile_picture_url !== undefined ? { field: 'profile_picture_url', from: null, to: profile_picture_url } : null,
+                ].filter(Boolean);
+                await tryWriteAuthAuditEvent({
+                    req,
+                    actorEmail: admin.email,
+                    action: 'auth.user_updated',
+                    eventType: 'auth.user_updated',
+                    outcome: 'success',
+                    summary: `User updated: ${email}`,
+                    entityKind: 'auth.user',
+                    entityId: email,
+                    targetKind: 'auth.user',
+                    targetId: email,
+                    changes: changes.length ? changes : null,
+                });
+            }
             return json(normalizeUserRow(row));
         }
         // DELETE /users/{email}
         if (m === 'DELETE') {
             await db.execute(sql `DELETE FROM hit_auth_v2_users WHERE email = ${email}`);
+            const admin = requireUser(req);
+            if (!(admin instanceof NextResponse)) {
+                await tryWriteAuthAuditEvent({
+                    req,
+                    actorEmail: admin.email,
+                    action: 'auth.user_deleted',
+                    eventType: 'auth.user_deleted',
+                    outcome: 'success',
+                    summary: `User deleted: ${email}`,
+                    entityKind: 'auth.user',
+                    entityId: email,
+                    targetKind: 'auth.user',
+                    targetId: email,
+                });
+            }
             return json({}, { status: 204 });
         }
     }
@@ -1676,6 +1943,19 @@ export async function tryHandleAuthV2Proxy(opts) {
         WHERE id = ${p1s}::uuid
           AND user_email = ${u.email}
       `);
+            await tryWriteAuthAuditEvent({
+                req,
+                actorEmail: u.email,
+                action: 'auth.session_revoked',
+                eventType: 'auth.session_revoked',
+                outcome: 'success',
+                summary: `Session revoked for ${u.email}`,
+                entityKind: 'auth.session',
+                entityId: String(p1s),
+                targetKind: 'auth.user',
+                targetId: u.email,
+                sessionId: String(p1s),
+            });
             return json({ status: 'revoked' });
         }
     }
@@ -1760,9 +2040,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: admin.email,
                 action: 'auth.invite_sent',
+                eventType: 'auth.invite_sent',
+                outcome: 'success',
                 summary: `Invite sent to ${email}`,
                 entityKind: 'auth.invite',
                 entityId: String(row.id),
+                targetKind: 'auth.user',
+                targetId: email,
             });
             return json(normalizeInviteRow(row), { status: 201 });
         }
@@ -1877,9 +2161,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: String(invite.inviter_email || invite.email).toLowerCase(),
                 action: 'auth.invite_accepted',
+                eventType: 'auth.invite_accepted',
+                outcome: 'success',
                 summary: `Invite accepted for ${String(invite.email).toLowerCase()}`,
                 entityKind: 'auth.invite',
                 entityId: String(invite.id),
+                targetKind: 'auth.user',
+                targetId: String(invite.email).toLowerCase(),
             });
             const acceptJson = json({
                 token: tokenOrErr,
@@ -1919,9 +2207,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: String(invite.inviter_email || invite.email).toLowerCase(),
                 action: 'auth.invite_rejected',
+                eventType: 'auth.invite_rejected',
+                outcome: 'success',
                 summary: `Invite rejected for ${String(invite.email).toLowerCase()}`,
                 entityKind: 'auth.invite',
                 entityId: String(invite.id),
+                targetKind: 'auth.user',
+                targetId: String(invite.email).toLowerCase(),
             });
             return json({ ok: true });
         }
@@ -1978,9 +2270,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: admin.email,
                 action: 'auth.invite_resent',
+                eventType: 'auth.invite_resent',
+                outcome: 'success',
                 summary: `Invite resent to ${String(invite.email).toLowerCase()}`,
                 entityKind: 'auth.invite',
                 entityId: String(invite.id),
+                targetKind: 'auth.user',
+                targetId: String(invite.email).toLowerCase(),
             });
             return json({
                 id: String(invite.id),
@@ -2022,9 +2318,13 @@ export async function tryHandleAuthV2Proxy(opts) {
                 req,
                 actorEmail: u.email,
                 action: 'auth.invite_cancelled',
+                eventType: 'auth.invite_cancelled',
+                outcome: 'success',
                 summary: `Invite cancelled for ${String(invite.email).toLowerCase()}`,
                 entityKind: 'auth.invite',
                 entityId: String(invite.id),
+                targetKind: 'auth.user',
+                targetId: String(invite.email).toLowerCase(),
             });
             return json({ ok: true });
         }
@@ -2115,6 +2415,21 @@ export async function tryHandleAuthV2Proxy(opts) {
             AND revoked_at IS NULL
             AND expires_at > now()
         `);
+                const admin = requireUser(req);
+                if (!(admin instanceof NextResponse)) {
+                    await tryWriteAuthAuditEvent({
+                        req,
+                        actorEmail: admin.email,
+                        action: 'auth.sessions_revoked',
+                        eventType: 'auth.sessions_revoked',
+                        outcome: 'success',
+                        summary: `All sessions revoked for ${email}`,
+                        entityKind: 'auth.user',
+                        entityId: email,
+                        targetKind: 'auth.user',
+                        targetId: email,
+                    });
+                }
                 return json({ status: 'revoked' });
             }
         }
@@ -2148,6 +2463,22 @@ export async function tryHandleAuthV2Proxy(opts) {
                 const base = frontendBaseUrlFromRequest(req);
                 const verifyUrl = base ? `${base}/verify-email?token=${encodeURIComponent(ver.token)}` : '';
                 await sendVerifyEmail(req, { to: email, verifyUrl, code: ver.code });
+                const admin = requireUser(req);
+                if (!(admin instanceof NextResponse)) {
+                    await tryWriteAuthAuditEvent({
+                        req,
+                        actorEmail: admin.email,
+                        action: 'auth.email_verification_sent',
+                        eventType: 'auth.email_verification_sent',
+                        outcome: 'success',
+                        summary: `Verification email sent to ${email} by admin`,
+                        entityKind: 'auth.user',
+                        entityId: email,
+                        targetKind: 'auth.user',
+                        targetId: email,
+                        authMethod: 'admin',
+                    });
+                }
             }
             catch {
                 // best-effort
@@ -2160,6 +2491,22 @@ export async function tryHandleAuthV2Proxy(opts) {
         SET email_verified = true, updated_at = now()
         WHERE email = ${email}
       `);
+            const admin = requireUser(req);
+            if (!(admin instanceof NextResponse)) {
+                await tryWriteAuthAuditEvent({
+                    req,
+                    actorEmail: admin.email,
+                    action: 'auth.email_verified',
+                    eventType: 'auth.email_verified',
+                    outcome: 'success',
+                    summary: `Email verified for ${email} by admin`,
+                    entityKind: 'auth.user',
+                    entityId: email,
+                    targetKind: 'auth.user',
+                    targetId: email,
+                    authMethod: 'admin',
+                });
+            }
             return json({ ok: true });
         }
         if (action === 'reset-password' && m === 'POST') {
@@ -2181,6 +2528,22 @@ export async function tryHandleAuthV2Proxy(opts) {
                     const base = frontendBaseUrlFromRequest(req);
                     const resetUrl = base ? `${base}/reset-password?token=${encodeURIComponent(reset.token)}` : '';
                     await sendPasswordResetEmail(req, { to: email, resetUrl });
+                    const admin = requireUser(req);
+                    if (!(admin instanceof NextResponse)) {
+                        await tryWriteAuthAuditEvent({
+                            req,
+                            actorEmail: admin.email,
+                            action: 'auth.password_reset_requested',
+                            eventType: 'auth.password_reset_requested',
+                            outcome: 'success',
+                            summary: `Password reset requested for ${email} by admin`,
+                            entityKind: 'auth.user',
+                            entityId: email,
+                            targetKind: 'auth.user',
+                            targetId: email,
+                            authMethod: 'admin_email',
+                        });
+                    }
                 }
                 catch {
                     // best-effort
@@ -2196,6 +2559,22 @@ export async function tryHandleAuthV2Proxy(opts) {
         WHERE email = ${email}
       `);
             await revokeAllRefreshTokensForUser(db, email);
+            const admin = requireUser(req);
+            if (!(admin instanceof NextResponse)) {
+                await tryWriteAuthAuditEvent({
+                    req,
+                    actorEmail: admin.email,
+                    action: 'auth.password_reset_completed',
+                    eventType: 'auth.password_reset_completed',
+                    outcome: 'success',
+                    summary: `Password reset completed for ${email} by admin`,
+                    entityKind: 'auth.user',
+                    entityId: email,
+                    targetKind: 'auth.user',
+                    targetId: email,
+                    authMethod: 'admin',
+                });
+            }
             return json({ ok: true });
         }
     }

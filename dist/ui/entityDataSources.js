@@ -74,40 +74,75 @@ function buildOptions(args) {
         })),
     ];
 }
+function nameFromDirectoryUser(user) {
+    const display = String(user?.displayName || user?.name || '').trim();
+    const employee = user?.employee || {};
+    const preferred = String(employee?.preferredName || '').trim();
+    const first = String(employee?.firstName || employee?.first_name || '').trim();
+    const last = String(employee?.lastName || employee?.last_name || '').trim();
+    const pf = user?.profile_fields || {};
+    const pfFirst = String(pf?.first_name || '').trim();
+    const pfLast = String(pf?.last_name || '').trim();
+    const employeeName = [first, last].filter(Boolean).join(' ').trim();
+    const profileName = [pfFirst, pfLast].filter(Boolean).join(' ').trim();
+    return preferred || display || employeeName || profileName;
+}
+function toUserOption(user) {
+    const email = String(user?.email || '').trim();
+    if (!email)
+        return null;
+    const label = nameFromDirectoryUser(user) || email;
+    return {
+        value: email,
+        label,
+        description: label !== email ? email : undefined,
+    };
+}
+function extractUserArray(json) {
+    if (Array.isArray(json))
+        return json;
+    if (Array.isArray(json?.items))
+        return json.items;
+    return [];
+}
+async function fetchUserDirectory(params) {
+    const qs = params.toString();
+    try {
+        const hrmRes = await fetch(`/api/hrm/directory/users?${qs}`, { method: 'GET' });
+        if (hrmRes.ok)
+            return extractUserArray(await hrmRes.json().catch(() => []));
+        if (hrmRes.status !== 404)
+            return [];
+    }
+    catch {
+        // If HRM directory isn't available, fall back to auth-core.
+    }
+    const authRes = await fetch(`/api/org/users?${qs}`, { method: 'GET' });
+    if (!authRes.ok)
+        return [];
+    return extractUserArray(await authRes.json().catch(() => ({})));
+}
 function useUserReferenceRenderer() {
     return useMemo(() => ({ label, value, setValue, placeholder, ui }) => (_jsx(ui.Autocomplete, { label: label, placeholder: placeholder || 'Search users…', value: value, onChange: setValue, minQueryLength: 2, debounceMs: 200, limit: 10, emptyMessage: "No users found", searchingMessage: "Searching\u2026", clearable: true, onSearch: async (query, lim) => {
             const params = new URLSearchParams();
             params.set('search', query);
             params.set('pageSize', String(lim));
-            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
-            if (!res.ok)
-                return [];
-            const json = await res.json().catch(() => ({}));
-            const items = Array.isArray(json?.items) ? json.items : [];
-            return items.slice(0, lim).map((u) => ({
-                value: String(u.email || ''),
-                label: String(u.name || u.email || ''),
-                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
-            }));
+            const items = await fetchUserDirectory(params);
+            return items
+                .map((u) => toUserOption(u))
+                .filter((opt) => Boolean(opt))
+                .slice(0, lim);
         }, resolveValue: async (email) => {
             if (!email)
                 return null;
             const params = new URLSearchParams();
             params.set('id', email);
             params.set('pageSize', '1');
-            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
-            if (!res.ok)
-                return null;
-            const json = await res.json().catch(() => ({}));
-            const items = Array.isArray(json?.items) ? json.items : [];
+            const items = await fetchUserDirectory(params);
             const u = items[0];
             if (!u)
                 return null;
-            return {
-                value: String(u.email || ''),
-                label: String(u.name || u.email || ''),
-                description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
-            };
+            return toUserOption(u);
         } })), []);
 }
 function useAvailableRolesOptionSource() {

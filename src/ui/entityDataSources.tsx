@@ -152,6 +152,53 @@ function buildOptions(args: {
   ];
 }
 
+type UserSearchOption = { value: string; label: string; description?: string };
+
+function nameFromDirectoryUser(user: any): string {
+  const display = String(user?.displayName || user?.name || '').trim();
+  const employee = user?.employee || {};
+  const preferred = String(employee?.preferredName || '').trim();
+  const first = String(employee?.firstName || employee?.first_name || '').trim();
+  const last = String(employee?.lastName || employee?.last_name || '').trim();
+  const pf = user?.profile_fields || {};
+  const pfFirst = String(pf?.first_name || '').trim();
+  const pfLast = String(pf?.last_name || '').trim();
+  const employeeName = [first, last].filter(Boolean).join(' ').trim();
+  const profileName = [pfFirst, pfLast].filter(Boolean).join(' ').trim();
+  return preferred || display || employeeName || profileName;
+}
+
+function toUserOption(user: any): UserSearchOption | null {
+  const email = String(user?.email || '').trim();
+  if (!email) return null;
+  const label = nameFromDirectoryUser(user) || email;
+  return {
+    value: email,
+    label,
+    description: label !== email ? email : undefined,
+  };
+}
+
+function extractUserArray(json: any): any[] {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.items)) return json.items;
+  return [];
+}
+
+async function fetchUserDirectory(params: URLSearchParams): Promise<any[]> {
+  const qs = params.toString();
+  try {
+    const hrmRes = await fetch(`/api/hrm/directory/users?${qs}`, { method: 'GET' });
+    if (hrmRes.ok) return extractUserArray(await hrmRes.json().catch(() => []));
+    if (hrmRes.status !== 404) return [];
+  } catch {
+    // If HRM directory isn't available, fall back to auth-core.
+  }
+  const authRes = await fetch(`/api/org/users?${qs}`, { method: 'GET' });
+  if (!authRes.ok) return [];
+  return extractUserArray(await authRes.json().catch(() => ({})));
+}
+
 function useUserReferenceRenderer() {
   return useMemo(
     () =>
@@ -171,32 +218,21 @@ function useUserReferenceRenderer() {
             const params = new URLSearchParams();
             params.set('search', query);
             params.set('pageSize', String(lim));
-            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
-            if (!res.ok) return [];
-            const json = await res.json().catch(() => ({}));
-            const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
-            return items.slice(0, lim).map((u: any) => ({
-              value: String(u.email || ''),
-              label: String(u.name || u.email || ''),
-              description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
-            }));
+            const items = await fetchUserDirectory(params);
+            return items
+              .map((u: any) => toUserOption(u))
+              .filter((opt): opt is UserSearchOption => Boolean(opt))
+              .slice(0, lim);
           }}
           resolveValue={async (email: string) => {
             if (!email) return null;
             const params = new URLSearchParams();
             params.set('id', email);
             params.set('pageSize', '1');
-            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
-            if (!res.ok) return null;
-            const json = await res.json().catch(() => ({}));
-            const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+            const items = await fetchUserDirectory(params);
             const u = items[0];
             if (!u) return null;
-            return {
-              value: String(u.email || ''),
-              label: String(u.name || u.email || ''),
-              description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
-            };
+            return toUserOption(u);
           }}
         />
       ),
