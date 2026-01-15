@@ -131,7 +131,7 @@ function getBearerFromRequest(request: RequestLike): string | null {
   return null;
 }
 
-function getAuthBaseUrl(request?: RequestLike): string | null {
+export function getAuthBaseUrl(request?: RequestLike): string | null {
   // Prefer direct module URL (server-side)
   const direct = process.env.HIT_AUTH_URL || process.env.NEXT_PUBLIC_HIT_AUTH_URL;
   if (direct) return direct.replace(/\/$/, '');

@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuthCoreAction } from '../lib/require-action';
+import { getAuthBaseUrl } from '../lib/acl-utils';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-function getAuthUrl(): string {
-  // Prefer server-only module URL when available; fall back to HIT link env; then to the in-app proxy.
-  return process.env.HIT_AUTH_URL || process.env.NEXT_PUBLIC_HIT_AUTH_URL || '/api/proxy/auth';
-}
 
 function getBearerFromRequest(request: NextRequest): string {
   const rawTokenHeader = request.headers.get('x-hit-token-raw') || request.headers.get('X-HIT-Token-Raw');
@@ -27,7 +23,8 @@ function getBearerFromRequest(request: NextRequest): string {
 }
 
 async function authFetch(request: NextRequest, path: string, init: RequestInit) {
-  const authUrl = getAuthUrl();
+  const authUrl = getAuthBaseUrl(request as any);
+  if (!authUrl) throw new Error('[auth] Auth base URL not configured');
   const bearer = getBearerFromRequest(request);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (bearer) headers.Authorization = bearer;

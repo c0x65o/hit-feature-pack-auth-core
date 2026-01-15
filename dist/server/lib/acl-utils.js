@@ -68,7 +68,7 @@ function getBearerFromRequest(request) {
     }
     return null;
 }
-function getAuthBaseUrl(request) {
+export function getAuthBaseUrl(request) {
     // Prefer direct module URL (server-side)
     const direct = process.env.HIT_AUTH_URL || process.env.NEXT_PUBLIC_HIT_AUTH_URL;
     if (direct)

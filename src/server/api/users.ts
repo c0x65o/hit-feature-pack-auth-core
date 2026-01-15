@@ -1,11 +1,13 @@
 // src/server/api/users.ts
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthCoreAction } from "../lib/require-action";
+import { getAuthBaseUrl } from "../lib/acl-utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function getAuthUrl(): string {
+  // Deprecated: server-side fetch must use absolute URLs; callers should use getAuthBaseUrl(request).
   return process.env.NEXT_PUBLIC_HIT_AUTH_URL || "/api/proxy/auth";
 }
 
@@ -54,7 +56,10 @@ export async function GET(request: NextRequest) {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (bearer) headers["Authorization"] = bearer;
 
-    const authUrl = getAuthUrl();
+    const authUrl = getAuthBaseUrl(request as any);
+    if (!authUrl) {
+      return NextResponse.json({ error: "Auth base URL not configured" }, { status: 500 });
+    }
     const res = await fetch(`${authUrl}/directory/users`, {
       method: "GET",
       headers,

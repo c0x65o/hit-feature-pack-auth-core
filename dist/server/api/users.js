@@ -1,6 +1,7 @@
 // src/server/api/users.ts
 import { NextResponse } from "next/server";
 import { requireAuthCoreAction } from "../lib/require-action";
+import { getAuthBaseUrl } from "../lib/acl-utils";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 function getAuthUrl() {
@@ -47,7 +48,10 @@ export async function GET(request) {
         const headers = { "Content-Type": "application/json" };
         if (bearer)
             headers["Authorization"] = bearer;
-        const authUrl = getAuthUrl();
+        const authUrl = getAuthBaseUrl(request);
+        if (!authUrl) {
+            return NextResponse.json({ error: "Auth base URL not configured" }, { status: 500 });
+        }
         const res = await fetch(`${authUrl}/directory/users`, {
             method: "GET",
             headers,
