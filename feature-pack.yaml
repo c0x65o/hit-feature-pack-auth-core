@@ -3,7 +3,7 @@
 # Also includes org dimensions (locations, divisions, departments, user assignments)
 
 name: auth-core
-title: Admin
+title: System Admin
 description: Core authentication UI and organizational structure management
 
 # Schema contributions (Drizzle tables)
