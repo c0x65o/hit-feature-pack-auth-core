@@ -87,6 +87,36 @@ function getJwtSecret() {
     const s = String(process.env.HIT_AUTH_JWT_SECRET || '').trim();
     return s ? s : null;
 }
+function getServiceTokenEnv() {
+    const s = String(process.env.HIT_SERVICE_TOKEN || '').trim();
+    return s ? s : null;
+}
+function stripBearerPrefix(token) {
+    const trimmed = String(token || '').trim();
+    if (!trimmed)
+        return '';
+    return trimmed.toLowerCase().startsWith('bearer ') ? trimmed.slice(7).trim() : trimmed;
+}
+function safeTokenEqual(a, b) {
+    const left = Buffer.from(a);
+    const right = Buffer.from(b);
+    if (left.length !== right.length)
+        return false;
+    return crypto.timingSafeEqual(left, right);
+}
+function isServiceTokenBearer(req) {
+    const serviceToken = getServiceTokenEnv();
+    if (!serviceToken)
+        return false;
+    const token = extractBearer(req);
+    if (!token)
+        return false;
+    const normalized = stripBearerPrefix(token);
+    const expected = stripBearerPrefix(serviceToken);
+    if (!normalized || !expected)
+        return false;
+    return safeTokenEqual(normalized, expected);
+}
 function signJwtHmac(payload, secret) {
     const header = { alg: 'HS256', typ: 'JWT' };
     const headerB64 = base64UrlEncode(Buffer.from(JSON.stringify(header), 'utf8'));
@@ -158,6 +188,9 @@ function getClientIp(req) {
     return null;
 }
 function requireUser(req) {
+    if (isServiceTokenBearer(req)) {
+        return { email: 'service@local', roles: ['admin'] };
+    }
     const token = extractBearer(req);
     if (!token)
         return err('Authentication required', 401);
@@ -529,6 +562,17 @@ function normalizeGroupRow(g) {
         updated_at: g?.updated_at ? new Date(g.updated_at).toISOString() : null,
     };
 }
+function normalizeSessionRow(s) {
+    return {
+        id: String(s?.id || ''),
+        user_email: String(s?.user_email || ''),
+        user_agent: s?.user_agent ?? null,
+        ip_address: s?.ip_address ?? null,
+        created_at: s?.created_at ? new Date(s.created_at).toISOString() : null,
+        expires_at: s?.expires_at ? new Date(s.expires_at).toISOString() : null,
+        current: false,
+    };
+}
 async function ensureBootstrapPermissionSets(db) {
     const now = Date.now();
     if (bootstrapSeededAt && now - bootstrapSeededAt < BOOTSTRAP_SEED_TTL_MS)
@@ -574,11 +618,14 @@ async function ensureBootstrapPermissionSets(db) {
     }
 }
 export async function checkActionPermissionV2(req, actionKey) {
+    if (!actionKey)
+        return { ok: false, source: 'missing_action_key' };
+    if (isServiceTokenBearer(req)) {
+        return { ok: true, source: 'service_token' };
+    }
     const u = requireUser(req);
     if (u instanceof NextResponse)
         return { errorResponse: u };
-    if (!actionKey)
-        return { ok: false, source: 'missing_action_key' };
     const db = getDb();
     const inferredRole = u.roles.includes('admin') ? 'admin' : 'user';
     const actionRes = await db.execute(sql `SELECT key, default_enabled FROM hit_auth_v2_permission_actions WHERE key = ${actionKey} LIMIT 1`);
@@ -715,6 +762,18 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (rRow && typeof rRow.enabled === 'boolean') {
         return { ok: Boolean(rRow.enabled), source: 'role_action_permission' };
     }
+    // 4.5) Admin template default (QoL)
+    //
+    // Admins should not be blocked from core operations just because an action key's
+    // defaultEnabled=false and no explicit grants were created yet.
+    //
+    // Explicit denies still win via:
+    // - user overrides (step 1)
+    // - group action permissions (step 3, deny precedence)
+    // - role action permissions (step 4)
+    if (role === 'admin') {
+        return { ok: true, source: 'admin_template_default' };
+    }
     // 5) Scope-mode template defaults (QoL + consistency with Security Groups UI)
     //
     // If a scope-mode group has *no explicit grants* for this user/role/groups, treat:
@@ -728,11 +787,8 @@ export async function checkActionPermissionV2(req, actionKey) {
         const basePrefix = String(scopeMatch[1] || '').trim();
         const verb = String(scopeMatch[2] || '').trim().toLowerCase();
         const mode = String(scopeMatch[3] || '').trim().toLowerCase();
-        const desired = role === 'admin'
-            ? mode === 'any' || mode === 'all'
-            : role === 'user'
-                ? mode === 'own'
-                : false;
+        // At this point, role must be 'user' since we returned early for 'admin' above
+        const desired = role === 'user' ? mode === 'own' : false;
         if (desired && basePrefix && verb) {
             // If ANY explicit permission-set grant exists for this scope group, do not apply template defaults.
             // (i.e. explicit configuration wins over implicit template behavior.)
@@ -1552,6 +1608,127 @@ export async function tryHandleAuthV2Proxy(opts) {
         }
     }
     // ---------------------------------------------------------------------------
+    // SESSIONS (admin + me)
+    // ---------------------------------------------------------------------------
+    if (p0 === 'sessions') {
+        const u = requireUser(req);
+        if (u instanceof NextResponse)
+            return u;
+        const db = getDb();
+        const p1s = (pathSegments[1] || '').trim();
+        if (m === 'GET' && !p1s) {
+            const sessionsRes = await db.execute(sql `
+        SELECT id::text AS id, user_email, user_agent, ip_address, created_at, expires_at
+        FROM hit_auth_v2_refresh_tokens
+        WHERE user_email = ${u.email}
+          AND revoked_at IS NULL
+          AND expires_at > now()
+        ORDER BY created_at DESC
+      `);
+            const sessions = (sessionsRes?.rows || []).map(normalizeSessionRow);
+            return json({ sessions });
+        }
+        if (m === 'DELETE' && p1s) {
+            await db.execute(sql `
+        UPDATE hit_auth_v2_refresh_tokens
+        SET revoked_at = now()
+        WHERE id = ${p1s}::uuid
+          AND user_email = ${u.email}
+      `);
+            return json({ status: 'revoked' });
+        }
+    }
+    if (p0 === 'admin' && (p1 || '').trim() === 'sessions') {
+        const gate = requireAdmin(req);
+        if (gate)
+            return gate;
+        const db = getDb();
+        const url = new URL(req.url);
+        const user_email = String(url.searchParams.get('user_email') || '').trim().toLowerCase();
+        const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+        const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+        if (m === 'GET') {
+            const whereParts = [
+                sql `revoked_at IS NULL`,
+                sql `expires_at > now()`,
+            ];
+            if (user_email) {
+                whereParts.push(sql `user_email = ${user_email}`);
+            }
+            const whereClause = sql `WHERE ${sql.join(whereParts, sql ` AND `)}`;
+            const countRes = await db.execute(sql `
+        SELECT COUNT(*)::int AS total
+        FROM hit_auth_v2_refresh_tokens
+        ${whereClause}
+      `);
+            const total = Number(countRes?.rows?.[0]?.total || 0);
+            const sessionsRes = await db.execute(sql `
+        SELECT id::text AS id, user_email, user_agent, ip_address, created_at, expires_at
+        FROM hit_auth_v2_refresh_tokens
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+            return json({
+                sessions: (sessionsRes?.rows || []).map(normalizeSessionRow),
+                total,
+                limit,
+                offset,
+            });
+        }
+    }
+    if (p0 === 'admin' && (p1 || '').trim() === 'users' && (pathSegments[2] || '').trim()) {
+        const p2 = pathSegments[2] || ''; // user_email
+        const p3 = pathSegments[3] || '';
+        if (p3 === 'sessions') {
+            const gate = requireAdmin(req);
+            if (gate)
+                return gate;
+            const email = safeDecodePathSegment(p2).trim().toLowerCase();
+            if (!email || !isEmail(email))
+                return err('Invalid user email', 400);
+            const db = getDb();
+            const url = new URL(req.url);
+            const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+            const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+            if (m === 'GET') {
+                const countRes = await db.execute(sql `
+          SELECT COUNT(*)::int AS total
+          FROM hit_auth_v2_refresh_tokens
+          WHERE user_email = ${email}
+            AND revoked_at IS NULL
+            AND expires_at > now()
+        `);
+                const total = Number(countRes?.rows?.[0]?.total || 0);
+                const sessionsRes = await db.execute(sql `
+          SELECT id::text AS id, user_email, user_agent, ip_address, created_at, expires_at
+          FROM hit_auth_v2_refresh_tokens
+          WHERE user_email = ${email}
+            AND revoked_at IS NULL
+            AND expires_at > now()
+          ORDER BY created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `);
+                return json({
+                    sessions: (sessionsRes?.rows || []).map(normalizeSessionRow),
+                    total,
+                    limit,
+                    offset,
+                });
+            }
+            if (m === 'DELETE') {
+                await db.execute(sql `
+          UPDATE hit_auth_v2_refresh_tokens
+          SET revoked_at = now()
+          WHERE user_email = ${email}
+            AND revoked_at IS NULL
+            AND expires_at > now()
+        `);
+                return json({ status: 'revoked' });
+            }
+        }
+    }
+    // ---------------------------------------------------------------------------
     // ADMIN: USER EMAIL + PASSWORD ACTIONS
     // ---------------------------------------------------------------------------
     if (p0 === 'admin' && (p1 || '').trim() === 'users' && (pathSegments[2] || '').trim()) {
@@ -1827,6 +2004,12 @@ export async function tryHandleAuthV2Proxy(opts) {
                     out[p] = Boolean(userOverrides.get(p));
                     continue;
                 }
+                const hasAuthz = Boolean(routeByPath.get(p)?.authz);
+                if (hasAuthz) {
+                    const derived = await deriveRouteAccess(p);
+                    out[p] = derived !== null ? Boolean(derived) : true;
+                    continue;
+                }
                 const groupList = groupOverrides.get(p) || [];
                 if (groupList.length > 0) {
                     if (groupList.some((v) => v === false)) {
@@ -1849,11 +2032,6 @@ export async function tryHandleAuthV2Proxy(opts) {
                 const wildcardAllowed = Array.from(psAllow.values()).some((pattern) => matchesWildcard(pattern, p));
                 if (wildcardAllowed) {
                     out[p] = true;
-                    continue;
-                }
-                const derived = await deriveRouteAccess(p);
-                if (derived !== null) {
-                    out[p] = Boolean(derived);
                     continue;
                 }
                 // Default: allow (legacy behavior for routes without authz metadata)
