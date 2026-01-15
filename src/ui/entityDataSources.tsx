@@ -15,6 +15,20 @@ import {
   useUserMutations,
   useUsers,
 } from '../hooks/useAuthAdmin';
+import {
+  useDepartment,
+  useDepartmentMutations,
+  useDepartments,
+  useDivision,
+  useDivisionMutations,
+  useDivisions,
+  useLocation,
+  useLocationMutations,
+  useLocations,
+  useLocationTypes,
+  useUserOrgAssignmentMutations,
+  useUserOrgAssignments,
+} from '../hooks/useOrgDimensions';
 
 export type ListQueryArgs = {
   page: number;
@@ -78,6 +92,116 @@ function normalizeEmailId(id: string): string {
     }
   }
   return out;
+}
+
+function normalizeSearch(search?: string): string {
+  return String(search || '').trim().toLowerCase();
+}
+
+function matchesSearch(item: Record<string, unknown>, keys: string[], search?: string): boolean {
+  const needle = normalizeSearch(search);
+  if (!needle) return true;
+  const hay = keys
+    .map((k) => String((item as any)?.[k] ?? ''))
+    .join(' ')
+    .toLowerCase();
+  return hay.includes(needle);
+}
+
+function toComparable(value: unknown): string | number {
+  if (value == null) return '';
+  if (typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  const str = String(value);
+  const ts = Date.parse(str);
+  return Number.isNaN(ts) ? str.toLowerCase() : ts;
+}
+
+function sortItems<T extends Record<string, unknown>>(items: T[], sortBy?: string, sortOrder?: 'asc' | 'desc'): T[] {
+  if (!sortBy) return items;
+  const dir = sortOrder === 'asc' ? 1 : -1;
+  return [...items].sort((a, b) => {
+    const av = toComparable((a as any)?.[sortBy]);
+    const bv = toComparable((b as any)?.[sortBy]);
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number): { items: T[]; total: number } {
+  const total = items.length;
+  const start = Math.max(0, (page - 1) * pageSize);
+  const end = start + pageSize;
+  return { items: items.slice(start, end), total };
+}
+
+function buildOptions(args: {
+  items: any[];
+  valueKey: string;
+  labelKey: string;
+  emptyLabel: string;
+}) {
+  const { items, valueKey, labelKey, emptyLabel } = args;
+  return [
+    { value: '', label: emptyLabel },
+    ...items.map((item) => ({
+      value: String((item as any)?.[valueKey] ?? ''),
+      label: String((item as any)?.[labelKey] ?? ''),
+    })),
+  ];
+}
+
+function useUserReferenceRenderer() {
+  return useMemo(
+    () =>
+      ({ label, value, setValue, placeholder, ui }: { label: string; value: string; setValue: (v: string) => void; placeholder?: string; ui: { Autocomplete: any } }) => (
+        <ui.Autocomplete
+          label={label}
+          placeholder={placeholder || 'Search users…'}
+          value={value}
+          onChange={setValue}
+          minQueryLength={2}
+          debounceMs={200}
+          limit={10}
+          emptyMessage="No users found"
+          searchingMessage="Searching…"
+          clearable
+          onSearch={async (query: string, lim: number) => {
+            const params = new URLSearchParams();
+            params.set('search', query);
+            params.set('pageSize', String(lim));
+            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+            if (!res.ok) return [];
+            const json = await res.json().catch(() => ({}));
+            const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+            return items.slice(0, lim).map((u: any) => ({
+              value: String(u.email || ''),
+              label: String(u.name || u.email || ''),
+              description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+            }));
+          }}
+          resolveValue={async (email: string) => {
+            if (!email) return null;
+            const params = new URLSearchParams();
+            params.set('id', email);
+            params.set('pageSize', '1');
+            const res = await fetch(`/api/org/users?${params.toString()}`, { method: 'GET' });
+            if (!res.ok) return null;
+            const json = await res.json().catch(() => ({}));
+            const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+            const u = items[0];
+            if (!u) return null;
+            return {
+              value: String(u.email || ''),
+              label: String(u.name || u.email || ''),
+              description: u?.name && u?.email && u.name !== u.email ? String(u.email) : undefined,
+            };
+          }}
+        />
+      ),
+    []
+  );
 }
 
 function useAvailableRolesOptionSource() {
@@ -418,6 +542,328 @@ export function useEntityDataSource(entityKey: string): EntityDataSource | null 
               e.stopPropagation();
               const id = String((row as any).id);
               const name = String((row as any).name || id);
+              onRequestDelete({ id, name });
+            }}
+          >
+            <Trash2 size={16} style={{ color: 'var(--hit-error, #ef4444)' }} />
+          </ui.Button>
+        </div>
+      ),
+    };
+  }
+
+  if (entityKey === 'org.location') {
+    const { data: locations, loading, refresh } = useLocations();
+    const { data: locationTypes, loading: locationTypesLoading } = useLocationTypes();
+    const mutations = useLocationMutations();
+    const userReferenceRenderer = useUserReferenceRenderer();
+
+    return {
+      useList: (args) => {
+        const items = (locations || []).map((loc) => ({ ...loc, id: String(loc.id) }));
+        const filtered = items.filter((item) =>
+          matchesSearch(item, ['name', 'code', 'city', 'state', 'country', 'managerUserKey', 'locationTypeName'], args.search)
+        );
+        const sorted = sortItems(filtered, args.sortBy || 'createdAt', args.sortOrder);
+        const page = paginate(sorted, args.page, args.pageSize);
+        return {
+          data: { items: page.items, pagination: { total: page.total } },
+          loading,
+          refetch: refresh,
+          deleteItem: async (id: string) => mutations.remove(String(id)),
+        };
+      },
+      useDetail: ({ id }) => {
+        const { data: record, loading: detailLoading } = useLocation(id);
+        return {
+          record,
+          loading: detailLoading,
+          deleteItem: async (rid: string) => mutations.remove(String(rid)),
+        };
+      },
+      useUpsert: ({ id }) => {
+        const { data: record, loading: detailLoading } = useLocation(id || null);
+        const create = async (payload: any) => mutations.create(payload);
+        const update = async (rid: string, payload: any) => mutations.update(String(rid), payload);
+        return { record, loading: detailLoading, create, update };
+      },
+      useFormRegistries: () => ({
+        optionSources: {
+          'org.locationTypes': {
+            options: buildOptions({ items: locationTypes || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No type)' }),
+            loading: locationTypesLoading,
+          },
+          'org.locations': {
+            options: buildOptions({ items: locations || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No parent)' }),
+            loading,
+          },
+        },
+        referenceRenderers: { 'auth.user': userReferenceRenderer },
+      }),
+      useListCustomRenderers: () => ({
+        createdAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        updatedAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        isActive: (value: unknown) => (value ? 'Active' : 'Inactive'),
+        isPrimary: (value: unknown) => (value ? 'Yes' : 'No'),
+      }),
+      renderRowActions: ({ row, onRequestDelete, ui }) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <ui.Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              const id = String((row as any).id || '');
+              const name = String((row as any).name || id);
+              onRequestDelete({ id, name });
+            }}
+          >
+            <Trash2 size={16} style={{ color: 'var(--hit-error, #ef4444)' }} />
+          </ui.Button>
+        </div>
+      ),
+    };
+  }
+
+  if (entityKey === 'org.division') {
+    const { data: divisions, loading, refresh } = useDivisions();
+    const mutations = useDivisionMutations();
+    const userReferenceRenderer = useUserReferenceRenderer();
+
+    return {
+      useList: (args) => {
+        const items = (divisions || []).map((division) => ({ ...division, id: String(division.id) }));
+        const filtered = items.filter((item) =>
+          matchesSearch(item, ['name', 'code', 'managerUserKey'], args.search)
+        );
+        const sorted = sortItems(filtered, args.sortBy || 'createdAt', args.sortOrder);
+        const page = paginate(sorted, args.page, args.pageSize);
+        return {
+          data: { items: page.items, pagination: { total: page.total } },
+          loading,
+          refetch: refresh,
+          deleteItem: async (id: string) => mutations.remove(String(id)),
+        };
+      },
+      useDetail: ({ id }) => {
+        const { data: record, loading: detailLoading } = useDivision(id);
+        return {
+          record,
+          loading: detailLoading,
+          deleteItem: async (rid: string) => mutations.remove(String(rid)),
+        };
+      },
+      useUpsert: ({ id }) => {
+        const { data: record, loading: detailLoading } = useDivision(id || null);
+        const create = async (payload: any) => mutations.create(payload);
+        const update = async (rid: string, payload: any) => mutations.update(String(rid), payload);
+        return { record, loading: detailLoading, create, update };
+      },
+      useFormRegistries: () => ({
+        optionSources: {
+          'org.divisions': {
+            options: buildOptions({ items: divisions || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No parent)' }),
+            loading,
+          },
+        },
+        referenceRenderers: { 'auth.user': userReferenceRenderer },
+      }),
+      useListCustomRenderers: () => ({
+        createdAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        updatedAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        isActive: (value: unknown) => (value ? 'Active' : 'Inactive'),
+      }),
+      renderRowActions: ({ row, onRequestDelete, ui }) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <ui.Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              const id = String((row as any).id || '');
+              const name = String((row as any).name || id);
+              onRequestDelete({ id, name });
+            }}
+          >
+            <Trash2 size={16} style={{ color: 'var(--hit-error, #ef4444)' }} />
+          </ui.Button>
+        </div>
+      ),
+    };
+  }
+
+  if (entityKey === 'org.department') {
+    const { data: departments, loading, refresh } = useDepartments();
+    const { data: divisions, loading: divisionsLoading } = useDivisions();
+    const mutations = useDepartmentMutations();
+    const userReferenceRenderer = useUserReferenceRenderer();
+
+    return {
+      useList: (args) => {
+        const items = (departments || []).map((department) => ({ ...department, id: String(department.id) }));
+        const filtered = items.filter((item) =>
+          matchesSearch(item, ['name', 'code', 'divisionName', 'managerUserKey'], args.search)
+        );
+        const sorted = sortItems(filtered, args.sortBy || 'createdAt', args.sortOrder);
+        const page = paginate(sorted, args.page, args.pageSize);
+        return {
+          data: { items: page.items, pagination: { total: page.total } },
+          loading,
+          refetch: refresh,
+          deleteItem: async (id: string) => mutations.remove(String(id)),
+        };
+      },
+      useDetail: ({ id }) => {
+        const { data: record, loading: detailLoading } = useDepartment(id);
+        return {
+          record,
+          loading: detailLoading,
+          deleteItem: async (rid: string) => mutations.remove(String(rid)),
+        };
+      },
+      useUpsert: ({ id }) => {
+        const { data: record, loading: detailLoading } = useDepartment(id || null);
+        const create = async (payload: any) => mutations.create(payload);
+        const update = async (rid: string, payload: any) => mutations.update(String(rid), payload);
+        return { record, loading: detailLoading, create, update };
+      },
+      useFormRegistries: () => ({
+        optionSources: {
+          'org.divisions': {
+            options: buildOptions({ items: divisions || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No division)' }),
+            loading: divisionsLoading,
+          },
+          'org.departments': {
+            options: buildOptions({ items: departments || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No parent)' }),
+            loading,
+          },
+        },
+        referenceRenderers: { 'auth.user': userReferenceRenderer },
+      }),
+      useListCustomRenderers: () => ({
+        createdAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        updatedAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+        isActive: (value: unknown) => (value ? 'Active' : 'Inactive'),
+      }),
+      renderRowActions: ({ row, onRequestDelete, ui }) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <ui.Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              const id = String((row as any).id || '');
+              const name = String((row as any).name || id);
+              onRequestDelete({ id, name });
+            }}
+          >
+            <Trash2 size={16} style={{ color: 'var(--hit-error, #ef4444)' }} />
+          </ui.Button>
+        </div>
+      ),
+    };
+  }
+
+  if (entityKey === 'org.userOrgAssignment') {
+    const { data: assignments, loading, refresh } = useUserOrgAssignments();
+    const { data: divisions } = useDivisions();
+    const { data: departments } = useDepartments();
+    const { data: locations } = useLocations();
+    const mutations = useUserOrgAssignmentMutations();
+    const userReferenceRenderer = useUserReferenceRenderer();
+
+    const optionSources = {
+      'org.divisions': {
+        options: buildOptions({ items: divisions || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No division)' }),
+        loading: false,
+      },
+      'org.departments': {
+        options: buildOptions({ items: departments || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No department)' }),
+        loading: false,
+      },
+      'org.locations': {
+        options: buildOptions({ items: locations || [], valueKey: 'id', labelKey: 'name', emptyLabel: '(No location)' }),
+        loading: false,
+      },
+    };
+
+    return {
+      useList: (args) => {
+        const items = (assignments || []).map((assignment) => ({ ...assignment, id: String(assignment.id) }));
+        const filtered = items.filter((item) =>
+          matchesSearch(item, ['userKey', 'divisionName', 'departmentName', 'locationName'], args.search)
+        );
+        const sorted = sortItems(filtered, args.sortBy || 'createdAt', args.sortOrder);
+        const page = paginate(sorted, args.page, args.pageSize);
+        return {
+          data: { items: page.items, pagination: { total: page.total } },
+          loading,
+          refetch: refresh,
+          deleteItem: async (id: string) => mutations.remove(String(id)),
+        };
+      },
+      useDetail: ({ id }) => {
+        const record = (assignments || []).find((assignment) => String(assignment.id) === String(id)) || null;
+        return {
+          record,
+          loading,
+          deleteItem: async (rid: string) => mutations.remove(String(rid)),
+        };
+      },
+      useUpsert: ({ id }) => {
+        const record = (assignments || []).find((assignment) => String(assignment.id) === String(id)) || null;
+        const create = async (payload: any) => {
+          const userKey = String(payload?.userKey || '').trim();
+          const divisionId = payload?.divisionId ? String(payload.divisionId).trim() : '';
+          const departmentId = payload?.departmentId ? String(payload.departmentId).trim() : '';
+          const locationId = payload?.locationId ? String(payload.locationId).trim() : '';
+          if (!userKey) throw new Error('User is required');
+          if (!divisionId && !departmentId && !locationId) {
+            throw new Error('Select at least one division, department, or location.');
+          }
+          const created = await mutations.create({
+            userKey,
+            divisionId: divisionId || null,
+            departmentId: departmentId || null,
+            locationId: locationId || null,
+          });
+          return { id: String(created?.id || '') };
+        };
+        const update = async (rid: string, payload: any) => {
+          const userKey = String(payload?.userKey || '').trim();
+          const divisionId = payload?.divisionId ? String(payload.divisionId).trim() : '';
+          const departmentId = payload?.departmentId ? String(payload.departmentId).trim() : '';
+          const locationId = payload?.locationId ? String(payload.locationId).trim() : '';
+          if (!userKey) throw new Error('User is required');
+          if (!divisionId && !departmentId && !locationId) {
+            throw new Error('Select at least one division, department, or location.');
+          }
+          await mutations.update(String(rid), {
+            userKey,
+            divisionId: divisionId || null,
+            departmentId: departmentId || null,
+            locationId: locationId || null,
+          });
+          return { id: String(rid) };
+        };
+        return { record, loading, create, update };
+      },
+      useFormRegistries: () => ({
+        optionSources,
+        referenceRenderers: { 'auth.user': userReferenceRenderer },
+      }),
+      useListCustomRenderers: () => ({
+        createdAt: (value: unknown) => (value ? formatDate(String(value)) : '—'),
+      }),
+      renderRowActions: ({ row, onRequestDelete, ui }) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <ui.Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              const id = String((row as any).id || '');
+              const name = String((row as any).userKey || id);
               onRequestDelete({ id, name });
             }}
           >

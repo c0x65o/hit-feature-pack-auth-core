@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { eq } from "drizzle-orm";
-import { requireAuthCoreAction } from "../lib/require-action";
+import { requireAuthCoreReadScope } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -25,7 +25,7 @@ function extractUserKey(request) {
  */
 export async function GET(request) {
     try {
-        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        const gate = await requireAuthCoreReadScope(request);
         if (gate)
             return gate;
         const userKey = extractUserKey(request);

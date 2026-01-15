@@ -29,9 +29,3 @@ export { EntityEdit, default as EntityEditPage } from './EntityEdit';
 // Security Groups
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './SecurityGroupsList';
 export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './SecurityGroupDetail';
-
-// Org Dimensions
-export { Locations, default as LocationsPage } from './Locations';
-export { Divisions, default as DivisionsPage } from './Divisions';
-export { Departments, default as DepartmentsPage } from './Departments';
-export { OrgAssignments, default as OrgAssignmentsPage } from './OrgAssignments';

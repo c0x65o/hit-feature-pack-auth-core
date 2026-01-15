@@ -1019,10 +1019,25 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                                         : rootSummary.delete === 'location'
                                                                                             ? 'Location'
                                                                                             : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                                        const packName = String(pack.name || '').trim().toLowerCase();
+                                                        const derivedPageActionKeys = new Set();
+                                                        for (const r of routes) {
+                                                            const pn = String(r?.packName || '').trim().toLowerCase();
+                                                            if (!pn || pn !== packName)
+                                                                continue;
+                                                            if (!r?.authz?.show_pages)
+                                                                continue;
+                                                            const req = String(r?.authz?.require_action || r?.authz?.requireAction || '').trim();
+                                                            if (req)
+                                                                derivedPageActionKeys.add(req);
+                                                        }
                                                         const grouped = new Map();
                                                         const other = [];
                                                         for (const a of pack.actions) {
-                                                            const parsed = parseExclusiveActionModeGroup(a.key);
+                                                            const key = String(a.key || '').trim();
+                                                            if (derivedPageActionKeys.has(key))
+                                                                continue;
+                                                            const parsed = parseExclusiveActionModeGroup(key);
                                                             if (!parsed) {
                                                                 other.push(a);
                                                                 continue;

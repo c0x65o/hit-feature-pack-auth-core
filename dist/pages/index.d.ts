@@ -24,8 +24,4 @@ export { EntityDetail, default as EntityDetailPage } from './EntityDetail';
 export { EntityEdit, default as EntityEditPage } from './EntityEdit';
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './SecurityGroupsList';
 export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './SecurityGroupDetail';
-export { Locations, default as LocationsPage } from './Locations';
-export { Divisions, default as DivisionsPage } from './Divisions';
-export { Departments, default as DepartmentsPage } from './Departments';
-export { OrgAssignments, default as OrgAssignmentsPage } from './OrgAssignments';
 //# sourceMappingURL=index.d.ts.map

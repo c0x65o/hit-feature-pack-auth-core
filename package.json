@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.187",
+  "version": "1.0.188",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -100,6 +100,7 @@
     }
   },
   "devDependencies": {
+    "@hit/feature-pack-audit-core": "file:../hit-feature-pack-audit-core",
     "@hit/feature-pack-stubs": "file:../../../packages/hit-feature-pack-stubs",
     "@hit/feature-pack-email-core": "file:../hit-feature-pack-email-core",
     "@hit/feature-pack-form-core": "file:../hit-feature-pack-form-core",

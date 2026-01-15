@@ -142,25 +142,101 @@ routes:
 
   # Org Structure routes
   - path: /admin/org/locations
-    page: Locations
+    page: EntityList
+    params: { entityKey: org.location }
     roles: [admin]
     default_roles_allow: [admin]
     authz: { entity: locations, verb: read, require_mode: any }
+  - path: /admin/org/locations/new
+    page: EntityEdit
+    params: { entityKey: org.location }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: locations, verb: write, require_create: true }
+  - path: /admin/org/locations/[id]
+    page: EntityDetail
+    params: { entityKey: org.location }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: locations, verb: read, require_mode: any }
+  - path: /admin/org/locations/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.location }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: locations, verb: write }
   - path: /admin/org/divisions
-    page: Divisions
+    page: EntityList
+    params: { entityKey: org.division }
     roles: [admin]
     default_roles_allow: [admin]
     authz: { entity: divisions, verb: read, require_mode: any }
+  - path: /admin/org/divisions/new
+    page: EntityEdit
+    params: { entityKey: org.division }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: divisions, verb: write, require_create: true }
+  - path: /admin/org/divisions/[id]
+    page: EntityDetail
+    params: { entityKey: org.division }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: divisions, verb: read, require_mode: any }
+  - path: /admin/org/divisions/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.division }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: divisions, verb: write }
   - path: /admin/org/departments
-    page: Departments
+    page: EntityList
+    params: { entityKey: org.department }
     roles: [admin]
     default_roles_allow: [admin]
     authz: { entity: departments, verb: read, require_mode: any }
+  - path: /admin/org/departments/new
+    page: EntityEdit
+    params: { entityKey: org.department }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: departments, verb: write, require_create: true }
+  - path: /admin/org/departments/[id]
+    page: EntityDetail
+    params: { entityKey: org.department }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: departments, verb: read, require_mode: any }
+  - path: /admin/org/departments/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.department }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: departments, verb: write }
   - path: /admin/org/assignments
-    page: OrgAssignments
+    page: EntityList
+    params: { entityKey: org.userOrgAssignment }
     roles: [admin]
     default_roles_allow: [admin]
     authz: { entity: assignments, verb: read }
+  - path: /admin/org/assignments/new
+    page: EntityEdit
+    params: { entityKey: org.userOrgAssignment }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: assignments, verb: write, require_create: true }
+  - path: /admin/org/assignments/[id]
+    page: EntityDetail
+    params: { entityKey: org.userOrgAssignment }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: assignments, verb: read }
+  - path: /admin/org/assignments/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.userOrgAssignment }
+    roles: [admin]
+    default_roles_allow: [admin]
+    authz: { entity: assignments, verb: write }
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects

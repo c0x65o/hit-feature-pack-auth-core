@@ -42,12 +42,6 @@ export { EntityEdit, default as EntityEditPage } from './pages/EntityEdit';
 export { SecurityGroupsList, default as SecurityGroupsListPage } from './pages/SecurityGroupsList';
 export { SecurityGroupDetail, default as SecurityGroupDetailPage } from './pages/SecurityGroupDetail';
 
-// Org Dimensions
-export { Locations, default as LocationsPage } from './pages/Locations';
-export { Divisions, default as DivisionsPage } from './pages/Divisions';
-export { Departments, default as DepartmentsPage } from './pages/Departments';
-export { OrgAssignments, default as OrgAssignmentsPage } from './pages/OrgAssignments';
-
 // Components - exported individually for tree-shaking
 export { AuthLayout, AuthCard } from './components/AuthCard';
 export { FormInput } from './components/FormInput';

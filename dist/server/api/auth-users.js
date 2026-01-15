@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAuthCoreAction } from '../lib/require-action';
+import { requireAuthCoreReadScope } from '../lib/require-action';
 import { getAuthBaseUrl } from '../lib/acl-utils';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -58,7 +58,7 @@ function toUserRow(u) {
  * - POST create: { email, password, role, first_name, last_name }
  */
 export async function GET(request) {
-    const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+    const gate = await requireAuthCoreReadScope(request);
     if (gate)
         return gate;
     try {
@@ -117,7 +117,7 @@ export async function GET(request) {
     }
 }
 export async function POST(request) {
-    const gate = await requireAuthCoreAction(request, 'auth-core.admin.access');
+    const gate = await requireAuthCoreReadScope(request);
     if (gate)
         return gate;
     try {

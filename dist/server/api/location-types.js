@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { locationTypes } from "@/lib/feature-pack-schemas";
 import { eq, asc } from "drizzle-orm";
-import { requireAuthCoreAction } from "../lib/require-action";
+import { requireAuthCoreReadScope } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 /**
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
  */
 export async function GET(request) {
     try {
-        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        const gate = await requireAuthCoreReadScope(request);
         if (gate)
             return gate;
         const db = getDb();
@@ -30,7 +30,7 @@ export async function GET(request) {
  */
 export async function POST(request) {
     try {
-        const gate = await requireAuthCoreAction(request, "auth-core.admin.access");
+        const gate = await requireAuthCoreReadScope(request);
         if (gate)
             return gate;
         const db = getDb();
