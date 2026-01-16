@@ -355,7 +355,7 @@ function nowSeconds() {
 function getAccessTtlSeconds() {
     // Keep this simple; can be made configurable later.
     const raw = Number(process.env.HIT_AUTH_ACCESS_TTL_SECONDS || '');
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60 * 60; // 1h
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2 * 24 * 60 * 60; // 2d
 }
 function getRefreshTtlSeconds() {
     const raw = Number(process.env.HIT_AUTH_REFRESH_TTL_SECONDS || '');
