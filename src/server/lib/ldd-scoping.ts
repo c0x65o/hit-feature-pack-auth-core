@@ -2,9 +2,10 @@ import { and, eq } from "drizzle-orm";
 import type { OrgScope, OwnershipScope, UserOrgAssignment } from "../../schema/org-dimensions";
 import { orgEntityScopes, userOrgAssignments } from "@/lib/feature-pack-schemas";
 import { getDb } from "@/lib/db";
-import { isInUserOrgScope, isOwner } from "./org-utils";
+import { isFullyInUserOrgScope, isInUserOrgScope, isOwner } from "./org-utils";
 
 export type LddScope = Pick<OwnershipScope, "divisionId" | "departmentId" | "locationId">;
+export type LddMatchMode = "any" | "all";
 
 export function hasAnyLdd(scope: LddScope | null | undefined): boolean {
   if (!scope) return false;
@@ -17,6 +18,41 @@ export function normalizeLddScope(input: Partial<LddScope> | null | undefined): 
     departmentId: input?.departmentId ?? null,
     locationId: input?.locationId ?? null,
   };
+}
+
+export function normalizeLddScopeInput(input: unknown): LddScope {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return normalizeLddScope(null);
+  }
+  const rec = input as Record<string, unknown>;
+  const norm = (v: unknown): string | null => {
+    if (v == null) return null;
+    if (typeof v === "string") {
+      const s = v.trim();
+      return s ? s : null;
+    }
+    return String(v);
+  };
+  return normalizeLddScope({
+    divisionId: norm(rec.divisionId),
+    departmentId: norm(rec.departmentId),
+    locationId: norm(rec.locationId),
+  });
+}
+
+export function normalizeLddScopesInput(input: unknown): LddScope[] {
+  if (!Array.isArray(input)) return [];
+  const out: LddScope[] = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    const scope = normalizeLddScopeInput(item);
+    if (!hasAnyLdd(scope)) continue;
+    const key = `${scope.divisionId || ""}|${scope.departmentId || ""}|${scope.locationId || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(scope);
+  }
+  return out;
 }
 
 export interface UserOrgContext {
@@ -33,6 +69,15 @@ export function buildOrgScopeFromAssignments(assignments: UserOrgAssignment[]): 
     if (a.locationId && !scope.locationIds.includes(a.locationId)) scope.locationIds.push(a.locationId);
   }
   return scope;
+}
+
+export function defaultLddScopeFromOrgScope(orgScope: OrgScope | null | undefined): LddScope {
+  const scope = orgScope || { divisionIds: [], departmentIds: [], locationIds: [] };
+  return normalizeLddScope({
+    divisionId: scope.divisionIds?.[0] ?? null,
+    departmentId: scope.departmentIds?.[0] ?? null,
+    locationId: scope.locationIds?.[0] ?? null,
+  });
 }
 
 export async function fetchUserOrgContext(userKey: string): Promise<UserOrgContext> {
@@ -191,6 +236,24 @@ export function canAccessByRule(args: {
   }
 
   return false;
+}
+
+export function isScopeWithinUser(
+  scope: LddScope,
+  orgScope: OrgScope | null | undefined,
+  mode: LddMatchMode = "all"
+): boolean {
+  if (!hasAnyLdd(scope)) return true;
+  if (mode === "any") return isInUserOrgScope(scope as any, orgScope ?? null);
+  return isFullyInUserOrgScope(scope as any, orgScope ?? null);
+}
+
+export function isScopeOutsideUser(
+  scope: LddScope,
+  orgScope: OrgScope | null | undefined,
+  mode: LddMatchMode = "all"
+): boolean {
+  return !isScopeWithinUser(scope, orgScope, mode);
 }
 
 export function canAccessByAnyRule(args: {

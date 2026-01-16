@@ -10,6 +10,7 @@ import { useEntityDataSource } from './entityDataSources';
 import { renderEntityFormField } from './renderEntityFormField';
 import { prepareEntityUpsert } from './entityUpsert';
 import { useApplySchemaDefaults } from './useApplySchemaDefaults';
+import { useMyOrgScope } from '../hooks/useOrgDimensions';
 
 function asRecord(v: unknown): Record<string, any> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as any) : null;
@@ -19,11 +20,9 @@ function trim(v: unknown): string {
   return v == null ? '' : String(v).trim();
 }
 
-function collectFormScalarKeys(uiSpec: any): string[] {
-  const form = asRecord(uiSpec?.form) || {};
-  const sections = Array.isArray(form.sections) ? form.sections : [];
+function collectFormScalarKeysFromSections(sections: any[]): string[] {
   const out: string[] = [];
-  for (const sAny of sections) {
+  for (const sAny of sections || []) {
     const s = asRecord(sAny);
     if (!s) continue;
     const fields = Array.isArray(s.fields) ? s.fields : [];
@@ -33,6 +32,74 @@ function collectFormScalarKeys(uiSpec: any): string[] {
     }
   }
   return Array.from(new Set(out));
+}
+
+function resolveFormSectionsWithLdd(uiSpec: any, baseSections: any[]): any[] {
+  const ldd = asRecord((uiSpec as any)?.ldd) || {};
+  if (ldd.enabled !== true) return baseSections;
+
+  const fieldsMap = asRecord((uiSpec as any)?.fields) || {};
+  const rawFields = (ldd as any).fields;
+  let lddFieldKeys: string[] = [];
+
+  if (Array.isArray(rawFields)) {
+    lddFieldKeys = rawFields.map((v) => trim(v)).filter(Boolean);
+  } else if (rawFields && typeof rawFields === 'object') {
+    for (const v of Object.values(rawFields)) {
+      const key = trim(v);
+      if (key) lddFieldKeys.push(key);
+    }
+  } else {
+    lddFieldKeys = ['divisionId', 'departmentId', 'locationId'];
+  }
+
+  lddFieldKeys = lddFieldKeys.filter((k) => k && fieldsMap[k]);
+  if (lddFieldKeys.length === 0) return baseSections;
+
+  const existing = new Set<string>();
+  for (const s of baseSections || []) {
+    const rec = asRecord(s) || {};
+    const fields = Array.isArray(rec.fields) ? rec.fields : [];
+    for (const f of fields) {
+      const k = trim(f);
+      if (k) existing.add(k);
+    }
+  }
+
+  const missing = lddFieldKeys.filter((k) => !existing.has(k));
+  if (missing.length === 0) return baseSections;
+
+  const formCfg = asRecord((ldd as any).form) || {};
+  const sectionId = trim(formCfg.sectionId || '');
+  const title = trim(formCfg.title || 'Org Scope');
+  const columns = Number(formCfg.columns || 3);
+  const position = trim(formCfg.position || 'end').toLowerCase();
+
+  const out = (baseSections || []).map((s) => {
+    const rec = asRecord(s) || {};
+    const id = trim(rec.id || '');
+    if (sectionId && id === sectionId) {
+      const fields = Array.isArray(rec.fields) ? rec.fields : [];
+      return { ...rec, fields: [...fields, ...missing] };
+    }
+    return rec;
+  });
+
+  if (sectionId && out.some((s) => trim((s as any)?.id || '') === sectionId)) {
+    return out;
+  }
+
+  const lddSection = {
+    id: sectionId || 'org-scope',
+    title,
+    layout: { columns: Number.isFinite(columns) && columns > 0 ? columns : 3 },
+    fields: missing,
+  };
+
+  if (position === 'start' || position === 'top') {
+    return [lddSection, ...out];
+  }
+  return [...out, lddSection];
 }
 
 export function EntityUpsertPage({
@@ -56,23 +123,31 @@ export function EntityUpsertPage({
 
   const upsert = ds?.useUpsert ? ds.useUpsert({ id: recordId }) : null;
   const registries = ds?.useFormRegistries ? ds.useFormRegistries() : null;
+  const myOrgScope = useMyOrgScope();
 
   const [values, setValues] = useState<Record<string, string>>({});
 
   const fieldsMap = asRecord((uiSpec as any)?.fields) || {};
-  const scalarKeys = useMemo(() => collectFormScalarKeys(uiSpec), [uiSpec]);
+  const formCfg = asRecord((uiSpec as any)?.form) || {};
+  const rawSections = Array.isArray(formCfg.sections) ? formCfg.sections : [];
+  const formSections = useMemo(() => resolveFormSectionsWithLdd(uiSpec, rawSections), [uiSpec, rawSections]);
+  const uiSpecForForm = useMemo(
+    () => ({ ...(uiSpec as any), form: { ...formCfg, sections: formSections } }),
+    [uiSpec, formCfg, formSections]
+  );
+  const scalarKeys = useMemo(() => collectFormScalarKeysFromSections(formSections), [formSections]);
 
   const isRequired = (k: string) => Boolean(asRecord(fieldsMap?.[k])?.required);
 
   useApplySchemaDefaults({
-    uiSpec,
+    uiSpec: uiSpecForForm,
     values,
     setValues,
     appliedDefaultsRef,
     searchParams: searchParams as any,
     optionSources: (registries?.optionSources || {}) as any,
-    myOrgScope: registries?.myOrgScope,
-    loading: { myOrgScope: Boolean(registries?.loading?.myOrgScope) },
+    myOrgScope: registries?.myOrgScope ?? myOrgScope.data,
+    loading: { myOrgScope: Boolean(registries?.loading?.myOrgScope ?? myOrgScope.loading) },
   });
 
   useEffect(() => {
@@ -101,10 +176,10 @@ export function EntityUpsertPage({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uiSpec || !upsert) return;
+    if (!uiSpecForForm || !upsert) return;
 
     const prepared = prepareEntityUpsert({
-      uiSpec,
+      uiSpec: uiSpecForForm,
       values,
       relations: {},
     });
@@ -145,8 +220,7 @@ export function EntityUpsertPage({
     return 'grid grid-cols-1 gap-4';
   };
 
-  const formCfg = asRecord((uiSpec as any)?.form) || {};
-  const sections = Array.isArray(formCfg.sections) ? formCfg.sections : [];
+  const sections = formSections;
 
   return (
     <EntityEditPage
