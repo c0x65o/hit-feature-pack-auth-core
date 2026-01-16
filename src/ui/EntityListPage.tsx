@@ -88,8 +88,8 @@ export function EntityListPage({
   if (!listSpec) {
     return (
       <Alert variant="error" title={`Missing ${entityKey} list spec`}>
-        UI schema for `{entityKey}.list` is missing. Run `hit ui generate` and ensure your entity YAML provides a `list`
-        block.
+        UI schema for `{entityKey}.list` is missing. Run `hit run` (or `hit commit`) and ensure your entity YAML provides
+        a `list` block.
       </Alert>
     );
   }

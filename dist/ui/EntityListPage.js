@@ -37,7 +37,7 @@ export function EntityListPage({ entityKey, onNavigate, useListData, customRende
         return _jsx(Spinner, {});
     const listSpec = uiSpec?.list && typeof uiSpec.list === 'object' ? uiSpec.list : null;
     if (!listSpec) {
-        return (_jsxs(Alert, { variant: "error", title: `Missing ${entityKey} list spec`, children: ["UI schema for `", entityKey, ".list` is missing. Run `hit ui generate` and ensure your entity YAML provides a `list` block."] }));
+        return (_jsxs(Alert, { variant: "error", title: `Missing ${entityKey} list spec`, children: ["UI schema for `", entityKey, ".list` is missing. Run `hit run` (or `hit commit`) and ensure your entity YAML provides a `list` block."] }));
     }
     const meta = uiSpec?.meta || {};
     const routes = meta?.routes || {};
