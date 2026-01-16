@@ -1,0 +1,78 @@
+entities:
+  # Minimal schema-driven entity declarations for pack readiness checks.
+  #
+  # These specs are intentionally lightweight: they exist to declare `api.resource`
+  # and required security/authz blocks so the pack can be validated consistently.
+
+  auth.user:
+    api:
+      resource: users
+    security:
+      list: { authz: { entity: users, verb: read } }
+      detail: { authz: { entity: users, verb: read } }
+      new: { authz: { entity: users, verb: write } }
+      edit: { authz: { entity: users, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      email: { type: email, label: Email }
+
+  auth.group:
+    api:
+      resource: groups
+    security:
+      list: { authz: { entity: groups, verb: read } }
+      detail: { authz: { entity: groups, verb: read } }
+      new: { authz: { entity: groups, verb: write } }
+      edit: { authz: { entity: groups, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      name: { type: text, label: Name }
+
+  org.location:
+    api:
+      resource: locations
+    security:
+      list: { authz: { entity: org, verb: read } }
+      detail: { authz: { entity: org, verb: read } }
+      new: { authz: { entity: org, verb: write } }
+      edit: { authz: { entity: org, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      name: { type: text, label: Name }
+
+  org.division:
+    api:
+      resource: divisions
+    security:
+      list: { authz: { entity: org, verb: read } }
+      detail: { authz: { entity: org, verb: read } }
+      new: { authz: { entity: org, verb: write } }
+      edit: { authz: { entity: org, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      name: { type: text, label: Name }
+
+  org.department:
+    api:
+      resource: departments
+    security:
+      list: { authz: { entity: org, verb: read } }
+      detail: { authz: { entity: org, verb: read } }
+      new: { authz: { entity: org, verb: write } }
+      edit: { authz: { entity: org, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      name: { type: text, label: Name }
+
+  org.userOrgAssignment:
+    api:
+      resource: assignments
+    security:
+      list: { authz: { entity: org, verb: read } }
+      detail: { authz: { entity: org, verb: read } }
+      new: { authz: { entity: org, verb: write } }
+      edit: { authz: { entity: org, verb: write } }
+    fields:
+      id: { type: text, label: ID }
+      userId: { type: text, label: User ID }
+
