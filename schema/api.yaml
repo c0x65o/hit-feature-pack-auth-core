@@ -2,6 +2,9 @@ api:
   routes:
     # Keep in sync with auth-core `feature-pack.yaml` special routes.
     # NOTE: CRUD routes remain in `feature-pack.yaml` and are generated into `.hit/generated/api-manifests/*`.
+    - path: /api/org/users
+      methods: [GET]
+      description: List users for pickers (manager, assignments, etc.)
     - path: /api/org/me/scope
       methods: [GET]
       description: Get current user's org scope (divisions, departments, locations)

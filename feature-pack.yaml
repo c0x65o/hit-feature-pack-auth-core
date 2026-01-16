@@ -315,6 +315,12 @@ api:
       handler: "@hit/feature-pack-auth-core/server/api/assignments-id"
       description: "Get, update, or delete a specific assignment"
 
+    # Org Users
+    - path: /api/org/users
+      methods: [GET]
+      handler: "@hit/feature-pack-auth-core/server/api/users"
+      description: "List users for pickers (manager, assignments, etc.)"
+
     # Org Scope
     - path: /api/org/me/scope
       methods: [GET]

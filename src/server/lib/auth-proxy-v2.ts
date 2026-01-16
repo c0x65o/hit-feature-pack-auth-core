@@ -13,7 +13,7 @@ import {
   sendVerifyEmail,
 } from './email-adapter';
 
-export type AuthBackendMode = 'python' | 'ts';
+// Auth is now TypeScript-only. No Python backend.
 
 const DEFAULT_PERMISSION_SET_NAME = 'Default';
 const DEFAULT_PERMISSION_SET_DESC = 'Default security group';
@@ -100,38 +100,21 @@ function parseJwtClaims(token: string): Record<string, unknown> | null {
 }
 
 function getJwtSecret(): string | null {
-  const s = String(process.env.HIT_AUTH_JWT_SECRET || '').trim();
-  return s ? s : null;
+  // HIT_AUTH_JWT_SECRET is the canonical env var. JWT_SECRET is accepted for convenience.
+  const s = String(
+    process.env.HIT_AUTH_JWT_SECRET ||
+    process.env.JWT_SECRET ||
+    ''
+  ).trim();
+  if (s) return s;
+  // Dev fallback for local development. In production, always set HIT_AUTH_JWT_SECRET explicitly.
+  if (process.env.NODE_ENV !== 'production') {
+    return 'dev-secret';
+  }
+  return null;
 }
 
-function getServiceTokenEnv(): string | null {
-  const s = String(process.env.HIT_SERVICE_TOKEN || '').trim();
-  return s ? s : null;
-}
-
-function stripBearerPrefix(token: string): string {
-  const trimmed = String(token || '').trim();
-  if (!trimmed) return '';
-  return trimmed.toLowerCase().startsWith('bearer ') ? trimmed.slice(7).trim() : trimmed;
-}
-
-function safeTokenEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
-}
-
-function isServiceTokenBearer(req: NextRequest): boolean {
-  const serviceToken = getServiceTokenEnv();
-  if (!serviceToken) return false;
-  const token = extractBearer(req);
-  if (!token) return false;
-  const normalized = stripBearerPrefix(token);
-  const expected = stripBearerPrefix(serviceToken);
-  if (!normalized || !expected) return false;
-  return safeTokenEqual(normalized, expected);
-}
+// Service tokens are deprecated. All auth uses JWT-based user authentication.
 
 function signJwtHmac(payload: Record<string, unknown>, secret: string): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -198,9 +181,6 @@ function getClientIp(req: NextRequest): string | null {
 }
 
 function requireUser(req: NextRequest): { email: string; roles: string[] } | NextResponse {
-  if (isServiceTokenBearer(req)) {
-    return { email: 'service@local', roles: ['admin'] };
-  }
   const token = extractBearer(req);
   if (!token) return err('Authentication required', 401);
   const secret = getJwtSecret();
@@ -233,8 +213,8 @@ function requireAdmin(req: NextRequest): NextResponse | null {
 function buildFeaturesFromConfig(): Record<string, unknown> {
   const auth = (HIT_CONFIG as any)?.auth ?? {};
 
-  // This matches the shape the legacy Python module returns: { features: { ...snake_case... } }.
-  // We derive it purely from app-local build config (hit.yaml -> hit-config.generated).
+  // Features config derived from app-local build config (hit.yaml -> hit-config.generated).
+  // Uses snake_case keys for SDK/UI compatibility.
   return {
     allow_signup: normalizeBool(auth.allowSignup, false),
     allow_invited: normalizeBool(auth.allowInvited, false),
@@ -823,9 +803,6 @@ export async function checkActionPermissionV2(
   actionKey: string
 ): Promise<ActionPermissionCheckV2> {
   if (!actionKey) return { ok: false, source: 'missing_action_key' };
-  if (isServiceTokenBearer(req)) {
-    return { ok: true, source: 'service_token' };
-  }
   const u = requireUser(req);
   if (u instanceof NextResponse) return { errorResponse: u };
 
@@ -1041,15 +1018,13 @@ export async function checkActionPermissionV2(
 }
 
 /**
- * V2 Auth Proxy Handler (TypeScript-only)
+ * Auth Handler (TypeScript-only)
  *
- * Used to incrementally replace the Python auth module behind the existing
- * Historical note: earlier iterations routed auth through a proxy path.
- * Canonical auth routes are now app-local under `/api/auth/*`.
+ * All auth routes are app-local under `/api/auth/*`.
  *
  * Return:
- * - NextResponse if handled by V2
- * - null if not handled (caller may return 501 or proxy to Python depending on app mode)
+ * - NextResponse if handled
+ * - null if not handled (caller returns 404)
  */
 export async function tryHandleAuthV2Proxy(opts: {
   req: NextRequest;
