@@ -1304,7 +1304,8 @@ export function usePermissionActions() {
                 scope_modes: Array.isArray(a?.scopeModes)
                     ? a.scopeModes
                         .map((x) => String(x || '').trim().toLowerCase())
-                        .filter((x) => ['none', 'own', 'ldd', 'any'].includes(x))
+                        .map((x) => (x === 'any' ? 'all' : x))
+                        .filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(x))
                     : null,
             }))
                 .filter((a) => Boolean(a.key));

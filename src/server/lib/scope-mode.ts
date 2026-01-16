@@ -1,4 +1,3 @@
-import { NextRequest } from 'next/server';
 import { checkActionPermission, type ActionCheckResult } from './action-check';
 
 // Scope modes for LDD-enabled permission trees.
@@ -49,7 +48,7 @@ export type ResolveScopeModeArgs = {
  * - Treat `.scope.any` as `.scope.all`.
  */
 export async function resolveScopeMode(
-  request: NextRequest,
+  request: Request,
   args: ResolveScopeModeArgs
 ): Promise<ScopeMode> {
   const pack = String(args.pack || '').trim();
@@ -106,7 +105,7 @@ export async function resolveScopeMode(
  * Precedence if multiple are granted: most restrictive wins.
  */
 export async function resolveAuthCoreScopeMode(
-  request: NextRequest,
+  request: Request,
   args: { entity?: ScopeEntity; verb: ScopeVerb }
 ): Promise<ScopeMode> {
   return resolveScopeMode(request, {

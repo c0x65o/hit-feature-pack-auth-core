@@ -799,11 +799,11 @@ export type ActionPermissionCheckV2 =
   | { errorResponse: NextResponse };
 
 export async function checkActionPermissionV2(
-  req: NextRequest,
+  req: Request,
   actionKey: string
 ): Promise<ActionPermissionCheckV2> {
   if (!actionKey) return { ok: false, source: 'missing_action_key' };
-  const u = requireUser(req);
+  const u = requireUser(req as any);
   if (u instanceof NextResponse) return { errorResponse: u };
 
   const db = getDb();

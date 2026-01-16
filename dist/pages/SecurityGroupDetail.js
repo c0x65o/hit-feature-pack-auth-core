@@ -78,6 +78,13 @@ function baseIdFromActionKey(key) {
     const mEntityVerb = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.(create|update|delete)$/);
     if (mEntityVerb)
         return `${mEntityVerb[1]}.${mEntityVerb[2]}`;
+    // LDD action toggles (auto-provisioned): {pack}.{entity}.scope.{override_on_create|adjust|share_outside}
+    const mEntityLdd = k.match(/^([a-z][a-z0-9_-]*)\.([a-z0-9_-]+)\.scope\.(override_on_create|adjust|share_outside|share|write)$/);
+    if (mEntityLdd)
+        return `${mEntityLdd[1]}.${mEntityLdd[2]}`;
+    const mPackLdd = k.match(/^([a-z][a-z0-9_-]*)\.scope\.(override_on_create|adjust|share_outside|share|write)$/);
+    if (mPackLdd)
+        return `${mPackLdd[1]}`;
     return null;
 }
 function titleFromGroupKey(groupKey) {

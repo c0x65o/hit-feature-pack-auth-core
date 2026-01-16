@@ -1,8 +1,8 @@
 // src/server/api/location-types.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { locationTypes } from "@/lib/feature-pack-schemas";
-import { eq, asc } from "drizzle-orm";
+import { locationTypes, DEFAULT_LOCATION_TYPES } from "@/lib/feature-pack-schemas";
+import { eq, asc, sql } from "drizzle-orm";
 import { requireAuthCoreReadScope } from "../lib/require-action";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +16,16 @@ export async function GET(request) {
         if (gate)
             return gate;
         const db = getDb();
+        // Seed defaults once (CRM-style): if the table is empty, insert system defaults.
+        // This keeps the app "zero extra steps" for new environments.
+        const [{ count }] = (await db
+            .select({ count: sql `count(*)` })
+            .from(locationTypes)
+            .limit(1)) || [];
+        const total = Number(count || 0);
+        if (total === 0 && Array.isArray(DEFAULT_LOCATION_TYPES) && DEFAULT_LOCATION_TYPES.length > 0) {
+            await db.insert(locationTypes).values(DEFAULT_LOCATION_TYPES);
+        }
         const items = await db.select().from(locationTypes).orderBy(asc(locationTypes.name));
         return NextResponse.json({ items });
     }
@@ -56,6 +66,7 @@ export async function POST(request) {
             icon: body.icon || "MapPin",
             color: body.color || "#3b82f6",
             description: body.description || null,
+            // Never allow clients to set isSystem.
             isSystem: false,
         })
             .returning();

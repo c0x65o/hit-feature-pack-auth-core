@@ -5,7 +5,7 @@ export type ActionPermissionCheckV2 = {
 } | {
     errorResponse: NextResponse;
 };
-export declare function checkActionPermissionV2(req: NextRequest, actionKey: string): Promise<ActionPermissionCheckV2>;
+export declare function checkActionPermissionV2(req: Request, actionKey: string): Promise<ActionPermissionCheckV2>;
 /**
  * Auth Handler (TypeScript-only)
  *

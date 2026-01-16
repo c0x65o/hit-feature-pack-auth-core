@@ -198,13 +198,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               Audit Log
             </Button>
           )}
-          <Button variant="secondary" onClick={() => navigate('/admin/invites')}>
-            <TrendingUp size={16} className="mr-2" />
-            Invites
-            {stats?.pending_invites ? (
-              <Badge variant="info">{stats.pending_invites}</Badge>
-            ) : null}
-          </Button>
+          {!configLoading && authConfig?.allow_invited && (
+            <Button variant="secondary" onClick={() => navigate('/admin/invites')}>
+              <TrendingUp size={16} className="mr-2" />
+              Invites
+              {stats?.pending_invites ? (
+                <Badge variant="info">{stats.pending_invites}</Badge>
+              ) : null}
+            </Button>
+          )}
         </div>
       </Card>
 

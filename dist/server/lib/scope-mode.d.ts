@@ -1,4 +1,3 @@
-import { NextRequest } from 'next/server';
 export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
@@ -41,7 +40,7 @@ export type ResolveScopeModeArgs = {
  * Legacy back-compat (deprecated):
  * - Treat `.scope.any` as `.scope.all`.
  */
-export declare function resolveScopeMode(request: NextRequest, args: ResolveScopeModeArgs): Promise<ScopeMode>;
+export declare function resolveScopeMode(request: Request, args: ResolveScopeModeArgs): Promise<ScopeMode>;
 /**
  * Resolve effective scope mode using a tree:
  * - entity override: auth-core.{entity}.{verb}.scope.{mode}
@@ -50,7 +49,7 @@ export declare function resolveScopeMode(request: NextRequest, args: ResolveScop
  *
  * Precedence if multiple are granted: most restrictive wins.
  */
-export declare function resolveAuthCoreScopeMode(request: NextRequest, args: {
+export declare function resolveAuthCoreScopeMode(request: Request, args: {
     entity?: ScopeEntity;
     verb: ScopeVerb;
 }): Promise<ScopeMode>;

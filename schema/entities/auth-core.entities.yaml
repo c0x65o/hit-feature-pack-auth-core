@@ -5,6 +5,27 @@ entities:
   # and required security/authz blocks so the pack can be validated consistently.
 
   auth.user:
+    meta:
+      titleSingular: User
+      titlePlural: Users
+      descriptionPlural: Manage user accounts
+      routes:
+        list: /admin/users
+        new: /admin/users/new
+        detail: /admin/users/{id}
+        edit: /admin/users/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Users, href: /admin/users }
+      actions:
+        createLabel: New User
+        editLabel: Edit User
+        saveCreateLabel: Create User
+        saveUpdateLabel: Update User
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete User
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: users
     security:
@@ -12,11 +33,91 @@ entities:
       detail: { authz: { entity: users, verb: read } }
       new: { authz: { entity: users, verb: write } }
       edit: { authz: { entity: users, verb: write } }
+    list:
+      tableId: admin.users
+      pageSize: 25
+      initialSort: { sortBy: created_at, sortOrder: desc }
+      sortWhitelist: [email, created_at, last_login]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        name: true
+        email: true
+        role: true
+        status: true
+        email_verified: true
+        two_factor_enabled: true
+        created_at: true
+        last_login: true
+        actions: true
+      columns:
+        - name
+        - email
+        - role
+        - status
+        - email_verified
+        - two_factor_enabled
+        - created_at
+        - last_login
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: User
+      summaryFields: [name, email, role, status, email_verified, two_factor_enabled, created_at, last_login]
+    form:
+      sections:
+        - id: account
+          title: Account
+          layout: { columns: 2 }
+          fields: [email, role, password]
+        - id: profile
+          title: Profile
+          layout: { columns: 2 }
+          fields: [first_name, last_name]
     fields:
       id: { type: text, label: ID }
-      email: { type: email, label: Email }
+      email: { type: email, label: Email, required: true }
+      name: { type: text, label: Name, virtual: true }
+      role:
+        type: select
+        label: Role
+        optionSource: auth.availableRoles
+      status: { type: text, label: Status, virtual: true }
+      email_verified: { type: boolean, label: Email Verified }
+      two_factor_enabled: { type: boolean, label: Two-Factor Enabled }
+      created_at: { type: datetime, label: Created At }
+      last_login: { type: datetime, label: Last Login }
+      password:
+        type: password
+        label: Password
+        placeholder: "Set an initial password"
+      first_name: { type: text, label: First Name }
+      last_name: { type: text, label: Last Name }
 
   auth.group:
+    meta:
+      titleSingular: Group
+      titlePlural: Groups
+      descriptionPlural: Manage user groups
+      routes:
+        list: /admin/groups
+        new: /admin/groups/new
+        detail: /admin/groups/{id}
+        edit: /admin/groups/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Groups, href: /admin/groups }
+      actions:
+        createLabel: New Group
+        editLabel: Edit Group
+        saveCreateLabel: Create Group
+        saveUpdateLabel: Update Group
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete Group
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: groups
     security:
@@ -24,11 +125,79 @@ entities:
       detail: { authz: { entity: groups, verb: read } }
       new: { authz: { entity: groups, verb: write } }
       edit: { authz: { entity: groups, verb: write } }
+    list:
+      tableId: admin.groups
+      pageSize: 25
+      initialSort: { sortBy: updated_at, sortOrder: desc }
+      sortWhitelist: [name, user_count, created_at, updated_at]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        name: true
+        kind: true
+        user_count: true
+        segment_key: false
+        created_at: false
+        updated_at: true
+        actions: true
+      columns:
+        - name
+        - kind
+        - user_count
+        - segment_key
+        - created_at
+        - updated_at
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: Group
+      summaryFields: [name, description, kind, user_count, segment_key, created_at, updated_at]
+    form:
+      sections:
+        - id: basic
+          title: Group Details
+          layout: { columns: 2 }
+          fields: [name, description, kind, segment_key]
     fields:
       id: { type: text, label: ID }
-      name: { type: text, label: Name }
+      name: { type: text, label: Name, required: true }
+      description: { type: textarea, label: Description }
+      kind:
+        type: select
+        label: Kind
+        optionSource: auth.groupKinds
+      segment_key:
+        type: select
+        label: Segment
+        optionSource: auth.userSegments
+      user_count: { type: number, label: Users }
+      created_at: { type: datetime, label: Created At }
+      updated_at: { type: datetime, label: Updated At }
 
   org.location:
+    meta:
+      titleSingular: Location
+      titlePlural: Locations
+      descriptionPlural: Manage locations
+      routes:
+        list: /admin/org/locations
+        new: /admin/org/locations/new
+        detail: /admin/org/locations/{id}
+        edit: /admin/org/locations/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Locations, href: /admin/org/locations }
+      actions:
+        createLabel: New Location
+        editLabel: Edit Location
+        saveCreateLabel: Create Location
+        saveUpdateLabel: Update Location
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete Location
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: locations
     security:
@@ -36,11 +205,110 @@ entities:
       detail: { authz: { entity: org, verb: read } }
       new: { authz: { entity: org, verb: write } }
       edit: { authz: { entity: org, verb: write } }
+    list:
+      tableId: admin.org.locations
+      pageSize: 25
+      initialSort: { sortBy: createdAt, sortOrder: desc }
+      sortWhitelist: [name, code, city, state, country, isActive, isPrimary, createdAt, updatedAt]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        name: true
+        code: true
+        city: true
+        state: true
+        country: true
+        locationTypeName: true
+        managerUserKey: false
+        isPrimary: false
+        isActive: true
+        createdAt: false
+        actions: true
+      columns:
+        - name
+        - code
+        - city
+        - state
+        - country
+        - locationTypeName
+        - managerUserKey
+        - isPrimary
+        - isActive
+        - createdAt
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: Location
+      summaryFields:
+        [name, code, locationTypeName, managerUserKey, address, city, state, postalCode, country, isPrimary, isActive, createdAt, updatedAt]
+    form:
+      sections:
+        - id: basic
+          title: Location Details
+          layout: { columns: 2 }
+          fields: [name, code, locationTypeId, parentId, managerUserKey, description]
+        - id: address
+          title: Address
+          layout: { columns: 3 }
+          fields: [address, city, state, postalCode, country]
+        - id: status
+          title: Status
+          layout: { columns: 2 }
+          fields: [isPrimary, isActive]
     fields:
       id: { type: text, label: ID }
-      name: { type: text, label: Name }
+      name: { type: text, label: Name, required: true }
+      code: { type: text, label: Code }
+      description: { type: textarea, label: Description }
+      address: { type: text, label: Address }
+      city: { type: text, label: City }
+      state: { type: text, label: State }
+      postalCode: { type: text, label: Postal Code }
+      country: { type: text, label: Country }
+      latitude: { type: text, label: Latitude }
+      longitude: { type: text, label: Longitude }
+      parentId:
+        type: select
+        label: Parent Location
+        optionSource: org.locations
+      locationTypeId:
+        type: select
+        label: Location Type
+        optionSource: org.locationTypes
+      locationTypeName: { type: text, label: Location Type, virtual: true }
+      managerUserKey:
+        type: reference
+        label: Manager
+        reference: { entityType: auth.user }
+      isPrimary: { type: boolean, label: Primary }
+      isActive: { type: boolean, label: Active }
+      createdAt: { type: datetime, label: Created At }
+      updatedAt: { type: datetime, label: Updated At }
 
   org.division:
+    meta:
+      titleSingular: Division
+      titlePlural: Divisions
+      descriptionPlural: Manage divisions
+      routes:
+        list: /admin/org/divisions
+        new: /admin/org/divisions/new
+        detail: /admin/org/divisions/{id}
+        edit: /admin/org/divisions/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Divisions, href: /admin/org/divisions }
+      actions:
+        createLabel: New Division
+        editLabel: Edit Division
+        saveCreateLabel: Create Division
+        saveUpdateLabel: Update Division
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete Division
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: divisions
     security:
@@ -48,11 +316,82 @@ entities:
       detail: { authz: { entity: org, verb: read } }
       new: { authz: { entity: org, verb: write } }
       edit: { authz: { entity: org, verb: write } }
+    list:
+      tableId: admin.org.divisions
+      pageSize: 25
+      initialSort: { sortBy: createdAt, sortOrder: desc }
+      sortWhitelist: [name, code, isActive, createdAt, updatedAt]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        name: true
+        code: true
+        managerUserKey: false
+        isActive: true
+        createdAt: false
+        actions: true
+      columns:
+        - name
+        - code
+        - managerUserKey
+        - isActive
+        - createdAt
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: Division
+      summaryFields: [name, code, managerUserKey, isActive, createdAt, updatedAt, description]
+    form:
+      sections:
+        - id: basic
+          title: Division Details
+          layout: { columns: 2 }
+          fields: [name, code, parentId, managerUserKey, description]
+        - id: status
+          title: Status
+          layout: { columns: 2 }
+          fields: [isActive]
     fields:
       id: { type: text, label: ID }
-      name: { type: text, label: Name }
+      name: { type: text, label: Name, required: true }
+      code: { type: text, label: Code }
+      description: { type: textarea, label: Description }
+      parentId:
+        type: select
+        label: Parent Division
+        optionSource: org.divisions
+      managerUserKey:
+        type: reference
+        label: Manager
+        reference: { entityType: auth.user }
+      isActive: { type: boolean, label: Active }
+      createdAt: { type: datetime, label: Created At }
+      updatedAt: { type: datetime, label: Updated At }
 
   org.department:
+    meta:
+      titleSingular: Department
+      titlePlural: Departments
+      descriptionPlural: Manage departments
+      routes:
+        list: /admin/org/departments
+        new: /admin/org/departments/new
+        detail: /admin/org/departments/{id}
+        edit: /admin/org/departments/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Departments, href: /admin/org/departments }
+      actions:
+        createLabel: New Department
+        editLabel: Edit Department
+        saveCreateLabel: Create Department
+        saveUpdateLabel: Update Department
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete Department
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: departments
     security:
@@ -60,11 +399,89 @@ entities:
       detail: { authz: { entity: org, verb: read } }
       new: { authz: { entity: org, verb: write } }
       edit: { authz: { entity: org, verb: write } }
+    list:
+      tableId: admin.org.departments
+      pageSize: 25
+      initialSort: { sortBy: createdAt, sortOrder: desc }
+      sortWhitelist: [name, code, divisionName, isActive, createdAt, updatedAt]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        name: true
+        code: true
+        divisionName: true
+        managerUserKey: false
+        isActive: true
+        createdAt: false
+        actions: true
+      columns:
+        - name
+        - code
+        - divisionName
+        - managerUserKey
+        - isActive
+        - createdAt
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: Department
+      summaryFields: [name, code, divisionName, managerUserKey, isActive, createdAt, updatedAt, description]
+    form:
+      sections:
+        - id: basic
+          title: Department Details
+          layout: { columns: 2 }
+          fields: [name, code, divisionId, parentId, managerUserKey, description]
+        - id: status
+          title: Status
+          layout: { columns: 2 }
+          fields: [isActive]
     fields:
       id: { type: text, label: ID }
-      name: { type: text, label: Name }
+      name: { type: text, label: Name, required: true }
+      code: { type: text, label: Code }
+      description: { type: textarea, label: Description }
+      divisionId:
+        type: select
+        label: Division
+        optionSource: org.divisions
+      divisionName: { type: text, label: Division, virtual: true }
+      parentId:
+        type: select
+        label: Parent Department
+        optionSource: org.departments
+      managerUserKey:
+        type: reference
+        label: Manager
+        reference: { entityType: auth.user }
+      isActive: { type: boolean, label: Active }
+      createdAt: { type: datetime, label: Created At }
+      updatedAt: { type: datetime, label: Updated At }
 
   org.userOrgAssignment:
+    meta:
+      titleSingular: Org Assignment
+      titlePlural: Org Assignments
+      descriptionPlural: Manage user org assignments
+      routes:
+        list: /admin/org/assignments
+        new: /admin/org/assignments/new
+        detail: /admin/org/assignments/{id}
+        edit: /admin/org/assignments/{id}/edit
+      breadcrumbs:
+        - { label: Admin, href: /admin }
+        - { label: Org Assignments, href: /admin/org/assignments }
+      actions:
+        createLabel: New Assignment
+        editLabel: Edit Assignment
+        saveCreateLabel: Create Assignment
+        saveUpdateLabel: Update Assignment
+        cancelLabel: Cancel
+        deleteLabel: Delete
+        deleteConfirmTitle: Delete Assignment
+        deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
     api:
       resource: assignments
     security:
@@ -72,7 +489,59 @@ entities:
       detail: { authz: { entity: org, verb: read } }
       new: { authz: { entity: org, verb: write } }
       edit: { authz: { entity: org, verb: write } }
+    list:
+      tableId: admin.org.assignments
+      pageSize: 25
+      initialSort: { sortBy: createdAt, sortOrder: desc }
+      sortWhitelist: [userKey, divisionName, departmentName, locationName, createdAt]
+      defaultVisibleOnly: true
+      initialColumnVisibility:
+        userKey: true
+        divisionName: true
+        departmentName: true
+        locationName: true
+        createdAt: false
+        actions: true
+      columns:
+        - userKey
+        - divisionName
+        - departmentName
+        - locationName
+        - createdAt
+        - key: actions
+          label: ""
+          sortable: false
+          hideable: false
+          align: right
+    detail:
+      summaryTitle: Org Assignment
+      summaryFields: [userKey, divisionName, departmentName, locationName, createdAt]
+    form:
+      sections:
+        - id: assignment
+          title: Assignment
+          layout: { columns: 2 }
+          fields: [userKey, divisionId, departmentId, locationId]
     fields:
       id: { type: text, label: ID }
-      userId: { type: text, label: User ID }
+      userKey:
+        type: reference
+        label: User
+        reference: { entityType: auth.user }
+      divisionId:
+        type: select
+        label: Division
+        optionSource: org.divisions
+      divisionName: { type: text, label: Division, virtual: true }
+      departmentId:
+        type: select
+        label: Department
+        optionSource: org.departments
+      departmentName: { type: text, label: Department, virtual: true }
+      locationId:
+        type: select
+        label: Location
+        optionSource: org.locations
+      locationName: { type: text, label: Location, virtual: true }
+      createdAt: { type: datetime, label: Created At }
 

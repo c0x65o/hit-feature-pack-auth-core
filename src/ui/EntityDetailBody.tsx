@@ -66,17 +66,19 @@ function DetailField({ uiSpec, record, fieldKey }: { uiSpec: any; record: any; f
   );
 }
 
+export type EntityDetailBodyProps = {
+  entityKey: string;
+  uiSpec: any;
+  record: any;
+  navigate?: (path: string) => void;
+};
+
 export function EntityDetailBody({
   entityKey,
   uiSpec,
   record,
   navigate,
-}: {
-  entityKey: string;
-  uiSpec: any;
-  record: any;
-  navigate?: (path: string) => void;
-}) {
+}: EntityDetailBodyProps): React.ReactNode {
   const { Card } = useUi();
   const detail = asRecord(uiSpec?.detail) || {};
   const { linkedEntityTabs } = splitLinkedEntityTabsExtra((detail as any).extras);

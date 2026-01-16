@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { checkActionPermissionV2 } from './auth-proxy-v2';
+import { NextResponse } from 'next/server';
 
 export type ActionCheckResult = {
   ok: boolean;
@@ -11,27 +11,27 @@ export type ActionCheckOptions = {
   logPrefix?: string;
 };
 
-const actionCheckCache = new WeakMap<NextRequest, Map<string, ActionCheckResult>>();
+const actionCheckCache = new WeakMap<Request, Map<string, ActionCheckResult>>();
 
 function getLogPrefix(options?: ActionCheckOptions): string {
   const raw = String(options?.logPrefix || '').trim();
   return raw || 'Authz';
 }
 
-function getCachedResult(request: NextRequest, actionKey: string): ActionCheckResult | null {
+function getCachedResult(request: Request, actionKey: string): ActionCheckResult | null {
   const map = actionCheckCache.get(request);
   if (!map) return null;
   return map.get(actionKey) || null;
 }
 
-function setCachedResult(request: NextRequest, actionKey: string, result: ActionCheckResult) {
+function setCachedResult(request: Request, actionKey: string, result: ActionCheckResult) {
   const map = actionCheckCache.get(request) || new Map<string, ActionCheckResult>();
   map.set(actionKey, result);
   actionCheckCache.set(request, map);
 }
 
 async function checkActionViaV2(
-  request: NextRequest,
+  request: Request,
   actionKey: string,
   options?: ActionCheckOptions
 ): Promise<ActionCheckResult> {
@@ -52,7 +52,7 @@ async function checkActionViaV2(
 }
 
 export async function checkActionPermission(
-  request: NextRequest,
+  request: Request,
   actionKey: string,
   options?: ActionCheckOptions
 ): Promise<ActionCheckResult> {
@@ -66,7 +66,7 @@ export async function checkActionPermission(
 }
 
 export async function requireActionPermission(
-  request: NextRequest,
+  request: Request,
   actionKey: string,
   options?: ActionCheckOptions
 ): Promise<NextResponse | null> {
