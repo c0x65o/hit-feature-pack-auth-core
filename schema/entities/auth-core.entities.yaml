@@ -287,7 +287,7 @@ entities:
           valueField: id
           labelField: displayName
       isPrimary: { type: boolean, label: Primary }
-      isActive: { type: boolean, label: Active }
+      isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
 
@@ -374,7 +374,7 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: id
           labelField: displayName
-      isActive: { type: boolean, label: Active }
+      isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
 
@@ -411,12 +411,11 @@ entities:
       tableId: admin.org.departments
       pageSize: 25
       initialSort: { sortBy: createdAt, sortOrder: desc }
-      sortWhitelist: [name, code, divisionName, isActive, createdAt, updatedAt]
+      sortWhitelist: [name, code, isActive, createdAt, updatedAt]
       defaultVisibleOnly: true
       initialColumnVisibility:
         name: true
         code: true
-        divisionName: true
         managerUserKey: false
         isActive: true
         createdAt: false
@@ -424,7 +423,6 @@ entities:
       columns:
         - name
         - code
-        - divisionName
         - managerUserKey
         - isActive
         - createdAt
@@ -435,13 +433,13 @@ entities:
           align: right
     detail:
       summaryTitle: Department
-      summaryFields: [name, code, divisionName, managerUserKey, isActive, createdAt, updatedAt, description]
+      summaryFields: [name, code, managerUserKey, isActive, createdAt, updatedAt, description]
     form:
       sections:
         - id: basic
           title: Department Details
           layout: { columns: 2 }
-          fields: [name, code, divisionId, parentId, managerUserKey, description]
+          fields: [name, code, parentId, managerUserKey, description]
         - id: status
           title: Status
           layout: { columns: 2 }
@@ -468,7 +466,7 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: id
           labelField: displayName
-      isActive: { type: boolean, label: Active }
+      isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
 
