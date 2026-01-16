@@ -61,6 +61,22 @@ export interface ResolveUserPrincipalsOptions {
     extraGroupIds?: () => Promise<string[]>;
 }
 export declare function getAuthBaseUrl(request?: RequestLike): string | null;
+export declare function getOrgBaseUrl(request?: RequestLike): string | null;
+export interface ResolvedOrgScope {
+    divisionIds: string[];
+    departmentIds: string[];
+    locationIds: string[];
+}
+/**
+ * Resolve the current user's org scope (L/D/D ids).
+ *
+ * This is used for "share with a location/division/department" style features.
+ */
+export declare function resolveUserOrgScope(options: {
+    request?: RequestLike;
+    user: UserClaimsLike;
+    strict?: boolean;
+}): Promise<ResolvedOrgScope>;
 /**
  * Resolve the current user's principals for ACL checks.
  *

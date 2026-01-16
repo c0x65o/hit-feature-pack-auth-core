@@ -15,7 +15,7 @@ interface EmailNotVerifiedProps {
 
 // Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl(): string {
-  return '/api/proxy/auth';
+  return '/api/auth';
 }
 
 function EmailNotVerifiedContent({

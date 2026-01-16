@@ -109,9 +109,8 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   React.useEffect(() => {
     const fetchAvailableRoles = async () => {
       try {
-        const authUrl = typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_HIT_AUTH_URL 
-          ? (window as any).NEXT_PUBLIC_HIT_AUTH_URL 
-          : '/api/proxy/auth';
+        // Auth is always app-local via Next API routes (auth-v2).
+        const authUrl = '/api/auth';
         const response = await fetch(`${authUrl}/features`, {
           credentials: 'include',
           headers: {

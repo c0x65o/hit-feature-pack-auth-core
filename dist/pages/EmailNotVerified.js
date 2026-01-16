@@ -7,7 +7,7 @@ import { AuthCard, AuthLayout, styles } from '@hit/ui-kit';
 import { useVerifyEmail } from '../hooks/useAuth';
 // Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    return '/api/proxy/auth';
+    return '/api/auth';
 }
 function EmailNotVerifiedContent({ email: propEmail, onNavigate, logoUrl = '/icon.png', appName = 'HIT', }) {
     const [email, setEmail] = useState(propEmail || '');

@@ -6,7 +6,7 @@ import { ConditionalThemeProvider, useThemeTokens } from '@hit/ui-kit/theme';
 import { AuthCard, AuthLayout, FormInput, styles } from '@hit/ui-kit';
 import { useFormSubmit } from '@hit/ui-kit/hooks/useFormSubmit';
 function getAuthUrl() {
-    return '/api/proxy/auth';
+    return '/api/auth';
 }
 async function fetchAuth(endpoint, options) {
     const authUrl = getAuthUrl();

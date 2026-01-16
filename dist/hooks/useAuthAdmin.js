@@ -44,7 +44,7 @@ export function useAuthFeatures() {
 }
 // Get the auth URL (TS-only, always via in-app proxy)
 function getAuthUrl() {
-    return '/api/proxy/auth';
+    return '/api/auth';
 }
 function getAuthHeaders() {
     if (typeof window === 'undefined')

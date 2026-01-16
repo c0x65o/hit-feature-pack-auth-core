@@ -23,9 +23,9 @@ export interface UsePrincipalsResult {
   refresh: () => void;
 }
 
-// Get the auth URL (TS-only, always via in-app proxy)
+// Auth is app-local (Next.js API dispatcher under /api/auth).
 function getAuthUrl(): string {
-  return '/api/proxy/auth';
+  return '/api/auth';
 }
 
 function getAuthHeaders(): Record<string, string> {
@@ -199,6 +199,57 @@ export function createFetchPrincipals(options: {
             }
           });
         }
+      }
+    } else if (type === 'location' || type === 'division' || type === 'department') {
+      // LDD principals are admin-gated (org endpoints are protected).
+      if (!isAdmin) {
+        // Non-admin: don't even attempt (avoids repeated 403s).
+        return [];
+      }
+
+      try {
+        const endpoint =
+          type === 'location'
+            ? '/api/org/locations'
+            : type === 'division'
+              ? '/api/org/divisions'
+              : '/api/org/departments';
+
+        const qs = new URLSearchParams();
+        qs.set('page', '1');
+        qs.set('pageSize', '250');
+        if (search) qs.set('search', search);
+
+        const res = await fetch(`${endpoint}?${qs.toString()}`, { headers, credentials: 'include' });
+        if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          const items = Array.isArray((json as any)?.items) ? (json as any).items : [];
+          for (const row of items) {
+            const id = String((row as any)?.id ?? '').trim();
+            const name = String((row as any)?.name ?? '').trim();
+            const code = String((row as any)?.code ?? '').trim();
+            if (!id || !name) continue;
+
+            let displayName = name;
+            if (type === 'department') {
+              const divisionName = String((row as any)?.divisionName ?? '').trim();
+              displayName = divisionName ? `${name} — ${divisionName}` : name;
+            }
+            if (code) displayName = `${displayName} (${code})`;
+
+            // Client-side search fallback (endpoint also supports search).
+            if (!searchLower || displayName.toLowerCase().includes(searchLower) || id.toLowerCase().includes(searchLower)) {
+              principals.push({
+                type,
+                id,
+                displayName,
+                metadata: row,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to load ${type}s:`, err);
       }
     }
 

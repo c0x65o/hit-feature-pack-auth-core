@@ -902,7 +902,8 @@ export async function checkActionPermissionV2(req, actionKey) {
  * V2 Auth Proxy Handler (TypeScript-only)
  *
  * Used to incrementally replace the Python auth module behind the existing
- * `/api/proxy/auth/*` surface, without changing the fundamental system yet.
+ * Historical note: earlier iterations routed auth through a proxy path.
+ * Canonical auth routes are now app-local under `/api/auth/*`.
  *
  * Return:
  * - NextResponse if handled by V2

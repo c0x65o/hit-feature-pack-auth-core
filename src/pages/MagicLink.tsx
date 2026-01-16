@@ -14,7 +14,7 @@ interface MagicLinkProps {
 }
 
 function getAuthUrl(): string {
-  return '/api/proxy/auth';
+  return '/api/auth';
 }
 
 async function fetchAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {

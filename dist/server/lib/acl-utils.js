@@ -3,6 +3,7 @@ let _warnedNoAuthForMeGroups = false;
 let _warnedNoAuthForMeGroupsOnce = false;
 let _warnedAdminGroupsForbidden = false;
 let _adminGroupsEndpointForbidden = false;
+let _warnedNoOrgRequestOnce = false;
 function warnOnce(kind, msg) {
     if (kind === 'no_request') {
         if (_warnedNoRequest)
@@ -21,6 +22,13 @@ function warnAdminGroupsForbiddenOnce(msg) {
     if (_warnedAdminGroupsForbidden)
         return;
     _warnedAdminGroupsForbidden = true;
+    // eslint-disable-next-line no-console
+    console.warn(msg);
+}
+function warnNoOrgRequestOnce(msg) {
+    if (_warnedNoOrgRequestOnce)
+        return;
+    _warnedNoOrgRequestOnce = true;
     // eslint-disable-next-line no-console
     console.warn(msg);
 }
@@ -69,28 +77,28 @@ function getBearerFromRequest(request) {
     return null;
 }
 export function getAuthBaseUrl(request) {
-    // Prefer direct module URL (server-side)
-    const direct = process.env.HIT_AUTH_URL || process.env.NEXT_PUBLIC_HIT_AUTH_URL;
-    if (direct)
-        return direct.replace(/\/$/, '');
-    // Fallback to app-local proxy route
-    if (request) {
-        return `${baseUrlFromRequest(request)}/api/proxy/auth`;
-    }
-    return null;
+    // Auth is app-local (Next.js API dispatcher under /api/auth).
+    if (request)
+        return `${baseUrlFromRequest(request)}/api/auth`;
+    return '/api/auth';
+}
+export function getOrgBaseUrl(request) {
+    // Org (LDD) is also app-local under /api/org.
+    if (request)
+        return `${baseUrlFromRequest(request)}/api/org`;
+    return '/api/org';
 }
 async function fetchAuthMeGroupIds(request, strict) {
     const authBase = getAuthBaseUrl(request);
     if (!authBase) {
         if (strict)
-            throw new Error('[acl-utils] Auth base URL not configured (HIT_AUTH_URL / NEXT_PUBLIC_HIT_AUTH_URL or /api/proxy/auth).');
+            throw new Error('[acl-utils] Auth base URL not configured (/api/auth).');
         return [];
     }
     const headers = {
         'Content-Type': 'application/json',
     };
-    // Auth module needs to know the dashboard origin so it can call metrics-core segment APIs.
-    // When we call auth directly (HIT_AUTH_URL) instead of via the dashboard proxy, we must provide this.
+    // Auth module needs to know the dashboard origin so it can call downstream APIs (e.g. metrics-core segments).
     headers['X-Frontend-Base-URL'] = baseUrlFromRequest(request);
     const bearer = getBearerFromRequest(request);
     if (bearer)
@@ -116,6 +124,58 @@ async function fetchAuthMeGroupIds(request, strict) {
     }
     return ids;
 }
+async function fetchOrgMeScope(request, strict) {
+    const orgBase = getOrgBaseUrl(request);
+    if (!orgBase) {
+        if (strict)
+            throw new Error('[acl-utils] Org base URL not configured (/api/org).');
+        return { divisionIds: [], departmentIds: [], locationIds: [] };
+    }
+    const headers = {
+        'Content-Type': 'application/json',
+    };
+    const bearer = getBearerFromRequest(request);
+    if (bearer)
+        headers.Authorization = bearer;
+    const res = await fetch(`${orgBase}/me/scope`, { headers });
+    if (!res.ok) {
+        if (strict)
+            throw new Error(`[acl-utils] GET ${orgBase}/me/scope failed: ${res.status} ${res.statusText}`);
+        return { divisionIds: [], departmentIds: [], locationIds: [] };
+    }
+    const data = await res.json().catch(() => null);
+    const divisionIds = Array.isArray(data?.divisionIds) ? data.divisionIds : [];
+    const departmentIds = Array.isArray(data?.departmentIds) ? data.departmentIds : [];
+    const locationIds = Array.isArray(data?.locationIds) ? data.locationIds : [];
+    return {
+        divisionIds: uniqStrings(divisionIds),
+        departmentIds: uniqStrings(departmentIds),
+        locationIds: uniqStrings(locationIds),
+    };
+}
+/**
+ * Resolve the current user's org scope (L/D/D ids).
+ *
+ * This is used for "share with a location/division/department" style features.
+ */
+export async function resolveUserOrgScope(options) {
+    const { request, strict = false } = options;
+    if (!request) {
+        if (strict) {
+            throw new Error('[acl-utils] Cannot resolve org scope without a request (needed to reach /api/org/me/scope or forward auth headers).');
+        }
+        warnNoOrgRequestOnce('[acl-utils] resolveUserOrgScope(): request not provided; org scope will be empty.');
+        return { divisionIds: [], departmentIds: [], locationIds: [] };
+    }
+    try {
+        return await fetchOrgMeScope(request, strict);
+    }
+    catch (e) {
+        if (strict)
+            throw e;
+        return { divisionIds: [], departmentIds: [], locationIds: [] };
+    }
+}
 // Kept for backwards compatibility / future use: some deployments may still hit this.
 async function fetchAuthAdminUserGroupIds(request, userEmail, strict) {
     // If we've already learned this endpoint is forbidden in this deployment,
@@ -126,7 +186,7 @@ async function fetchAuthAdminUserGroupIds(request, userEmail, strict) {
     const authBase = getAuthBaseUrl(request);
     if (!authBase) {
         if (strict)
-            throw new Error('[acl-utils] Auth base URL not configured (HIT_AUTH_URL / NEXT_PUBLIC_HIT_AUTH_URL or /api/proxy/auth).');
+            throw new Error('[acl-utils] Auth base URL not configured (/api/auth).');
         return [];
     }
     const email = String(userEmail || '').trim().toLowerCase();
@@ -192,7 +252,7 @@ export async function resolveUserPrincipals(options) {
     if (includeAuthMeGroups) {
         if (!request) {
             if (strict) {
-                throw new Error('[acl-utils] Cannot resolve auth groups without a request (needed to reach /api/proxy/auth or forward auth headers).');
+                throw new Error('[acl-utils] Cannot resolve auth groups without a request (needed to reach /api/auth or forward auth headers).');
             }
             warnOnce('no_request', '[acl-utils] resolveUserPrincipals(): request not provided; dynamic groups will not be resolved.');
         }

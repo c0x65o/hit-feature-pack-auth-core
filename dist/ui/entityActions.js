@@ -1,6 +1,6 @@
 'use client';
 function getAuthUrl() {
-    return '/api/proxy/auth';
+    return '/api/auth';
 }
 function getAuthHeaders() {
     if (typeof window === 'undefined')

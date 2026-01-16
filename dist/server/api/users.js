@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 function getAuthUrl() {
     // Deprecated: server-side fetch must use absolute URLs; callers should use getAuthBaseUrl(request).
-    return process.env.NEXT_PUBLIC_HIT_AUTH_URL || "/api/proxy/auth";
+    return "/api/auth";
 }
 /**
  * GET /api/org/users

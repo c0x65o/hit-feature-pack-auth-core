@@ -3,9 +3,9 @@
  * Auth hooks for authentication operations
  */
 import { useState, useCallback, useEffect } from 'react';
-// Get the auth URL (TS-only, always via in-app proxy)
+// Auth is app-local (Next.js API dispatcher under /api/auth).
 function getAuthUrl() {
-    return '/api/proxy/auth';
+    return '/api/auth';
 }
 // Check if debug mode is enabled
 function isDebugMode() {

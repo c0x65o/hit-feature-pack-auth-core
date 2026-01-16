@@ -10,7 +10,7 @@ export type EntityActionHandlerArgs = {
 export type EntityActionHandler = (args: EntityActionHandlerArgs) => void | Promise<void>;
 
 function getAuthUrl(): string {
-  return '/api/proxy/auth';
+  return '/api/auth';
 }
 
 function getAuthHeaders(): Record<string, string> {
