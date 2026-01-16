@@ -8,7 +8,7 @@
  * - Expand groups via auth module `/me/groups` (includes dynamic groups) when possible
  * - Allow feature-pack-specific extra group sources (e.g. Vault membership tables)
  */
-export type PrincipalType = 'user' | 'group' | 'role';
+export type PrincipalType = 'user' | 'group' | 'role' | 'location' | 'division' | 'department';
 
 /**
  * Minimal request shape needed for principal expansion.
