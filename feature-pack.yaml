@@ -1,0 +1,368 @@
+# Feature Pack: auth-core
+# Core authentication UI (login, signup, forgot password, email verification)
+# Also includes org dimensions (locations, divisions, departments, user assignments)
+
+name: auth-core
+title: System Admin
+description: Core authentication UI and organizational structure management
+
+# Schema contributions (Drizzle tables)
+schema:
+  source: src/schema/org-dimensions.ts
+  exports:
+    # Location types
+    - locationTypes
+    - LocationType
+    - InsertLocationType
+    - UpdateLocationType
+    # Locations
+    - locations
+    - Location
+    - InsertLocation
+    - UpdateLocation
+    # Divisions
+    - divisions
+    - Division
+    - InsertDivision
+    - UpdateDivision
+    # Departments
+    - departments
+    - Department
+    - InsertDepartment
+    - UpdateDepartment
+    # User Org Assignments
+    - userOrgAssignments
+    - UserOrgAssignment
+    - InsertUserOrgAssignment
+    - UpdateUserOrgAssignment
+    # Entity Scopes (multi-LDD)
+    - orgEntityScopes
+    - OrgEntityScope
+    - InsertOrgEntityScope
+    - UpdateOrgEntityScope
+    # Utility types
+    - OrgDimensionKind
+    - OrgScope
+    - OwnershipScope
+    # Default data
+    - DEFAULT_LOCATION_TYPES
+
+# Route definitions
+routes:
+  - path: /login
+    page: Login
+  - path: /signup
+    page: Signup
+  - path: /forgot-password
+    page: ForgotPassword
+  - path: /reset-password
+    page: ResetPassword
+  - path: /verify-email
+    page: VerifyEmail
+  - path: /email-not-verified
+    page: EmailNotVerified
+  - path: /magic-link
+    page: MagicLink
+  - path: /invites/accept
+    page: InviteAccept
+    featureFlag: auth.allow_invited
+
+  # Admin routes (merged into auth-core)
+  - path: /admin
+    page: Dashboard
+    roles: [admin]
+    default_roles_allow: [admin]
+  - path: /admin/users
+    page: EntityList
+    params: { entityKey: auth.user }
+  - path: /admin/users/[email]
+    page: EntityDetail
+    params: { entityKey: auth.user }
+  - path: /admin/users/new
+    page: EntityEdit
+    params: { entityKey: auth.user }
+  - path: /admin/users/[email]/edit
+    page: EntityEdit
+    params: { entityKey: auth.user }
+  - path: /admin/sessions
+    page: Sessions
+    roles: [admin]
+    default_roles_allow: [admin]
+  - path: /admin/audit-log
+    page: AuditLog
+    roles: [admin]
+    default_roles_allow: [admin]
+    featureFlag: auth.audit_log
+  - path: /admin/invites
+    page: Invites
+    roles: [admin]
+    default_roles_allow: [admin]
+    featureFlag: auth.allow_invited
+  - path: /admin/groups
+    page: EntityList
+    params: { entityKey: auth.group }
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/new
+    page: EntityEdit
+    params: { entityKey: auth.group }
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/[id]
+    page: EntityDetail
+    params: { entityKey: auth.group }
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/groups/[id]/edit
+    page: EntityEdit
+    params: { entityKey: auth.group }
+    featureFlag: auth.user_groups_enabled
+  - path: /admin/security-groups
+    page: SecurityGroupsList
+    roles: [admin]
+    default_roles_allow: [admin]
+  - path: /admin/security-groups/[id]
+    page: SecurityGroupDetail
+    roles: [admin]
+    default_roles_allow: [admin]
+
+  # Org Structure routes
+  - path: /admin/org/locations
+    page: EntityList
+    params: { entityKey: org.location }
+  - path: /admin/org/locations/new
+    page: EntityEdit
+    params: { entityKey: org.location }
+  - path: /admin/org/locations/[id]
+    page: EntityDetail
+    params: { entityKey: org.location }
+  - path: /admin/org/locations/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.location }
+  - path: /admin/org/divisions
+    page: EntityList
+    params: { entityKey: org.division }
+  - path: /admin/org/divisions/new
+    page: EntityEdit
+    params: { entityKey: org.division }
+  - path: /admin/org/divisions/[id]
+    page: EntityDetail
+    params: { entityKey: org.division }
+  - path: /admin/org/divisions/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.division }
+  - path: /admin/org/departments
+    page: EntityList
+    params: { entityKey: org.department }
+  - path: /admin/org/departments/new
+    page: EntityEdit
+    params: { entityKey: org.department }
+  - path: /admin/org/departments/[id]
+    page: EntityDetail
+    params: { entityKey: org.department }
+  - path: /admin/org/departments/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.department }
+  - path: /admin/org/assignments
+    page: EntityList
+    params: { entityKey: org.userOrgAssignment }
+  - path: /admin/org/assignments/new
+    page: EntityEdit
+    params: { entityKey: org.userOrgAssignment }
+  - path: /admin/org/assignments/[id]
+    page: EntityDetail
+    params: { entityKey: org.userOrgAssignment }
+  - path: /admin/org/assignments/[id]/edit
+    page: EntityEdit
+    params: { entityKey: org.userOrgAssignment }
+
+# Navigation contributions
+nav:
+  - id: login
+    label: Login
+    path: /login
+    icon: log-in
+    showWhen: unauthenticated
+    hideFromNav: true
+  - id: signup
+    label: Sign Up
+    path: /signup
+    icon: user-plus
+    showWhen: unauthenticated
+    hideFromNav: true
+
+  - id: admin
+    label: Admin
+    icon: ShieldCheck
+    group: system
+    roles: [admin]
+    showWhen: authenticated
+    weight: 1000
+    children:
+      - label: Dashboard
+        path: /admin
+        icon: LayoutDashboard
+        weight: 100
+      - label: Users
+        path: /admin/users
+        icon: Users
+        weight: 110
+      - label: Groups
+        path: /admin/groups
+        icon: UsersRound
+        featureFlag: auth.user_groups_enabled
+        weight: 120
+      - label: Sessions
+        path: /admin/sessions
+        icon: Key
+        weight: 130
+      - label: Security Groups
+        path: /admin/security-groups
+        icon: Lock
+        weight: 140
+      - label: Invites
+        path: /admin/invites
+        icon: Mail
+        featureFlag: auth.allow_invited
+        weight: 150
+      - label: Audit Log
+        path: /admin/audit-log
+        icon: FileText
+        featureFlag: auth.audit_log
+        weight: 160
+      - label: LDD
+        icon: Building
+        weight: 170
+        children:
+          - label: Locations
+            path: /admin/org/locations
+            icon: MapPin
+            weight: 100
+          - label: Divisions
+            path: /admin/org/divisions
+            icon: Building2
+            weight: 110
+          - label: Departments
+            path: /admin/org/departments
+            icon: Network
+            weight: 120
+          - label: Org Assignments
+            path: /admin/org/assignments
+            icon: UserCog
+            weight: 130
+
+# API routes - org dimensions management
+api:
+  routes:
+    # Mobile entity endpoints (schema-driven)
+    - path: /api/auth/users
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-users"
+      description: "Schema-driven auth users (mobile/web)."
+    - path: /api/auth/users/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-users-id"
+      description: "Schema-driven auth user by id/email (mobile/web)."
+    - path: /api/auth/groups
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-groups"
+      description: "Schema-driven auth groups (mobile/web)."
+    - path: /api/auth/groups/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/auth-groups-id"
+      description: "Schema-driven auth group by id (mobile/web)."
+
+    # Location Types
+    - path: /api/org/location-types
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/location-types"
+      description: "List location types (GET) or create location type (POST)"
+
+    # Locations
+    - path: /api/org/locations
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/locations"
+      description: "List locations (GET) or create location (POST)"
+    - path: /api/org/locations/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/locations-id"
+      description: "Get, update, or delete a specific location"
+
+    # Divisions
+    - path: /api/org/divisions
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/divisions"
+      description: "List divisions (GET) or create division (POST)"
+    - path: /api/org/divisions/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/divisions-id"
+      description: "Get, update, or delete a specific division"
+
+    # Departments
+    - path: /api/org/departments
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/departments"
+      description: "List departments (GET) or create department (POST)"
+    - path: /api/org/departments/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/departments-id"
+      description: "Get, update, or delete a specific department"
+
+    # User Org Assignments
+    - path: /api/org/assignments
+      methods: [GET, POST]
+      handler: "@hit/feature-pack-auth-core/server/api/assignments"
+      description: "List user org assignments (GET) or create assignment (POST)"
+    - path: /api/org/assignments/[id]
+      methods: [GET, PUT, DELETE]
+      handler: "@hit/feature-pack-auth-core/server/api/assignments-id"
+      description: "Get, update, or delete a specific assignment"
+
+    # Org Scope
+    - path: /api/org/me/scope
+      methods: [GET]
+      handler: "@hit/feature-pack-auth-core/server/api/me-scope"
+      description: "Get current user's org scope (divisions, departments, locations)"
+    - path: /api/org/users/[userKey]/scope
+      methods: [GET]
+      handler: "@hit/feature-pack-auth-core/server/api/users-scope"
+      description: "Get org scope for a specific user (admin only)"
+
+# Dependencies
+requires:
+  modules: [auth]
+
+# Configurable options
+config:
+  schema:
+    login_redirect:
+      type: string
+      default: "/"
+      description: Where to redirect after login
+    signup_redirect:
+      type: string
+      default: "/"
+      description: Where to redirect after signup
+    show_privacy_checkbox:
+      type: boolean
+      default: false
+      description: Show privacy policy checkbox on signup
+    password_min_length:
+      type: number
+      default: 8
+      description: Minimum password length
+    branding:
+      type: object
+      default: {}
+      description: Branding options (logo_url, app_name, tagline)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# METRICS
+#
+# Metric definitions are schema-driven and live under:
+#   schema/metrics/definitions/*.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PERMISSIONS - Action definitions (for admin-core permissions UI + runtime checks)
+# ─────────────────────────────────────────────────────────────────────────────
+# Permissions are schema-driven and live under:
+#   schema/permissions.yaml
+

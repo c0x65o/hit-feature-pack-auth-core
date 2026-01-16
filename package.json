@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.194",
+  "version": "1.0.195",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
