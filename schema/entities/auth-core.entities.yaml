@@ -532,7 +532,11 @@ entities:
       userKey:
         type: reference
         label: User
-        reference: { entityType: auth.user }
+        reference:
+          entityType: hrm.employee
+          pickerEndpoint: /api/hrm/employees/picker
+          valueField: userEmail
+          labelField: displayName
       divisionId:
         type: select
         label: Division

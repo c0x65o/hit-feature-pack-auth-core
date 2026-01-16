@@ -47,20 +47,28 @@ export function useApplySchemaDefaults(args) {
         };
         const computeDefault = (key, spec) => {
             const df = asRecord(spec?.defaultFrom);
-            if (!df)
-                return null;
-            const kind = trim(df.kind);
-            if (kind === 'queryParam') {
-                const param = trim(df.param);
-                return param ? queryParamValue(param) : null;
+            if (df) {
+                const kind = trim(df.kind);
+                if (kind === 'queryParam') {
+                    const param = trim(df.param);
+                    return param ? queryParamValue(param) : null;
+                }
+                if (kind === 'orgScopeFirst') {
+                    const path = trim(df.path);
+                    return path ? orgScopeFirstValue(path) : null;
+                }
+                if (kind === 'optionSourceFirst') {
+                    const src = trim(df.optionSource) || trim(spec?.optionSource);
+                    return src ? optionSourceFirstValue(src) : null;
+                }
+                if (kind === 'literal') {
+                    const v = df.value;
+                    return v != null ? String(v) : null;
+                }
             }
-            if (kind === 'orgScopeFirst') {
-                const path = trim(df.path);
-                return path ? orgScopeFirstValue(path) : null;
-            }
-            if (kind === 'optionSourceFirst') {
-                const src = trim(df.optionSource) || trim(spec?.optionSource);
-                return src ? optionSourceFirstValue(src) : null;
+            // Fall back to simple `default` property if no defaultFrom
+            if (spec?.default != null) {
+                return String(spec.default);
             }
             return null;
         };
