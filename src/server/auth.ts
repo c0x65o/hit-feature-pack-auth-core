@@ -9,7 +9,6 @@ export interface User {
 
 /**
  * Extract user from JWT token in cookies or Authorization header
- * Also checks x-user-id header (set by proxy/middleware in production)
  */
 export function extractUserFromRequest(request: NextRequest): User | null {
   // Check for token in cookie first
@@ -21,12 +20,6 @@ export function extractUserFromRequest(request: NextRequest): User | null {
     if (authHeader?.startsWith("Bearer ")) {
       token = authHeader.slice(7);
     }
-  }
-
-  // Check x-user-id header (set by proxy in production)
-  const xUserId = request.headers.get("x-user-id");
-  if (xUserId) {
-    return { sub: xUserId, email: "" };
   }
 
   if (!token) return null;
