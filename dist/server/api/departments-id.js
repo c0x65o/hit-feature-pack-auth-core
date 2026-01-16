@@ -1,7 +1,7 @@
 // src/server/api/departments-id.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { departments, divisions } from "@/lib/feature-pack-schemas";
+import { departments } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
 import { requireAuthCoreAction } from "../lib/require-action";
@@ -43,8 +43,6 @@ export async function GET(request) {
             name: departments.name,
             code: departments.code,
             description: departments.description,
-            divisionId: departments.divisionId,
-            divisionName: divisions.name,
             parentId: departments.parentId,
             managerUserKey: departments.managerUserKey,
             isActive: departments.isActive,
@@ -52,7 +50,6 @@ export async function GET(request) {
             updatedAt: departments.updatedAt,
         })
             .from(departments)
-            .leftJoin(divisions, eq(departments.divisionId, divisions.id))
             .where(eq(departments.id, id))
             .limit(1);
         if (!department) {
@@ -96,17 +93,6 @@ export async function PUT(request) {
                 return NextResponse.json({ error: "Department with this code already exists" }, { status: 409 });
             }
         }
-        // Validate division exists if being changed
-        if (body.divisionId && body.divisionId !== existing.divisionId) {
-            const [division] = await db
-                .select()
-                .from(divisions)
-                .where(eq(divisions.id, body.divisionId))
-                .limit(1);
-            if (!division) {
-                return NextResponse.json({ error: "Division not found" }, { status: 400 });
-            }
-        }
         // Build update object
         const updateData = {
             updatedAt: new Date(),
@@ -117,8 +103,6 @@ export async function PUT(request) {
             updateData.code = body.code || null;
         if (body.description !== undefined)
             updateData.description = body.description || null;
-        if (body.divisionId !== undefined)
-            updateData.divisionId = body.divisionId || null;
         if (body.parentId !== undefined)
             updateData.parentId = body.parentId || null;
         if (body.managerUserKey !== undefined)

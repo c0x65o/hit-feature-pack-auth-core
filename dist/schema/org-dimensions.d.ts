@@ -786,23 +786,6 @@ export declare const departments: import("drizzle-orm/pg-core").PgTableWithColum
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
-        divisionId: import("drizzle-orm/pg-core").PgColumn<{
-            name: "division_id";
-            tableName: "org_departments";
-            dataType: "string";
-            columnType: "PgUUID";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
         parentId: import("drizzle-orm/pg-core").PgColumn<{
             name: "parent_id";
             tableName: "org_departments";

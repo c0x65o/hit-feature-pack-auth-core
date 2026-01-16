@@ -1,7 +1,7 @@
 // src/server/api/departments.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { departments, divisions } from "@/lib/feature-pack-schemas";
+import { departments } from "@/lib/feature-pack-schemas";
 import { eq, desc, asc, like, and, or, isNull, sql, type AnyColumn } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
 import { requireAuthCoreAction } from "../lib/require-action";
@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
 
     // Filters
     const active = searchParams.get("active");
-    const divisionId = searchParams.get("divisionId");
     const parentId = searchParams.get("parentId");
 
     // Build where conditions
@@ -58,14 +57,6 @@ export async function GET(request: NextRequest) {
 
     if (active !== null && active !== undefined && active !== "") {
       conditions.push(eq(departments.isActive, active === "true"));
-    }
-
-    if (divisionId) {
-      if (divisionId === "null") {
-        conditions.push(isNull(departments.divisionId));
-      } else {
-        conditions.push(eq(departments.divisionId, divisionId));
-      }
     }
 
     if (parentId) {
@@ -95,23 +86,20 @@ export async function GET(request: NextRequest) {
     const countResult = whereClause ? await countQuery.where(whereClause) : await countQuery;
     const total = Number(countResult[0]?.count || 0);
 
-    // Execute main query with division name join
+    // Execute main query
     const baseQuery = db
       .select({
         id: departments.id,
         name: departments.name,
         code: departments.code,
         description: departments.description,
-        divisionId: departments.divisionId,
-        divisionName: divisions.name,
         parentId: departments.parentId,
         managerUserKey: departments.managerUserKey,
         isActive: departments.isActive,
         createdAt: departments.createdAt,
         updatedAt: departments.updatedAt,
       })
-      .from(departments)
-      .leftJoin(divisions, eq(departments.divisionId, divisions.id));
+      .from(departments);
 
     const items = whereClause
       ? await baseQuery.where(whereClause).orderBy(orderDirection).limit(pageSize).offset(offset)
@@ -162,25 +150,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate division exists if provided
-    if (body.divisionId) {
-      const [division] = await db
-        .select()
-        .from(divisions)
-        .where(eq(divisions.id, body.divisionId))
-        .limit(1);
-      if (!division) {
-        return NextResponse.json({ error: "Division not found" }, { status: 400 });
-      }
-    }
-
     const result = await db
       .insert(departments)
       .values({
         name: body.name,
         code: body.code || null,
         description: body.description || null,
-        divisionId: body.divisionId || null,
         parentId: body.parentId || null,
         managerUserKey: body.managerUserKey || null,
         isActive: body.isActive ?? true,

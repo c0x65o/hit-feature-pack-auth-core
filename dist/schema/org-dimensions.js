@@ -184,13 +184,6 @@ export const departments = pgTable("org_departments", {
     /** Description */
     description: text("description"),
     /**
-     * Division this department belongs to (optional)
-     * Some organizations have departments without divisions
-     */
-    divisionId: uuid("division_id").references(() => divisions.id, {
-        onDelete: "set null",
-    }),
-    /**
      * Parent department ID for hierarchical structure
      * Null for top-level departments
      */
@@ -211,7 +204,6 @@ export const departments = pgTable("org_departments", {
 }, (table) => ({
     nameIdx: index("org_departments_name_idx").on(table.name),
     codeIdx: uniqueIndex("org_departments_code_idx").on(table.code),
-    divisionIdx: index("org_departments_division_idx").on(table.divisionId),
     parentIdx: index("org_departments_parent_idx").on(table.parentId),
     managerIdx: index("org_departments_manager_idx").on(table.managerUserKey),
     activeIdx: index("org_departments_active_idx").on(table.isActive),

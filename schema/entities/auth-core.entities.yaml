@@ -449,11 +449,6 @@ entities:
       name: { type: text, label: Name, required: true }
       code: { type: text, label: Code }
       description: { type: textarea, label: Description }
-      divisionId:
-        type: select
-        label: Division
-        optionSource: org.divisions
-      divisionName: { type: text, label: Division, virtual: true }
       parentId:
         type: select
         label: Parent Department

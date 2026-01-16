@@ -1,7 +1,7 @@
 // src/server/api/departments-id.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { departments, divisions } from "@/lib/feature-pack-schemas";
+import { departments } from "@/lib/feature-pack-schemas";
 import { eq, and, ne } from "drizzle-orm";
 import { resolveAuthCoreScopeMode } from "../lib/scope-mode";
 import { requireAuthCoreAction } from "../lib/require-action";
@@ -49,8 +49,6 @@ export async function GET(request: NextRequest) {
         name: departments.name,
         code: departments.code,
         description: departments.description,
-        divisionId: departments.divisionId,
-        divisionName: divisions.name,
         parentId: departments.parentId,
         managerUserKey: departments.managerUserKey,
         isActive: departments.isActive,
@@ -58,7 +56,6 @@ export async function GET(request: NextRequest) {
         updatedAt: departments.updatedAt,
       })
       .from(departments)
-      .leftJoin(divisions, eq(departments.divisionId, divisions.id))
       .where(eq(departments.id, id))
       .limit(1);
 
@@ -108,18 +105,6 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Validate division exists if being changed
-    if (body.divisionId && body.divisionId !== existing.divisionId) {
-      const [division] = await db
-        .select()
-        .from(divisions)
-        .where(eq(divisions.id, body.divisionId))
-        .limit(1);
-      if (!division) {
-        return NextResponse.json({ error: "Division not found" }, { status: 400 });
-      }
-    }
-
     // Build update object
     const updateData: Record<string, any> = {
       updatedAt: new Date(),
@@ -128,7 +113,6 @@ export async function PUT(request: NextRequest) {
     if (body.name !== undefined) updateData.name = body.name;
     if (body.code !== undefined) updateData.code = body.code || null;
     if (body.description !== undefined) updateData.description = body.description || null;
-    if (body.divisionId !== undefined) updateData.divisionId = body.divisionId || null;
     if (body.parentId !== undefined) updateData.parentId = body.parentId || null;
     if (body.managerUserKey !== undefined) updateData.managerUserKey = body.managerUserKey || null;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
