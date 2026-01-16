@@ -1,7 +1,7 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Mail } from 'lucide-react';
-import { useUi } from '@hit/ui-kit';
+import { useUi, useEntityResolver } from '@hit/ui-kit';
 import { splitLinkedEntityTabsExtra, wrapWithLinkedEntityTabsIfConfigured } from '@hit/feature-pack-form-core';
 function asRecord(v) {
     return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
@@ -26,11 +26,21 @@ function formatLocalDateTime(value) {
     }
 }
 function DetailField({ uiSpec, record, fieldKey }) {
+    const resolver = useEntityResolver();
     const fieldsMap = asRecord(uiSpec?.fields) || {};
     const spec = asRecord(fieldsMap[fieldKey]) || {};
     const type = String(spec.type || 'text');
     const label = String(spec.label || fieldKey);
     const raw = record?.[fieldKey];
+    if (type === 'reference') {
+        const ref = asRecord(spec.reference) || {};
+        const entityType = String(ref.entityType || '').trim();
+        const id = raw == null ? '' : String(raw).trim();
+        if (!entityType || !id)
+            return null;
+        const text = resolver.getLabel(entityType, id) || id;
+        return (_jsxs("div", { children: [_jsx("div", { className: "text-sm text-gray-400 mb-1", children: label }), _jsx("div", { children: text })] }, fieldKey));
+    }
     if (type === 'email') {
         if (!raw)
             return null;
@@ -41,6 +51,9 @@ function DetailField({ uiSpec, record, fieldKey }) {
         if (!formatted)
             return null;
         return (_jsxs("div", { children: [_jsx("div", { className: "text-sm text-gray-400 mb-1", children: label }), _jsx("div", { children: formatted })] }, fieldKey));
+    }
+    if (type === 'boolean') {
+        return (_jsxs("div", { children: [_jsx("div", { className: "text-sm text-gray-400 mb-1", children: label }), _jsx("div", { children: raw ? 'Yes' : 'No' })] }, fieldKey));
     }
     if (raw == null || raw === '')
         return null;

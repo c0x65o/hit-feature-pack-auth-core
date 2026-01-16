@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Mail } from 'lucide-react';
-import { useUi } from '@hit/ui-kit';
+import { useUi, useEntityResolver } from '@hit/ui-kit';
 import { splitLinkedEntityTabsExtra, wrapWithLinkedEntityTabsIfConfigured } from '@hit/feature-pack-form-core';
 
 function asRecord(v: unknown): Record<string, any> | null {
@@ -27,11 +27,26 @@ function formatLocalDateTime(value: unknown): string | null {
 }
 
 function DetailField({ uiSpec, record, fieldKey }: { uiSpec: any; record: any; fieldKey: string }) {
+  const resolver = useEntityResolver();
   const fieldsMap = asRecord(uiSpec?.fields) || {};
   const spec = asRecord(fieldsMap[fieldKey]) || {};
   const type = String(spec.type || 'text');
   const label = String(spec.label || fieldKey);
   const raw = (record as any)?.[fieldKey];
+
+  if (type === 'reference') {
+    const ref = asRecord(spec.reference) || {};
+    const entityType = String(ref.entityType || '').trim();
+    const id = raw == null ? '' : String(raw).trim();
+    if (!entityType || !id) return null;
+    const text = resolver.getLabel(entityType, id) || id;
+    return (
+      <div key={fieldKey}>
+        <div className="text-sm text-gray-400 mb-1">{label}</div>
+        <div>{text}</div>
+      </div>
+    );
+  }
 
   if (type === 'email') {
     if (!raw) return null;
@@ -53,6 +68,15 @@ function DetailField({ uiSpec, record, fieldKey }: { uiSpec: any; record: any; f
       <div key={fieldKey}>
         <div className="text-sm text-gray-400 mb-1">{label}</div>
         <div>{formatted}</div>
+      </div>
+    );
+  }
+
+  if (type === 'boolean') {
+    return (
+      <div key={fieldKey}>
+        <div className="text-sm text-gray-400 mb-1">{label}</div>
+        <div>{raw ? 'Yes' : 'No'}</div>
       </div>
     );
   }
