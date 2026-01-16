@@ -1,0 +1,38 @@
+definitions:
+  fp.auth-core.user_count:
+    label: User Count
+    unit: count
+    icon: Users
+    icon_color: "#16a34a"
+    rollup_strategy: last
+    entity_kinds: [user]
+    time_kind: realtime
+    default_roles_allow: [admin]
+
+  fp.auth-core.users_all:
+    label: Users (All)
+    unit: users
+    rollup_strategy: last
+    entity_kinds: [user]
+    time_kind: none
+    description: "User-list metric: all users in the system."
+    default_roles_allow: [admin]
+
+  fp.auth-core.users_admins:
+    label: Users (Admins)
+    unit: users
+    rollup_strategy: last
+    entity_kinds: [user]
+    time_kind: none
+    description: "User-list metric: users whose role is admin."
+    default_roles_allow: [admin]
+
+  fp.auth-core.users_unverified:
+    label: Users (Unverified)
+    unit: users
+    rollup_strategy: last
+    entity_kinds: [user]
+    time_kind: none
+    description: "User-list metric: users who have not verified their email."
+    default_roles_allow: [admin]
+

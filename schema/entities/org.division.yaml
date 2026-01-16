@@ -85,3 +85,4 @@ entities:
       isActive: { type: boolean, label: Active }
       createdAt: { type: datetime, label: Created, readOnly: true }
       updatedAt: { type: datetime, label: Updated, readOnly: true }
+

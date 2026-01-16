@@ -76,23 +76,15 @@ routes:
   - path: /admin/users
     page: EntityList
     params: { entityKey: auth.user }
-    roles: [admin]
-    default_roles_allow: [admin]
   - path: /admin/users/[email]
     page: EntityDetail
     params: { entityKey: auth.user }
-    roles: [admin]
-    default_roles_allow: [admin]
   - path: /admin/users/new
     page: EntityEdit
     params: { entityKey: auth.user }
-    roles: [admin]
-    default_roles_allow: [admin]
   - path: /admin/users/[email]/edit
     page: EntityEdit
     params: { entityKey: auth.user }
-    roles: [admin]
-    default_roles_allow: [admin]
   - path: /admin/sessions
     page: Sessions
     roles: [admin]
@@ -110,26 +102,18 @@ routes:
   - path: /admin/groups
     page: EntityList
     params: { entityKey: auth.group }
-    roles: [admin]
-    default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/groups/new
     page: EntityEdit
     params: { entityKey: auth.group }
-    roles: [admin]
-    default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/groups/[id]
     page: EntityDetail
     params: { entityKey: auth.group }
-    roles: [admin]
-    default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/groups/[id]/edit
     page: EntityEdit
     params: { entityKey: auth.group }
-    roles: [admin]
-    default_roles_allow: [admin]
     featureFlag: auth.user_groups_enabled
   - path: /admin/security-groups
     page: SecurityGroupsList
@@ -144,99 +128,51 @@ routes:
   - path: /admin/org/locations
     page: EntityList
     params: { entityKey: org.location }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: locations, verb: read, require_mode: any }
   - path: /admin/org/locations/new
     page: EntityEdit
     params: { entityKey: org.location }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: locations, verb: write, require_create: true }
   - path: /admin/org/locations/[id]
     page: EntityDetail
     params: { entityKey: org.location }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: locations, verb: read, require_mode: any }
   - path: /admin/org/locations/[id]/edit
     page: EntityEdit
     params: { entityKey: org.location }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: locations, verb: write }
   - path: /admin/org/divisions
     page: EntityList
     params: { entityKey: org.division }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: divisions, verb: read, require_mode: any }
   - path: /admin/org/divisions/new
     page: EntityEdit
     params: { entityKey: org.division }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: divisions, verb: write, require_create: true }
   - path: /admin/org/divisions/[id]
     page: EntityDetail
     params: { entityKey: org.division }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: divisions, verb: read, require_mode: any }
   - path: /admin/org/divisions/[id]/edit
     page: EntityEdit
     params: { entityKey: org.division }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: divisions, verb: write }
   - path: /admin/org/departments
     page: EntityList
     params: { entityKey: org.department }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: departments, verb: read, require_mode: any }
   - path: /admin/org/departments/new
     page: EntityEdit
     params: { entityKey: org.department }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: departments, verb: write, require_create: true }
   - path: /admin/org/departments/[id]
     page: EntityDetail
     params: { entityKey: org.department }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: departments, verb: read, require_mode: any }
   - path: /admin/org/departments/[id]/edit
     page: EntityEdit
     params: { entityKey: org.department }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: departments, verb: write }
   - path: /admin/org/assignments
     page: EntityList
     params: { entityKey: org.userOrgAssignment }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: assignments, verb: read }
   - path: /admin/org/assignments/new
     page: EntityEdit
     params: { entityKey: org.userOrgAssignment }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: assignments, verb: write, require_create: true }
   - path: /admin/org/assignments/[id]
     page: EntityDetail
     params: { entityKey: org.userOrgAssignment }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: assignments, verb: read }
   - path: /admin/org/assignments/[id]/edit
     page: EntityEdit
     params: { entityKey: org.userOrgAssignment }
-    roles: [admin]
-    default_roles_allow: [admin]
-    authz: { entity: assignments, verb: write }
 
 # Navigation contributions
 # Login/signup are hidden from nav - users access via auth redirects
@@ -420,254 +356,14 @@ config:
       description: Branding options (logo_url, app_name, tagline)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# METRICS - Feature pack metric definitions
+# METRICS
+#
+# Metric definitions are schema-driven and live under:
+#   schema/metrics/definitions/*.yaml
 # ─────────────────────────────────────────────────────────────────────────────
-metrics:
-  definitions:
-    - key: fp.auth-core.user_count
-      label: User Count
-      unit: count
-      icon: Users
-      icon_color: "#16a34a"
-      rollup_strategy: last
-      entity_kinds: [user]
-      time_kind: realtime
-      # Default: On for admin templates, Off for user templates.
-      default_roles_allow: [admin]
-    - key: fp.auth-core.users_all
-      label: Users (All)
-      unit: users
-      rollup_strategy: last
-      entity_kinds: [user]
-      time_kind: none
-      description: "User-list metric: all users in the system."
-      # Default: On for admin templates, Off for user templates.
-      default_roles_allow: [admin]
-    - key: fp.auth-core.users_admins
-      label: Users (Admins)
-      unit: users
-      rollup_strategy: last
-      entity_kinds: [user]
-      time_kind: none
-      description: "User-list metric: users whose role is admin."
-      # Default: On for admin templates, Off for user templates.
-      default_roles_allow: [admin]
-    - key: fp.auth-core.users_unverified
-      label: Users (Unverified)
-      unit: users
-      rollup_strategy: last
-      entity_kinds: [user]
-      time_kind: none
-      description: "User-list metric: users who have not verified their email."
-      # Default: On for admin templates, Off for user templates.
-      default_roles_allow: [admin]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PERMISSIONS - Action definitions (for admin-core permissions UI + runtime checks)
 # ─────────────────────────────────────────────────────────────────────────────
-permissions:
-  actions:
-    # Scope Policy Tree: auth-core (global) -> entity overrides.
-    #
-    # Scope modes (V2):
-    # - none: deny all access for this verb/entity (hide pages + block APIs)
-    # - own: only owned/created records (only applies where entities have ownership fields)
-    # - location|department|division: records matching the user's org assignment(s) for that dimension (LDD-enabled entities only)
-    # - all: full access (no scoping)
-    #
-    # These are mutually exclusive per node; the Security Groups UI renders them as dropdowns.
-    # Note: Most org dimensions are admin-only system configuration and should be treated as simple none/all gates.
-    - key: auth-core.read.scope.none
-      label: "Auth-Core Read Scope = None"
-      description: "Deny all auth-core read access."
-      default_enabled: false
-    - key: auth-core.read.scope.own
-      label: "Auth-Core Read Scope = Own"
-      description: "Read only auth-core entities you own (not applicable for org dimensions)."
-      default_enabled: false
-    - key: auth-core.read.scope.all
-      label: "Auth-Core Read Scope = All"
-      description: "Read all auth-core entities (full access)."
-      default_enabled: false
-
-    - key: auth-core.write.scope.none
-      label: "Auth-Core Write Scope = None"
-      description: "Deny all auth-core write access."
-      default_enabled: false
-    - key: auth-core.write.scope.own
-      label: "Auth-Core Write Scope = Own"
-      description: "Edit only auth-core entities you own (not applicable for org dimensions)."
-      default_enabled: false
-    - key: auth-core.write.scope.all
-      label: "Auth-Core Write Scope = All"
-      description: "Edit all auth-core entities (full access)."
-      default_enabled: false
-
-    - key: auth-core.delete.scope.none
-      label: "Auth-Core Delete Scope = None"
-      description: "Deny all auth-core delete access."
-      default_enabled: false
-    - key: auth-core.delete.scope.own
-      label: "Auth-Core Delete Scope = Own"
-      description: "Delete only auth-core entities you own (not applicable for org dimensions)."
-      default_enabled: false
-    - key: auth-core.delete.scope.all
-      label: "Auth-Core Delete Scope = All"
-      description: "Delete all auth-core entities (full access)."
-      default_enabled: false
-
-    # Locations override (optional): if set, overrides auth-core.read.scope.* for locations only.
-    - key: auth-core.locations.read.scope.none
-      label: "Auth-Core Locations Read Scope = None"
-      description: "Deny all location read access."
-      default_enabled: false
-    - key: auth-core.locations.read.scope.all
-      label: "Auth-Core Locations Read Scope = All"
-      description: "Read all locations (full access)."
-      default_enabled: false
-
-    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
-
-    - key: auth-core.locations.create
-      label: Create Location
-      description: "Create a new location."
-      default_enabled: false
-    - key: auth-core.locations.update
-      label: Update Location
-      description: "Update an existing location."
-      default_enabled: false
-    - key: auth-core.locations.delete
-      label: Delete Location
-      description: "Delete a location."
-      default_enabled: false
-
-    # Divisions override
-    - key: auth-core.divisions.read.scope.none
-      label: "Auth-Core Divisions Read Scope = None"
-      description: "Deny all division read access."
-      default_enabled: false
-    - key: auth-core.divisions.read.scope.all
-      label: "Auth-Core Divisions Read Scope = All"
-      description: "Read all divisions (full access)."
-      default_enabled: false
-
-    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
-
-    - key: auth-core.divisions.create
-      label: Create Division
-      description: "Create a new division."
-      default_enabled: false
-    - key: auth-core.divisions.update
-      label: Update Division
-      description: "Update an existing division."
-      default_enabled: false
-    - key: auth-core.divisions.delete
-      label: Delete Division
-      description: "Delete a division."
-      default_enabled: false
-
-    # Departments override
-    - key: auth-core.departments.read.scope.none
-      label: "Auth-Core Departments Read Scope = None"
-      description: "Deny all department read access."
-      default_enabled: false
-    - key: auth-core.departments.read.scope.all
-      label: "Auth-Core Departments Read Scope = All"
-      description: "Read all departments (full access)."
-      default_enabled: false
-
-    # NOTE: org dimensions use explicit create/update/delete actions; no write/delete scope modes.
-
-    - key: auth-core.departments.create
-      label: Create Department
-      description: "Create a new department."
-      default_enabled: false
-    - key: auth-core.departments.update
-      label: Update Department
-      description: "Update an existing department."
-      default_enabled: false
-    - key: auth-core.departments.delete
-      label: Delete Department
-      description: "Delete a department."
-      default_enabled: false
-
-    # Assignments override
-    - key: auth-core.assignments.read.scope.none
-      label: "Auth-Core Assignments Read Scope = None"
-      description: "Deny all assignment read access."
-      default_enabled: false
-    - key: auth-core.assignments.read.scope.own
-      label: "Auth-Core Assignments Read Scope = Own"
-      description: "Read only assignments you own (your own assignment)."
-      default_enabled: false
-    - key: auth-core.assignments.read.scope.location
-      label: "Auth-Core Assignments Read Scope = Location"
-      description: "Read assignments in your location."
-      default_enabled: false
-    - key: auth-core.assignments.read.scope.department
-      label: "Auth-Core Assignments Read Scope = Department"
-      description: "Read assignments in your department."
-      default_enabled: false
-    - key: auth-core.assignments.read.scope.division
-      label: "Auth-Core Assignments Read Scope = Division"
-      description: "Read assignments in your division."
-      default_enabled: false
-    - key: auth-core.assignments.read.scope.all
-      label: "Auth-Core Assignments Read Scope = All"
-      description: "Read all assignments (full access)."
-      default_enabled: false
-
-    - key: auth-core.assignments.write.scope.none
-      label: "Auth-Core Assignments Write Scope = None"
-      description: "Deny all assignment write access."
-      default_enabled: false
-    - key: auth-core.assignments.write.scope.own
-      label: "Auth-Core Assignments Write Scope = Own"
-      description: "Edit only assignments you own (your own assignment)."
-      default_enabled: false
-    - key: auth-core.assignments.write.scope.location
-      label: "Auth-Core Assignments Write Scope = Location"
-      description: "Edit assignments in your location."
-      default_enabled: false
-    - key: auth-core.assignments.write.scope.department
-      label: "Auth-Core Assignments Write Scope = Department"
-      description: "Edit assignments in your department."
-      default_enabled: false
-    - key: auth-core.assignments.write.scope.division
-      label: "Auth-Core Assignments Write Scope = Division"
-      description: "Edit assignments in your division."
-      default_enabled: false
-    - key: auth-core.assignments.write.scope.all
-      label: "Auth-Core Assignments Write Scope = All"
-      description: "Edit all assignments (full access)."
-      default_enabled: false
-
-    - key: auth-core.assignments.delete.scope.none
-      label: "Auth-Core Assignments Delete Scope = None"
-      description: "Deny all assignment delete access."
-      default_enabled: false
-    - key: auth-core.assignments.delete.scope.own
-      label: "Auth-Core Assignments Delete Scope = Own"
-      description: "Delete only assignments you own (your own assignment)."
-      default_enabled: false
-    - key: auth-core.assignments.delete.scope.location
-      label: "Auth-Core Assignments Delete Scope = Location"
-      description: "Delete assignments in your location."
-      default_enabled: false
-    - key: auth-core.assignments.delete.scope.department
-      label: "Auth-Core Assignments Delete Scope = Department"
-      description: "Delete assignments in your department."
-      default_enabled: false
-    - key: auth-core.assignments.delete.scope.division
-      label: "Auth-Core Assignments Delete Scope = Division"
-      description: "Delete assignments in your division."
-      default_enabled: false
-    - key: auth-core.assignments.delete.scope.all
-      label: "Auth-Core Assignments Delete Scope = All"
-      description: "Delete all assignments (full access)."
-      default_enabled: false
-
-    - key: auth-core.assignments.create
-      label: Create Assignment
-      description: "Create a new user org assignment."
-      default_enabled: false
+# Permissions are schema-driven and live under:
+#   schema/permissions.yaml
