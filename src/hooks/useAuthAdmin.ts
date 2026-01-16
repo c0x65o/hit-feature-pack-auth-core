@@ -1573,7 +1573,7 @@ export interface PermissionActionDefinition {
   label: string;
   description: string | null;
   default_enabled: boolean;
-  scope_modes?: Array<'none' | 'own' | 'location' | 'department' | 'division' | 'all' | 'any'> | null;
+  scope_modes?: Array<'none' | 'own' | 'location' | 'department' | 'division' | 'ldd_any' | 'ldd_all' | 'all' | 'any'> | null;
 }
 
 export interface RoleActionPermission {
@@ -1625,7 +1625,7 @@ export function usePermissionActions() {
             ? ((a as any).scopeModes as any[])
                 .map((x) => String(x || '').trim().toLowerCase())
                 .map((x) => (x === 'any' ? 'all' : x))
-                .filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(x)) as any
+                .filter((x) => ['none', 'own', 'location', 'department', 'division', 'ldd_any', 'ldd_all', 'all'].includes(x)) as any
             : null,
         }))
         .filter((a: any) => Boolean(a.key));

@@ -281,7 +281,11 @@ entities:
       managerUserKey:
         type: reference
         label: Manager
-        reference: { entityType: auth.user }
+        reference:
+          entityType: hrm.employee
+          pickerEndpoint: /api/hrm/employees/picker
+          valueField: id
+          labelField: displayName
       isPrimary: { type: boolean, label: Primary }
       isActive: { type: boolean, label: Active }
       createdAt: { type: datetime, label: Created At }
@@ -365,7 +369,11 @@ entities:
       managerUserKey:
         type: reference
         label: Manager
-        reference: { entityType: auth.user }
+        reference:
+          entityType: hrm.employee
+          pickerEndpoint: /api/hrm/employees/picker
+          valueField: id
+          labelField: displayName
       isActive: { type: boolean, label: Active }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
@@ -455,7 +463,11 @@ entities:
       managerUserKey:
         type: reference
         label: Manager
-        reference: { entityType: auth.user }
+        reference:
+          entityType: hrm.employee
+          pickerEndpoint: /api/hrm/employees/picker
+          valueField: id
+          labelField: displayName
       isActive: { type: boolean, label: Active }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }

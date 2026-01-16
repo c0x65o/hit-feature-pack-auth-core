@@ -54,7 +54,7 @@ async function loadFeaturePackRoutes() {
 function parseExclusiveActionModeGroup(actionKey) {
     const m = String(actionKey || '').trim().match(
     // Legacy back-compat (deprecated): older packs used `.scope.any` instead of `.scope.all`.
-    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all|any)$/);
+    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|ldd_any|ldd_all|all|any)$/);
     if (!m)
         return null;
     const basePrefix = m[1];
@@ -110,7 +110,7 @@ function titleFromGroupKey(groupKey) {
     return entityLabel ? `${packLabel} ${entityLabel} ${verbLabel} Scope` : `${packLabel} ${verbLabel} Scope`;
 }
 function scopeValueForKey(key) {
-    const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all|any)$/);
+    const m = String(key || '').match(/\.scope\.(none|own|location|department|division|ldd_any|ldd_all|all|any)$/);
     if (!m)
         return null;
     return (m[1] === 'any' ? 'all' : m[1]);
@@ -268,7 +268,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
         return actionGrantSet.has(key);
     }, [pendingActionChanges, actionGrantSet]);
     const packRootScopeSummaryByPack = useMemo(() => {
-        const precedence = ['none', 'own', 'location', 'department', 'division', 'all'];
+        const precedence = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
         // index: pack -> verb -> present scope modes
         const present = new Map();
         for (const a of actionCatalog) {
@@ -495,7 +495,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
             grouped.get(parsed.groupKey).actions.push(a);
             grouped.get(parsed.groupKey).values.set(parsed.value, a);
         }
-        const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'];
+        const precedenceValues = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
         function getDeclaredModes(rows) {
             const out = new Set();
             let saw = false;
@@ -999,33 +999,45 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                             ? 'None'
                                                                             : rootSummary.read === 'all'
                                                                                 ? 'All'
-                                                                                : rootSummary.read === 'division'
-                                                                                    ? 'Division'
-                                                                                    : rootSummary.read === 'department'
-                                                                                        ? 'Department'
-                                                                                        : rootSummary.read === 'location'
-                                                                                            ? 'Location'
-                                                                                            : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W:", ' ', rootSummary.write === 'none'
+                                                                                : rootSummary.read === 'ldd_any'
+                                                                                    ? 'Any LDD'
+                                                                                    : rootSummary.read === 'ldd_all'
+                                                                                        ? 'All LDD'
+                                                                                        : rootSummary.read === 'division'
+                                                                                            ? 'Division'
+                                                                                            : rootSummary.read === 'department'
+                                                                                                ? 'Department'
+                                                                                                : rootSummary.read === 'location'
+                                                                                                    ? 'Location'
+                                                                                                    : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["W:", ' ', rootSummary.write === 'none'
                                                                             ? 'None'
                                                                             : rootSummary.write === 'all'
                                                                                 ? 'All'
-                                                                                : rootSummary.write === 'division'
-                                                                                    ? 'Division'
-                                                                                    : rootSummary.write === 'department'
-                                                                                        ? 'Department'
-                                                                                        : rootSummary.write === 'location'
-                                                                                            ? 'Location'
-                                                                                            : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D:", ' ', rootSummary.delete === 'none'
+                                                                                : rootSummary.write === 'ldd_any'
+                                                                                    ? 'Any LDD'
+                                                                                    : rootSummary.write === 'ldd_all'
+                                                                                        ? 'All LDD'
+                                                                                        : rootSummary.write === 'division'
+                                                                                            ? 'Division'
+                                                                                            : rootSummary.write === 'department'
+                                                                                                ? 'Department'
+                                                                                                : rootSummary.write === 'location'
+                                                                                                    ? 'Location'
+                                                                                                    : 'Own'] }), _jsxs("span", { className: "px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800", children: ["D:", ' ', rootSummary.delete === 'none'
                                                                             ? 'None'
                                                                             : rootSummary.delete === 'all'
                                                                                 ? 'All'
-                                                                                : rootSummary.delete === 'division'
-                                                                                    ? 'Division'
-                                                                                    : rootSummary.delete === 'department'
-                                                                                        ? 'Department'
-                                                                                        : rootSummary.delete === 'location'
-                                                                                            ? 'Location'
-                                                                                            : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
+                                                                                : rootSummary.delete === 'ldd_any'
+                                                                                    ? 'Any LDD'
+                                                                                    : rootSummary.delete === 'ldd_all'
+                                                                                        ? 'All LDD'
+                                                                                        : rootSummary.delete === 'division'
+                                                                                            ? 'Division'
+                                                                                            : rootSummary.delete === 'department'
+                                                                                                ? 'Department'
+                                                                                                : rootSummary.delete === 'location'
+                                                                                                    ? 'Location'
+                                                                                                    : 'Own'] })] })), pack.actionCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(KeyRound, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: accessSummary.effective > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-500', children: [accessSummary.effective, "/", accessSummary.total] }), accessSummary.overrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", accessSummary.overrides, " override", accessSummary.overrides === 1 ? '' : 's', ")"] })) : null] })), pack.metricCount > 0 && (_jsxs("div", { className: "flex items-center gap-1", children: [_jsx(BarChart3, { size: 14, className: "text-gray-400" }), _jsxs("span", { className: pack.grantedMetrics > 0 ? 'text-amber-600 font-medium' : 'text-gray-500', children: [pack.grantedMetrics, "/", pack.metricCount] }), pack.metricOverrides > 0 ? (_jsxs("span", { className: "text-gray-400", children: ["(", pack.metricOverrides, " override", pack.metricOverrides === 1 ? '' : 's', ")"] })) : null] }))] })] }), isExpanded && (_jsxs("div", { className: "border-t divide-y", children: [pack.actions.length > 0 && (_jsx("div", { className: "p-4", children: (() => {
                                                         const packName = String(pack.name || '').trim().toLowerCase();
                                                         const derivedPageActionKeys = new Set();
                                                         for (const r of routes) {
@@ -1057,7 +1069,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                         }
                                                         const groups = Array.from(grouped.entries()).map(([groupKey, g]) => {
                                                             // Fixed precedence (most restrictive -> least restrictive)
-                                                            const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'];
+                                                            const precedenceValues = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
                                                             // Optional: restrict options based on action metadata (scope_modes on any option wins).
                                                             const declaredModes = (() => {
                                                                 const anyOpt = Array.from(g.values.values()).find((x) => Array.isArray(x.scope_modes));
@@ -1065,7 +1077,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 if (!Array.isArray(ms) || ms.length === 0)
                                                                     return null;
                                                                 const norm = ms.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
-                                                                const allowed = norm.filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(x));
+                                                                const allowed = norm.filter((x) => ['none', 'own', 'location', 'department', 'division', 'ldd_any', 'ldd_all', 'all'].includes(x));
                                                                 return allowed.length ? allowed : null;
                                                             })();
                                                             const valuesToUse = declaredModes ? declaredModes : precedenceValues;
@@ -1113,6 +1125,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 return 'Department';
                                                             if (v === 'division')
                                                                 return 'Division';
+                                                            if (v === 'ldd_any')
+                                                                return 'Any LDD';
+                                                            if (v === 'ldd_all')
+                                                                return 'All LDD';
                                                             if (v === 'all')
                                                                 return 'All';
                                                             return v;
@@ -1130,6 +1146,10 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                                 return 'Dept';
                                                             if (v === 'division')
                                                                 return 'Div';
+                                                            if (v === 'ldd_any')
+                                                                return 'Any LDD';
+                                                            if (v === 'ldd_all')
+                                                                return 'All LDD';
                                                             if (v === 'all')
                                                                 return 'All';
                                                             return String(v);
@@ -1270,7 +1290,7 @@ export function SecurityGroupDetail({ id, onNavigate }) {
                                                             const explicitValue = explicitValueForGroup(group);
                                                             const allowedModes = group.options
                                                                 .map((o) => o.value)
-                                                                .filter((x) => ['none', 'own', 'location', 'department', 'division', 'all'].includes(String(x)));
+                                                                .filter((x) => ['none', 'own', 'location', 'department', 'division', 'ldd_any', 'ldd_all', 'all'].includes(String(x)));
                                                             const isOnOffOnly = allowedModes.includes('none') &&
                                                                 allowedModes.includes('all') &&
                                                                 !allowedModes.includes('own') &&

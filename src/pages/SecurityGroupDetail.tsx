@@ -79,8 +79,10 @@ type ActionCatalogItem = {
 
 // Scope modes used by the Security Groups UI for LDD-enabled pages.
 // - own is the default for user templates
+// - ldd_any: match any LDD dimension
+// - ldd_all: match all set LDD dimensions (AND within a scope row)
 // - all means full access (no L/D/D scoping)
-type ScopeModeValue = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
+type ScopeModeValue = 'none' | 'own' | 'location' | 'department' | 'division' | 'ldd_any' | 'ldd_all' | 'all';
 
 type GeneratedRoute = {
   path: string;
@@ -136,7 +138,7 @@ function parseExclusiveActionModeGroup(
 } | null {
   const m = String(actionKey || '').trim().match(
   // Legacy back-compat (deprecated): older packs used `.scope.any` instead of `.scope.all`.
-    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|all|any)$/
+    /^([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)\.(read|write|delete)\.scope\.(none|own|location|department|division|ldd_any|ldd_all|all|any)$/
   );
   if (!m) return null;
   const basePrefix = m[1];
@@ -196,7 +198,7 @@ function titleFromGroupKey(groupKey: string): string {
 }
 
 function scopeValueForKey(key: string): ScopeModeValue | null {
-  const m = String(key || '').match(/\.scope\.(none|own|location|department|division|all|any)$/);
+  const m = String(key || '').match(/\.scope\.(none|own|location|department|division|ldd_any|ldd_all|all|any)$/);
   if (!m) return null;
   return (m[1] === 'any' ? 'all' : m[1]) as ScopeModeValue;
 }
@@ -367,7 +369,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   const packRootScopeSummaryByPack = useMemo(() => {
     type ScopeVerb = 'read' | 'write' | 'delete';
-    const precedence: ScopeModeValue[] = ['none', 'own', 'location', 'department', 'division', 'all'];
+    const precedence: ScopeModeValue[] = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
 
     // index: pack -> verb -> present scope modes
     const present = new Map<string, Record<ScopeVerb, Set<ScopeModeValue>>>();
@@ -632,7 +634,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       grouped.get(parsed.groupKey)!.values.set(parsed.value, a);
     }
 
-    const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'] as const;
+    const precedenceValues = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'] as const;
 
     function getDeclaredModes(rows: ActionRow[]): ScopeModeValue[] | null {
       const out = new Set<ScopeModeValue>();
@@ -1374,13 +1376,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             ? 'None'
                             : rootSummary.read === 'all'
                               ? 'All'
-                              : rootSummary.read === 'division'
-                                ? 'Division'
-                                : rootSummary.read === 'department'
-                                  ? 'Department'
-                                  : rootSummary.read === 'location'
-                                    ? 'Location'
-                                    : 'Own'}
+                              : rootSummary.read === 'ldd_any'
+                                ? 'Any LDD'
+                                : rootSummary.read === 'ldd_all'
+                                  ? 'All LDD'
+                                  : rootSummary.read === 'division'
+                                    ? 'Division'
+                                    : rootSummary.read === 'department'
+                                      ? 'Department'
+                                      : rootSummary.read === 'location'
+                                        ? 'Location'
+                                        : 'Own'}
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
                           W:{' '}
@@ -1388,13 +1394,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             ? 'None'
                             : rootSummary.write === 'all'
                               ? 'All'
-                              : rootSummary.write === 'division'
-                                ? 'Division'
-                                : rootSummary.write === 'department'
-                                  ? 'Department'
-                                  : rootSummary.write === 'location'
-                                    ? 'Location'
-                                    : 'Own'}
+                              : rootSummary.write === 'ldd_any'
+                                ? 'Any LDD'
+                                : rootSummary.write === 'ldd_all'
+                                  ? 'All LDD'
+                                  : rootSummary.write === 'division'
+                                    ? 'Division'
+                                    : rootSummary.write === 'department'
+                                      ? 'Department'
+                                      : rootSummary.write === 'location'
+                                        ? 'Location'
+                                        : 'Own'}
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">
                           D:{' '}
@@ -1402,13 +1412,17 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             ? 'None'
                             : rootSummary.delete === 'all'
                               ? 'All'
-                              : rootSummary.delete === 'division'
-                                ? 'Division'
-                                : rootSummary.delete === 'department'
-                                  ? 'Department'
-                                  : rootSummary.delete === 'location'
-                                    ? 'Location'
-                                    : 'Own'}
+                              : rootSummary.delete === 'ldd_any'
+                                ? 'Any LDD'
+                                : rootSummary.delete === 'ldd_all'
+                                  ? 'All LDD'
+                                  : rootSummary.delete === 'division'
+                                    ? 'Division'
+                                    : rootSummary.delete === 'department'
+                                      ? 'Department'
+                                      : rootSummary.delete === 'location'
+                                        ? 'Location'
+                                        : 'Own'}
                         </span>
                       </div>
                     )}
@@ -1483,7 +1497,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
                           const groups: ExclusiveActionModeGroup[] = Array.from(grouped.entries()).map(([groupKey, g]) => {
                             // Fixed precedence (most restrictive -> least restrictive)
-                            const precedenceValues = ['none', 'own', 'location', 'department', 'division', 'all'] as const;
+                            const precedenceValues = ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'] as const;
                             // Optional: restrict options based on action metadata (scope_modes on any option wins).
                             const declaredModes = (() => {
                               const anyOpt = Array.from(g.values.values()).find((x: any) => Array.isArray((x as any).scope_modes));
@@ -1491,7 +1505,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                               if (!Array.isArray(ms) || ms.length === 0) return null;
                               const norm = ms.map((x: any) => String(x || '').trim().toLowerCase()).filter(Boolean);
                               const allowed = norm.filter((x: string) =>
-                                ['none', 'own', 'location', 'department', 'division', 'all'].includes(x)
+                                ['none', 'own', 'location', 'department', 'division', 'ldd_any', 'ldd_all', 'all'].includes(x)
                               );
                               return allowed.length ? (allowed as ScopeModeValue[]) : null;
                             })();
@@ -1538,6 +1552,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             if (v === 'location') return 'Location';
                             if (v === 'department') return 'Department';
                             if (v === 'division') return 'Division';
+                            if (v === 'ldd_any') return 'Any LDD';
+                            if (v === 'ldd_all') return 'All LDD';
                             if (v === 'all') return 'All';
                             return v;
                           }
@@ -1549,6 +1565,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             if (v === 'location') return 'Loc';
                             if (v === 'department') return 'Dept';
                             if (v === 'division') return 'Div';
+                            if (v === 'ldd_any') return 'Any LDD';
+                            if (v === 'ldd_all') return 'All LDD';
                             if (v === 'all') return 'All';
                             return String(v);
                           }
@@ -1713,7 +1731,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                             const allowedModes = group.options
                               .map((o) => o.value as ScopeModeValue)
                               .filter((x) =>
-                                ['none', 'own', 'location', 'department', 'division', 'all'].includes(String(x))
+                                ['none', 'own', 'location', 'department', 'division', 'ldd_any', 'ldd_all', 'all'].includes(String(x))
                               );
 
                             const isOnOffOnly =

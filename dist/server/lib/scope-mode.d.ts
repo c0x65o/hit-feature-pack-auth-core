@@ -1,4 +1,4 @@
-export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
+export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'ldd_any' | 'ldd_all' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
 export type ResolveScopeModeArgs = {

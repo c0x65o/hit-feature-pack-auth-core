@@ -2,8 +2,10 @@ import { checkActionPermission, type ActionCheckResult } from './action-check';
 
 // Scope modes for LDD-enabled permission trees.
 // - own is the default for user templates
+// - ldd_any: match any LDD dimension (division/department/location)
+// - ldd_all: match all set LDD dimensions (AND within a scope row)
 // - all means full access (no L/D/D scoping)
-export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'all';
+export type ScopeMode = 'none' | 'own' | 'location' | 'department' | 'division' | 'ldd_any' | 'ldd_all' | 'all';
 export type ScopeVerb = 'read' | 'write' | 'delete';
 export type ScopeEntity = 'locations' | 'divisions' | 'departments' | 'assignments';
 
@@ -65,7 +67,7 @@ export async function resolveScopeMode(
   // Most restrictive wins (first match returned).
   const modes: ScopeMode[] = args.supportedModes?.length
     ? args.supportedModes
-    : ['none', 'own', 'location', 'department', 'division', 'all'];
+    : ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
 
   const check = async (key: string): Promise<ActionCheckResult> =>
     checkActionPermission(request, key, { logPrefix });

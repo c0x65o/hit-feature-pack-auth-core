@@ -357,7 +357,7 @@ export interface PermissionActionDefinition {
     label: string;
     description: string | null;
     default_enabled: boolean;
-    scope_modes?: Array<'none' | 'own' | 'location' | 'department' | 'division' | 'all' | 'any'> | null;
+    scope_modes?: Array<'none' | 'own' | 'location' | 'department' | 'division' | 'ldd_any' | 'ldd_all' | 'all' | 'any'> | null;
 }
 export interface RoleActionPermission {
     id: string;

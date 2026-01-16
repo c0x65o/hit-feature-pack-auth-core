@@ -23,7 +23,7 @@ export async function resolveScopeMode(request, args) {
     // Most restrictive wins (first match returned).
     const modes = args.supportedModes?.length
         ? args.supportedModes
-        : ['none', 'own', 'location', 'department', 'division', 'all'];
+        : ['none', 'own', 'ldd_all', 'location', 'department', 'division', 'ldd_any', 'all'];
     const check = async (key) => checkActionPermission(request, key, { logPrefix });
     const checkPrefix = async (prefix) => {
         for (const m of modes) {
