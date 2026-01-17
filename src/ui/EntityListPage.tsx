@@ -173,13 +173,23 @@ export function EntityListPage({
     return vis;
   }, [listSpec.initialColumnVisibility, (listSpec as any).defaultVisibleOnly, columns]);
 
-  const navigate = (path: string) => {
-    if (onNavigate) onNavigate(path);
-    else if (typeof window !== 'undefined') window.location.href = path;
+  // When using router.push() (via onNavigate), do NOT pre-encode the URL because
+  // Next.js handles encoding for dynamic route segments. Pre-encoding causes double-encoding
+  // (e.g., @ -> %40 -> %2540). Only encode when using window.location.href directly.
+  const navigate = (path: string, rawId?: string) => {
+    if (onNavigate) {
+      // For router.push(), use path with raw (unencoded) id
+      const finalPath = rawId ? path.replace(encodeURIComponent(rawId), rawId) : path;
+      onNavigate(finalPath);
+    } else if (typeof window !== 'undefined') {
+      // For window.location.href, use the encoded path
+      window.location.href = path;
+    }
   };
 
   const newHref = String(routes.new || `/${entityKey}/new`);
   const detailHref = (id: string) => String(routes.detail || `/${entityKey}/{id}`).replace('{id}', encodeURIComponent(id));
+  const detailHrefRaw = (id: string) => String(routes.detail || `/${entityKey}/{id}`).replace('{id}', id);
 
   const handleDelete = async () => {
     if (!deleteConfirm || !deleteItem) return;
@@ -217,7 +227,13 @@ export function EntityListPage({
           loading={loading}
           emptyMessage={emptyMessage || 'No items yet.'}
           onRowClick={(row: Record<string, unknown>) => {
-            navigate(detailHref(String((row as any).id)));
+            const rid = String((row as any).id);
+            if (onNavigate) {
+              // Use raw (unencoded) path for router.push() to avoid double-encoding
+              onNavigate(detailHrefRaw(rid));
+            } else {
+              navigate(detailHref(rid));
+            }
           }}
           onRefresh={refetch}
           refreshing={loading}

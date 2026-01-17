@@ -102,14 +102,23 @@ export function EntityListPage({ entityKey, onNavigate, useListData, customRende
         }
         return vis;
     }, [listSpec.initialColumnVisibility, listSpec.defaultVisibleOnly, columns]);
-    const navigate = (path) => {
-        if (onNavigate)
-            onNavigate(path);
-        else if (typeof window !== 'undefined')
+    // When using router.push() (via onNavigate), do NOT pre-encode the URL because
+    // Next.js handles encoding for dynamic route segments. Pre-encoding causes double-encoding
+    // (e.g., @ -> %40 -> %2540). Only encode when using window.location.href directly.
+    const navigate = (path, rawId) => {
+        if (onNavigate) {
+            // For router.push(), use path with raw (unencoded) id
+            const finalPath = rawId ? path.replace(encodeURIComponent(rawId), rawId) : path;
+            onNavigate(finalPath);
+        }
+        else if (typeof window !== 'undefined') {
+            // For window.location.href, use the encoded path
             window.location.href = path;
+        }
     };
     const newHref = String(routes.new || `/${entityKey}/new`);
     const detailHref = (id) => String(routes.detail || `/${entityKey}/{id}`).replace('{id}', encodeURIComponent(id));
+    const detailHrefRaw = (id) => String(routes.detail || `/${entityKey}/{id}`).replace('{id}', id);
     const handleDelete = async () => {
         if (!deleteConfirm || !deleteItem)
             return;
@@ -131,7 +140,14 @@ export function EntityListPage({ entityKey, onNavigate, useListData, customRende
         }
     };
     return (_jsxs(Page, { title: pageTitle, description: pageDescription, actions: _jsxs(Button, { variant: "primary", onClick: () => navigate(newHref), children: [_jsx(Plus, { size: 16, className: "mr-2" }), createLabel] }), children: [_jsx(Card, { children: _jsx(DataTable, { columns: columns, data: items, loading: loading, emptyMessage: emptyMessage || 'No items yet.', onRowClick: (row) => {
-                        navigate(detailHref(String(row.id)));
+                        const rid = String(row.id);
+                        if (onNavigate) {
+                            // Use raw (unencoded) path for router.push() to avoid double-encoding
+                            onNavigate(detailHrefRaw(rid));
+                        }
+                        else {
+                            navigate(detailHref(rid));
+                        }
                     }, onRefresh: refetch, refreshing: loading, total: pagination?.total, ...serverTable.dataTable, searchDebounceMs: 400, tableId: tableId, uiStateKey: uiStateKey, enableViews: true, showColumnVisibility: true, initialColumnVisibility: effectiveInitialColumnVisibility, initialSorting: listSpec.initialSorting }) }), deleteConfirm && deleteItem && (_jsx(Modal, { open: true, onClose: () => setDeleteConfirm(null), title: deleteConfirmTitle, children: _jsxs("div", { style: { padding: '16px' }, children: [_jsx("p", { style: { marginBottom: '16px' }, children: deleteConfirmBodyTpl.replace('{name}', deleteConfirm.name) }), _jsxs("div", { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' }, children: [_jsx(Button, { variant: "secondary", onClick: () => setDeleteConfirm(null), disabled: isDeleting, children: cancelLabel }), _jsx(Button, { variant: "danger", onClick: handleDelete, disabled: isDeleting, children: isDeleting ? 'Deleting...' : deleteLabel })] })] }) })), _jsx(AlertDialog, { ...alertDialog.props })] }));
 }
 //# sourceMappingURL=EntityListPage.js.map

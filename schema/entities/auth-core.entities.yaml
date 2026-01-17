@@ -26,6 +26,18 @@ entities:
         deleteLabel: Delete
         deleteConfirmTitle: Delete User
         deleteConfirmBody: Are you sure you want to delete "{name}"? This action cannot be undone.
+      headerActions:
+        - kind: action
+          actionKey: auth.verifyEmail
+          label: Verify Email
+          icon: check-circle
+          when:
+            field: email_verified
+            equals: false
+          confirm:
+            title: Verify Email
+            body: Are you sure you want to manually verify the email for "{email}"?
+            variant: warning
     api:
       resource: users
     security:

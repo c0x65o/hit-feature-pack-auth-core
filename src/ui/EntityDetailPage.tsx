@@ -57,6 +57,9 @@ export function EntityDetailPage({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // When using router.push() (via onNavigate), do NOT pre-encode the URL because
+  // Next.js handles encoding for dynamic route segments. Pre-encoding causes double-encoding
+  // (e.g., @ -> %40 -> %2540). Only encode when using window.location.href directly.
   const navigate = (path: string) => {
     if (onNavigate) onNavigate(path);
     else if (typeof window !== 'undefined') window.location.href = path;
@@ -68,7 +71,12 @@ export function EntityDetailPage({
   const headerActionsSpec: any[] = Array.isArray(meta?.headerActions) ? meta.headerActions : [];
 
   const listHref = String(routes.list || '/');
-  const editHref = (rid: string) => String(routes.edit || '/{id}/edit').replace('{id}', encodeURIComponent(rid));
+  // Use raw (unencoded) id when onNavigate is provided (router.push), encoded otherwise
+  const editHref = (rid: string) => {
+    const tpl = String(routes.edit || '/{id}/edit');
+    // When using router.push via onNavigate, don't encode to avoid double-encoding
+    return tpl.replace('{id}', onNavigate ? rid : encodeURIComponent(rid));
+  };
 
   const breadcrumbsBase: BreadcrumbItem[] = Array.isArray(meta?.breadcrumbs)
     ? meta.breadcrumbs
