@@ -507,11 +507,17 @@ entities:
       defaultVisibleOnly: true
       initialColumnVisibility:
         userKey: true
+        locationName: true
+        divisionName: true
+        departmentName: true
         createdAt: false
         actions: true
       columns:
         - key: userKey
           linkable: true
+        - locationName
+        - divisionName
+        - departmentName
         - createdAt
         - key: actions
           label: ""
