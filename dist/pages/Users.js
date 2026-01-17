@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Trash2, UserPlus, Lock } from 'lucide-react';
 import { useServerDataTableState, useUi } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
-import { useUsers, useUserMutations, useAuthAdminConfig, useProfileFields } from '../hooks/useAuthAdmin';
+import { useUsers, useUserMutations, useAuthAdminConfig } from '../hooks/useAuthAdmin';
 export function Users({ onNavigate }) {
     const { Page, Card, Button, Badge, DataTable, Modal, Input, Alert, Spinner } = useUi();
     const serverTable = useServerDataTableState({
@@ -28,7 +28,6 @@ export function Users({ onNavigate }) {
     });
     const { createUser, deleteUser, loading: mutating } = useUserMutations();
     const { config: adminConfig } = useAuthAdminConfig();
-    const { data: profileFieldMetadata } = useProfileFields();
     const navigate = (path) => {
         if (onNavigate) {
             onNavigate(path);
@@ -74,21 +73,6 @@ export function Users({ onNavigate }) {
                             sortable: true,
                             render: (_, row) => (_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "font-medium", children: String(row.email) }), row.locked ? _jsx(Lock, { size: 14, className: "text-red-500" }) : null] })),
                         },
-                        // Add profile fields columns (first 2 fields)
-                        ...(profileFieldMetadata && profileFieldMetadata.length > 0
-                            ? profileFieldMetadata
-                                .filter((field) => field.field_key !== 'email') // Exclude email as it's already shown
-                                .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                                .slice(0, 2) // Show first 2 additional fields
-                                .map((field) => ({
-                                key: `profile_fields.${field.field_key}`,
-                                label: field.field_label,
-                                render: (_, row) => {
-                                    const value = row.profile_fields?.[field.field_key];
-                                    return (_jsx("span", { className: "text-gray-900 dark:text-gray-100", children: value !== undefined && value !== null ? String(value) : '—' }));
-                                },
-                            }))
-                            : []),
                         {
                             key: 'email_verified',
                             label: 'Verified',
@@ -158,7 +142,6 @@ export function Users({ onNavigate }) {
                         created_at: user.created_at,
                         last_login: user.last_login,
                         locked: user.locked,
-                        profile_fields: user.profile_fields || {}, // Include profile_fields for table rendering
                     })), onRowClick: (row) => navigate(`/admin/users/${encodeURIComponent(row.email)}`), emptyMessage: "No users found", loading: loading, searchable: true, exportable: true, showColumnVisibility: true, total: data?.total, ...serverTable.dataTable, searchDebounceMs: 400, onRefresh: refresh, refreshing: loading, tableId: "admin.users" }) }), _jsx(Modal, { open: createModalOpen, onClose: () => setCreateModalOpen(false), title: "Create New User", description: "Add a new user to the system", children: _jsxs("div", { className: "space-y-4", children: [_jsx(Input, { label: "Email", type: "email", value: newEmail, onChange: setNewEmail, placeholder: "user@example.com", required: true }), _jsx(Input, { label: "Initial Password", type: "password", value: newPassword, onChange: setNewPassword, placeholder: "Minimum 8 characters", required: true }), _jsx("p", { className: "text-xs text-gray-400", children: "User can change this after first login" }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "ghost", onClick: () => setCreateModalOpen(false), children: "Cancel" }), _jsx(Button, { variant: "primary", onClick: handleCreateUser, loading: mutating, disabled: !newEmail || !newPassword, children: "Create User" })] })] }) }), _jsx(Modal, { open: deleteModalOpen, onClose: () => setDeleteModalOpen(false), title: "Delete User", description: "This action cannot be undone", children: _jsxs("div", { className: "space-y-4", children: [_jsxs("p", { className: "text-gray-300", children: ["Are you sure you want to delete", ' ', _jsx("strong", { className: "text-gray-900 dark:text-gray-100", children: selectedUser?.email }), "?"] }), _jsxs("div", { className: "flex justify-end gap-3 pt-4", children: [_jsx(Button, { variant: "ghost", onClick: () => setDeleteModalOpen(false), children: "Cancel" }), _jsx(Button, { variant: "danger", onClick: handleDeleteUser, loading: mutating, children: "Delete User" })] })] }) })] }));
 }
 export default Users;

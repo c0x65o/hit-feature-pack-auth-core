@@ -16,10 +16,7 @@ import {
   Edit2,
   Save,
   X,
-  User,
   UserCheck,
-  Upload,
-  Camera,
   Link2,
   Users,
   ChevronDown,
@@ -38,12 +35,10 @@ import {
   useUserMutations,
   useSessionMutations,
   useAuthAdminConfig,
-  useProfileFields,
   useUserEffectivePermissions,
   usePermissionActions,
   useMetricsCatalog,
 } from '../hooks/useAuthAdmin';
-import { ProfilePictureCropModal } from '../components/ProfilePictureCropModal';
 
 interface UserDetailProps {
   email: string;
@@ -75,7 +70,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [newRole, setNewRole] = useState<string>('');
   const [availableRoles, setAvailableRoles] = useState<string[]>(['admin', 'user']);
-  const [profileFields, setProfileFields] = useState<Record<string, unknown>>({});
   const [permissionsFilter, setPermissionsFilter] = useState<string>('');
   const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
   const [explainOpen, setExplainOpen] = useState(false);
@@ -87,10 +81,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetPasswordSuccess, setResetPasswordSuccess] = useState<string | null>(null);
   const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
-  const [uploadingPicture, setUploadingPicture] = useState(false);
-  const [cropModalOpen, setCropModalOpen] = useState(false);
-  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, loading, error, refresh } = useUser(userEmail);
   const {
@@ -102,8 +92,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const { data: actionDefs, loading: actionsLoading } = usePermissionActions();
   const { data: metricsCatalog, loading: metricsLoading } = useMetricsCatalog();
   const { config: authConfig } = useAuthAdminConfig();
-  const { data: profileFieldMetadata, loading: fieldsLoading } = useProfileFields();
-  const profileFieldsList = profileFieldMetadata || [];
   
   // Fetch available roles from features endpoint
   React.useEffect(() => {
@@ -136,10 +124,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     resendVerification,
     verifyEmail,
     updateRoles,
-    updateUser,
-    uploadProfilePicture,
-    uploadProfilePictureBase64,
-    deleteProfilePicture,
     lockUser,
     unlockUser,
     startImpersonation,
@@ -480,26 +464,12 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
       if (newRole && newRole !== currentRole) {
         await updateRoles(userEmail, newRole);
       }
-      
-      // Update profile fields if changed
-      const hasChanges = JSON.stringify(profileFields) !== JSON.stringify(user?.profile_fields || {});
-      if (hasChanges) {
-        await updateUser(userEmail, { profile_fields: profileFields });
-      }
-      
       setIsEditing(false);
       refresh();
     } catch {
       // Error handled by hook
     }
   };
-
-  // Initialize profile fields when user data loads
-  React.useEffect(() => {
-    if (user?.profile_fields) {
-      setProfileFields(user.profile_fields);
-    }
-  }, [user?.profile_fields]);
 
   const handleRevokeSession = async (sessionId: string) => {
     const confirmed = await alertDialog.showConfirm('Revoke this session?', {
@@ -539,7 +509,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
   const startEditing = () => {
     const currentRole = user?.role || (user?.roles && user.roles.length > 0 ? user.roles[0] : 'user') || 'user';
     setNewRole(currentRole);
-    setProfileFields(user?.profile_fields || {});
     setIsEditing(true);
   };
 
@@ -547,109 +516,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
     setIsEditing(false);
     const currentRole = user?.role || (user?.roles && user.roles.length > 0 ? user.roles[0] : 'user') || 'user';
     setNewRole(currentRole);
-    setProfileFields(user?.profile_fields || {});
-  };
-
-  const handlePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      await alertDialog.showAlert('File must be an image', {
-        variant: 'error',
-        title: 'Invalid File',
-      });
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      await alertDialog.showAlert('File size must be less than 5MB', {
-        variant: 'error',
-        title: 'File Too Large',
-      });
-      return;
-    }
-
-    // Convert file to data URL and show crop modal
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImageToCrop(reader.result as string);
-      setCropModalOpen(true);
-    };
-    reader.onerror = () => {
-      alertDialog.showAlert('Failed to read image file', {
-        variant: 'error',
-        title: 'Error',
-      });
-    };
-    reader.readAsDataURL(file);
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleCropComplete = async (croppedImageBase64: string) => {
-    try {
-      setUploadingPicture(true);
-      // Upload the cropped image (base64 string)
-      await uploadProfilePictureBase64(userEmail, croppedImageBase64);
-      refresh();
-      
-      // Dispatch event to update top header avatar
-      if (typeof window !== 'undefined') {
-        const updateEvent = new CustomEvent('user-profile-updated', {
-          detail: { profile_picture_url: croppedImageBase64, email: userEmail },
-        });
-        window.dispatchEvent(updateEvent);
-      }
-    } catch (err) {
-      await alertDialog.showAlert(err instanceof Error ? err.message : 'Failed to upload profile picture', {
-        variant: 'error',
-        title: 'Upload Failed',
-      });
-    } finally {
-      setUploadingPicture(false);
-      setImageToCrop(null);
-    }
-  };
-
-  const handlePictureDelete = async () => {
-    const confirmed = await alertDialog.showConfirm('Are you sure you want to delete this profile picture?', {
-      title: 'Delete Profile Picture',
-      variant: 'error',
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setUploadingPicture(true);
-      await deleteProfilePicture(userEmail);
-      refresh();
-      
-      // Dispatch event to update top header avatar
-      if (typeof window !== 'undefined') {
-        const updateEvent = new CustomEvent('user-profile-updated', {
-          detail: { profile_picture_url: null, email: userEmail },
-        });
-        window.dispatchEvent(updateEvent);
-      }
-    } catch (err) {
-      await alertDialog.showAlert(err instanceof Error ? err.message : 'Failed to delete profile picture', {
-        variant: 'error',
-        title: 'Delete Failed',
-      });
-    } finally {
-      setUploadingPicture(false);
-    }
-  };
-
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
   };
 
   if (loading) {
@@ -770,62 +636,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
       <Card title="User Details">
         {isEditing ? (
           <div className="space-y-4">
-            {/* Profile Fields - Editable */}
-            {profileFieldsList.length > 0 && profileFieldsList
-              .sort((a, b) => a.display_order - b.display_order)
-              .map((fieldMeta) => {
-                const rawFieldValue = fieldMeta.field_key === 'email' 
-                  ? (user.email || '')
-                  : (profileFields[fieldMeta.field_key]);
-                const fieldValue = typeof rawFieldValue === 'string' || typeof rawFieldValue === 'number' 
-                  ? String(rawFieldValue) 
-                  : '';
-                const isEmail = fieldMeta.field_key === 'email';
-                
-                return (
-                  <div key={fieldMeta.field_key}>
-                    <label className="block text-sm font-medium text-gray-400 mb-1">
-                      {fieldMeta.field_label}
-                      {fieldMeta.required && <span className="text-red-500 ml-1">*</span>}
-                    </label>
-                    {fieldMeta.field_type === 'int' ? (
-                      <input
-                        type="number"
-                        value={fieldValue || ''}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                          setProfileFields({
-                            ...profileFields,
-                            [fieldMeta.field_key]: e.target.value ? parseInt(e.target.value, 10) : undefined,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={fieldMeta.default_value || ''}
-                        disabled={isEmail}
-                      />
-                    ) : (
-                      <input
-                        type={isEmail ? 'email' : 'text'}
-                        value={fieldValue || ''}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          if (!isEmail) {
-                            setProfileFields({
-                              ...profileFields,
-                              [fieldMeta.field_key]: e.target.value || undefined,
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        placeholder={fieldMeta.default_value || ''}
-                        disabled={isEmail}
-                      />
-                    )}
-                    {isEmail && (
-                      <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
-                    )}
-                  </div>
-                );
-              })}
-            
             {/* Role - Editable */}
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-1">Role</label>
@@ -842,86 +652,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Profile Picture */}
-            {authConfig?.profile_picture !== false && (
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">Profile Picture</span>
-                <div className="flex items-center gap-3">
-                  {user.profile_picture_url ? (
-                    <div className="relative group">
-                      <img
-                        src={user.profile_picture_url}
-                        alt="Profile"
-                        className="w-16 h-16 rounded-full object-cover border-2 border-gray-300 dark:border-gray-700"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-gray-200 dark:bg-gray-700 border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center">
-                      <User size={24} className="text-gray-400" />
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={triggerFileInput}
-                      disabled={uploadingPicture || mutating}
-                    >
-                      {user.profile_picture_url ? (
-                        <>
-                          <Camera size={14} className="mr-1" />
-                          Change
-                        </>
-                      ) : (
-                        <>
-                          <Upload size={14} className="mr-1" />
-                          Upload
-                        </>
-                      )}
-                    </Button>
-                    {user.profile_picture_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handlePictureDelete}
-                        disabled={uploadingPicture || mutating}
-                      >
-                        <Trash2 size={14} className="mr-1 text-red-500" />
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePictureUpload}
-                  className="hidden"
-                />
-              </div>
-            )}
-            
-            {/* Profile Fields - View Mode */}
-            {profileFieldsList.length > 0 && profileFieldsList
-              .sort((a, b) => a.display_order - b.display_order)
-              .map((fieldMeta) => {
-                const value = fieldMeta.field_key === 'email' 
-                  ? (user.email || '')
-                  : (user.profile_fields?.[fieldMeta.field_key]);
-                return (
-                  <div key={fieldMeta.field_key} className="flex justify-between">
-                    <span className="text-gray-400">{fieldMeta.field_label}</span>
-                    <span className="text-gray-900 dark:text-gray-100">
-                      {value !== undefined && value !== null ? String(value) : '—'}
-                    </span>
-                  </div>
-                );
-              })}
-            
             {/* OAuth Providers - View Mode */}
             {user.oauth_providers && user.oauth_providers.length > 0 && (
               <div className="flex justify-between items-center">
@@ -1569,19 +1299,6 @@ export function UserDetail({ email, onNavigate }: UserDetailProps) {
           </div>
         </div>
       </Modal>
-
-      {/* Profile Picture Crop Modal */}
-      {imageToCrop && (
-        <ProfilePictureCropModal
-          open={cropModalOpen}
-          onClose={() => {
-            setCropModalOpen(false);
-            setImageToCrop(null);
-          }}
-          imageSrc={imageToCrop}
-          onCropComplete={handleCropComplete}
-        />
-      )}
 
       {/* Alert Dialog */}
       <AlertDialog {...alertDialog.props} />

@@ -18,8 +18,6 @@ interface User {
   last_login?: string | null;
   oauth_providers?: string[] | null;  // OAuth providers linked to this account
   locked?: boolean;
-  profile_picture_url?: string | null;
-  profile_fields?: Record<string, unknown> | null;
 }
 
 interface Session {
@@ -722,7 +720,7 @@ export function useUserMutations() {
     }
   };
 
-  const updateUser = async (email: string, updates: { role?: string; profile_fields?: Record<string, unknown>; profile_picture_url?: string | null }) => {
+  const updateUser = async (email: string, updates: Record<string, unknown>) => {
     setLoading(true);
     setError(null);
     try {
@@ -738,77 +736,6 @@ export function useUserMutations() {
     }
   };
 
-  const uploadProfilePicture = async (email: string, file: File): Promise<string> => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        throw new Error('File must be an image');
-      }
-
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('File size must be less than 5MB');
-      }
-
-      // Convert file to base64 data URL
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      // Update user with the data URL
-      await fetchWithAuth(`/users/${encodeURIComponent(email)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ profile_picture_url: dataUrl }),
-      });
-
-      return dataUrl;
-    } catch (e) {
-      setError(e as Error);
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const uploadProfilePictureBase64 = async (email: string, base64DataUrl: string): Promise<string> => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Update user with the base64 data URL
-      await fetchWithAuth(`/users/${encodeURIComponent(email)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ profile_picture_url: base64DataUrl }),
-      });
-
-      return base64DataUrl;
-    } catch (e) {
-      setError(e as Error);
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteProfilePicture = async (email: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      await fetchWithAuth(`/users/${encodeURIComponent(email)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ profile_picture_url: null }),
-      });
-    } catch (e) {
-      setError(e as Error);
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const lockUser = async (email: string) => {
     setLoading(true);
@@ -867,9 +794,6 @@ export function useUserMutations() {
     verifyEmail,
     updateRoles,
     updateUser,
-    uploadProfilePicture,
-    uploadProfilePictureBase64,
-    deleteProfilePicture,
     lockUser,
     unlockUser,
     startImpersonation,
@@ -990,14 +914,6 @@ interface AuthAdminConfig {
   device_fingerprinting: boolean;
   new_device_alerts: boolean;
   lockout_notify_user: boolean;
-  profile_picture?: boolean;
-  additional_profile_fields?: Array<{
-    field_key: string;
-    field_label: string;
-    field_type: string;
-    required?: boolean;
-    display_order?: number;
-  }>;
 }
 
 /**
@@ -1050,8 +966,6 @@ function getWindowAdminConfig(): AuthAdminConfig {
     device_fingerprinting: auth.deviceFingerprinting ?? defaults.device_fingerprinting,
     new_device_alerts: auth.newDeviceAlerts ?? defaults.new_device_alerts,
     lockout_notify_user: auth.lockoutNotifyUser ?? defaults.lockout_notify_user,
-    profile_picture: auth.profilePicture,
-    additional_profile_fields: auth.additionalProfileFields,
   };
 }
 
@@ -1079,174 +993,6 @@ export function useAuthAdminConfig() {
 
   // No loading state needed - config is static and available immediately
   return { config, loading: false, error: null };
-}
-
-// =============================================================================
-// PROFILE FIELDS HOOKS
-// =============================================================================
-
-export interface ProfileFieldMetadata {
-  id: string;
-  field_key: string;
-  field_label: string;
-  field_type: 'string' | 'int';
-  required: boolean;
-  default_value: string | null;
-  validation_rules: Record<string, unknown> | null;
-  display_order: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProfileFieldMetadataCreate {
-  field_key: string;
-  field_label: string;
-  field_type: 'string' | 'int';
-  required?: boolean;
-  default_value?: string | null;
-  validation_rules?: Record<string, unknown> | null;
-  display_order?: number;
-}
-
-export interface ProfileFieldMetadataUpdate {
-  field_label?: string;
-  field_type?: 'string' | 'int';
-  required?: boolean;
-  default_value?: string | null;
-  validation_rules?: Record<string, unknown> | null;
-  display_order?: number;
-}
-
-/**
- * Hook to fetch profile fields metadata
- */
-export function useProfileFields() {
-  const [data, setData] = useState<ProfileFieldMetadata[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchFields = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${getAuthUrl()}/profile-fields`, {
-        headers: getAuthHeaders(),
-      });
-      if (!response.ok) {
-        // If feature is disabled (403), return empty array instead of error
-        if (response.status === 403) {
-          setData([]);
-          setError(null);
-          return;
-        }
-        const errData = await response.json().catch(() => ({ detail: 'Failed to fetch profile fields' }));
-        throw new AuthAdminError(response.status, errData.detail || 'Failed to fetch profile fields');
-      }
-      const fields = await response.json();
-      setData(fields);
-    } catch (e) {
-      // If feature is disabled (403), return empty array instead of error
-      if ((e as AuthAdminError).status === 403) {
-        setData([]);
-        setError(null);
-      } else {
-        const err = e instanceof AuthAdminError ? e : new AuthAdminError(500, 'Failed to fetch profile fields');
-        setError(err);
-        setData(null);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchFields();
-  }, [fetchFields]);
-
-  return { data, loading, error, refresh: fetchFields };
-}
-
-/**
- * Hook for profile fields mutations
- */
-export function useProfileFieldMutations() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const createField = useCallback(async (field: ProfileFieldMetadataCreate) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${getAuthUrl()}/profile-fields`, {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(field),
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ detail: 'Failed to create profile field' }));
-        throw new AuthAdminError(response.status, errData.detail || 'Failed to create profile field');
-      }
-      return await response.json();
-    } catch (e) {
-      const err = e instanceof AuthAdminError ? e : new AuthAdminError(500, 'Failed to create profile field');
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const updateField = useCallback(async (fieldKey: string, field: ProfileFieldMetadataUpdate) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${getAuthUrl()}/profile-fields/${encodeURIComponent(fieldKey)}`, {
-        method: 'PUT',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(field),
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ detail: 'Failed to update profile field' }));
-        throw new AuthAdminError(response.status, errData.detail || 'Failed to update profile field');
-      }
-      return await response.json();
-    } catch (e) {
-      const err = e instanceof AuthAdminError ? e : new AuthAdminError(500, 'Failed to update profile field');
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const deleteField = useCallback(async (fieldKey: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${getAuthUrl()}/profile-fields/${encodeURIComponent(fieldKey)}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ detail: 'Failed to delete profile field' }));
-        throw new AuthAdminError(response.status, errData.detail || 'Failed to delete profile field');
-      }
-    } catch (e) {
-      const err = e instanceof AuthAdminError ? e : new AuthAdminError(500, 'Failed to delete profile field');
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  return { createField, updateField, deleteField, loading, error };
 }
 
 // =============================================================================

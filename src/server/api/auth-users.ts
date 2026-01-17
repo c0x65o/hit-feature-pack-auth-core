@@ -38,17 +38,13 @@ async function authFetch(request: NextRequest, path: string, init: RequestInit) 
 
 function toUserRow(u: any) {
   const email = String(u?.email || '').trim();
-  const pf = (u?.profile_fields || {}) as { first_name?: string; last_name?: string };
-  const displayName = [pf.first_name, pf.last_name].filter(Boolean).join(' ').trim();
   const role = String(u?.role || (Array.isArray(u?.roles) ? u.roles?.[0] : '') || 'user');
   return {
     ...u,
     id: email,
     email,
-    name: displayName || email,
+    name: email,
     role,
-    first_name: pf.first_name ?? '',
-    last_name: pf.last_name ?? '',
     status: u?.locked ? 'Locked' : 'Active',
   };
 }
@@ -59,7 +55,7 @@ function toUserRow(u: any) {
  *
  * Supports:
  * - GET list: ?page&pageSize&search&sortBy&sortOrder
- * - POST create: { email, password, role, first_name, last_name }
+ * - POST create: { email, password, role }
  */
 export async function GET(request: NextRequest) {
   const gate = await requireAuthCoreReadScope(request);
@@ -138,9 +134,6 @@ export async function POST(request: NextRequest) {
     const password = String(body?.password || '').trim();
     const role = String(body?.role || 'user').trim() || 'user';
     const emailVerified = typeof body?.email_verified === 'boolean' ? Boolean(body.email_verified) : undefined;
-    const firstName = body?.first_name != null ? String(body.first_name).trim() : '';
-    const lastName = body?.last_name != null ? String(body.last_name).trim() : '';
-
     if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     if (!password) return NextResponse.json({ error: 'Password is required' }, { status: 400 });
 
@@ -157,19 +150,6 @@ export async function POST(request: NextRequest) {
         { error: err?.detail || err?.message || `Failed to create user (${createRes.status})` },
         { status: createRes.status }
       );
-    }
-
-    // Set profile fields (best-effort)
-    if (firstName || lastName) {
-      await authFetch(request, `/users/${encodeURIComponent(email)}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          profile_fields: {
-            ...(firstName ? { first_name: firstName } : {}),
-            ...(lastName ? { last_name: lastName } : {}),
-          },
-        }),
-      }).catch(() => null);
     }
 
     // Return the created user record (best-effort)

@@ -75,17 +75,13 @@ function buildOptions(args) {
     ];
 }
 function nameFromDirectoryUser(user) {
-    const display = String(user?.displayName || user?.name || '').trim();
+    const display = String(user?.displayName || '').trim();
     const employee = user?.employee || {};
     const preferred = String(employee?.preferredName || '').trim();
     const first = String(employee?.firstName || employee?.first_name || '').trim();
     const last = String(employee?.lastName || employee?.last_name || '').trim();
-    const pf = user?.profile_fields || {};
-    const pfFirst = String(pf?.first_name || '').trim();
-    const pfLast = String(pf?.last_name || '').trim();
     const employeeName = [first, last].filter(Boolean).join(' ').trim();
-    const profileName = [pfFirst, pfLast].filter(Boolean).join(' ').trim();
-    return preferred || display || employeeName || profileName;
+    return preferred || display || employeeName;
 }
 function toUserOption(user) {
     const email = String(user?.email || '').trim();
@@ -201,13 +197,11 @@ export function useEntityDataSource(entityKey) {
                 });
                 const items = (data?.items || []).map((u) => {
                     const email = String(u?.email || '').trim();
-                    const pf = (u?.profile_fields || {});
-                    const name = [pf?.first_name, pf?.last_name].filter(Boolean).join(' ').trim();
                     const role = String((u?.role || (Array.isArray(u?.roles) ? u.roles?.[0] : '') || 'user'));
                     return {
                         ...u,
                         id: email,
-                        name: name || email,
+                        name: email,
                         role,
                         status: u?.locked ? 'Locked' : 'Active',
                         impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
@@ -227,17 +221,13 @@ export function useEntityDataSource(entityKey) {
                 const email = normalizeEmailId(id);
                 const { user, loading } = useUser(email);
                 const role = String((user?.role || (Array.isArray(user?.roles) ? user.roles?.[0] : '') || 'user'));
-                const pf = (user?.profile_fields || {});
-                const name = [pf?.first_name, pf?.last_name].filter(Boolean).join(' ').trim();
                 const record = user
                     ? {
                         ...user,
                         id: email,
-                        name: name || email,
+                        name: email,
                         role,
                         status: user?.locked ? 'Locked' : 'Active',
-                        first_name: pf?.first_name ?? '',
-                        last_name: pf?.last_name ?? '',
                         impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
                     }
                     : null;
@@ -250,15 +240,12 @@ export function useEntityDataSource(entityKey) {
             useUpsert: ({ id }) => {
                 const email = id ? normalizeEmailId(id) : '';
                 const { user, loading } = useUser(email);
-                const pf = (user?.profile_fields || {});
                 const record = user
                     ? {
                         ...user,
                         id: email,
                         email,
                         role: String((user?.role || (Array.isArray(user?.roles) ? user.roles?.[0] : '') || 'user')),
-                        first_name: pf?.first_name ?? '',
-                        last_name: pf?.last_name ?? '',
                         password: '',
                         impersonationEnabled: Boolean(rolesSource.impersonationEnabled),
                     }
@@ -272,28 +259,14 @@ export function useEntityDataSource(entityKey) {
                     if (!password)
                         throw new Error('Password is required');
                     await mutations.createUser({ email: emailIn, password, roles: [role] });
-                    await mutations.updateUser(emailIn, {
-                        profile_fields: {
-                            first_name: payload?.first_name ? String(payload.first_name) : undefined,
-                            last_name: payload?.last_name ? String(payload.last_name) : undefined,
-                        },
-                    });
                     return { id: emailIn };
                 };
                 const update = async (rid, payload) => {
                     const emailId = normalizeEmailId(rid);
                     const role = String(payload?.role || '').trim();
-                    const firstName = payload?.first_name != null ? String(payload.first_name) : '';
-                    const lastName = payload?.last_name != null ? String(payload.last_name) : '';
                     if (role) {
                         await mutations.updateRoles(emailId, role);
                     }
-                    await mutations.updateUser(emailId, {
-                        profile_fields: {
-                            ...(firstName ? { first_name: firstName } : {}),
-                            ...(lastName ? { last_name: lastName } : {}),
-                        },
-                    });
                     return { id: emailId };
                 };
                 return { record, loading, create, update };

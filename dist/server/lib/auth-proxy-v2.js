@@ -515,10 +515,10 @@ async function ensureBootstrapAdmin(db, email, password) {
     await db.execute(sql `
     INSERT INTO hit_auth_v2_users (
       email, password_hash, email_verified, two_factor_enabled, locked, role, metadata,
-      profile_fields, created_at, updated_at
+      created_at, updated_at
     ) VALUES (
       ${normalizedEmail}, ${password_hash}, true, false, false, 'admin', '{}'::jsonb,
-      '{}'::jsonb, now(), now()
+      now(), now()
     )
     ON CONFLICT (email) DO NOTHING
   `);
@@ -580,16 +580,19 @@ function safeDecodePathSegment(seg) {
 }
 function normalizeUserRow(r) {
     const metadata = r?.metadata && typeof r.metadata === 'object' ? r.metadata : {};
-    const profile_fields = r?.profile_fields && typeof r.profile_fields === 'object' ? r.profile_fields : {};
+    const email = String(r?.email || '');
+    const locked = Boolean(r?.locked);
+    const role = String(r?.role || 'user');
     return {
-        email: String(r?.email || ''),
+        id: email,
+        email,
+        name: email,
+        role,
+        status: locked ? 'Locked' : 'Active',
         email_verified: Boolean(r?.email_verified),
         two_factor_enabled: Boolean(r?.two_factor_enabled),
-        locked: Boolean(r?.locked),
-        role: String(r?.role || 'user'),
+        locked,
         metadata,
-        profile_fields,
-        profile_picture_url: r?.profile_picture_url ?? null,
         created_at: r?.created_at ? new Date(r.created_at).toISOString() : null,
         updated_at: r?.updated_at ? new Date(r.updated_at).toISOString() : null,
         last_login: r?.last_login ? new Date(r.last_login).toISOString() : null,
@@ -924,7 +927,6 @@ export async function tryHandleAuthV2Proxy(opts) {
         locked,
         role,
         metadata,
-        profile_fields,
         created_at,
         updated_at
       ) VALUES (
@@ -934,7 +936,6 @@ export async function tryHandleAuthV2Proxy(opts) {
         false,
         false,
         'user',
-        '{}'::jsonb,
         '{}'::jsonb,
         now(),
         now()
@@ -1710,7 +1711,7 @@ export async function tryHandleAuthV2Proxy(opts) {
             return u;
         const db = getDb();
         const meRes = await db.execute(sql `
-      SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
+      SELECT email, email_verified, two_factor_enabled, locked, role, metadata, created_at, updated_at, last_login
       FROM hit_auth_v2_users
       WHERE email = ${u.email}
       LIMIT 1
@@ -1796,10 +1797,61 @@ export async function tryHandleAuthV2Proxy(opts) {
         const db = getDb();
         // GET /users (list)
         if (m === 'GET' && !p1) {
-            const usersListRes = await db.execute(sql `SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
+            const url = new URL(req.url);
+            const searchParams = url.searchParams;
+            const hasPagingParams = searchParams.has('page') ||
+                searchParams.has('pageSize') ||
+                searchParams.has('sortBy') ||
+                searchParams.has('sortOrder') ||
+                searchParams.has('search') ||
+                searchParams.has('filters') ||
+                searchParams.has('filterMode');
+            const usersListRes = await db.execute(sql `SELECT email, email_verified, two_factor_enabled, locked, role, metadata, created_at, updated_at, last_login
             FROM hit_auth_v2_users
             ORDER BY created_at DESC`);
-            return json((usersListRes?.rows || []).map(normalizeUserRow));
+            const rows = (usersListRes?.rows || []).map(normalizeUserRow);
+            if (!hasPagingParams)
+                return json(rows);
+            const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+            const pageSize = Math.min(200, Math.max(1, parseInt(searchParams.get('pageSize') || '25', 10) || 25));
+            const search = String(searchParams.get('search') || '').trim().toLowerCase();
+            const sortBy = String(searchParams.get('sortBy') || 'created_at').trim();
+            const sortOrder = String(searchParams.get('sortOrder') || 'desc').trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
+            let filtered = rows;
+            if (search) {
+                filtered = rows.filter((u) => {
+                    const email = String(u?.email || '').toLowerCase();
+                    const name = String(u?.name || '').toLowerCase();
+                    return email.includes(search) || name.includes(search);
+                });
+            }
+            const dir = sortOrder === 'asc' ? 1 : -1;
+            const sorted = [...filtered].sort((a, b) => {
+                if (sortBy === 'email')
+                    return String(a.email || '').localeCompare(String(b.email || '')) * dir;
+                if (sortBy === 'last_login') {
+                    const av = a.last_login ? new Date(a.last_login).getTime() : -Infinity;
+                    const bv = b.last_login ? new Date(b.last_login).getTime() : -Infinity;
+                    return (av - bv) * dir;
+                }
+                // created_at default
+                const av = a.created_at ? new Date(a.created_at).getTime() : -Infinity;
+                const bv = b.created_at ? new Date(b.created_at).getTime() : -Infinity;
+                return (av - bv) * dir;
+            });
+            const total = sorted.length;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const startIdx = (page - 1) * pageSize;
+            const items = sorted.slice(startIdx, startIdx + pageSize);
+            return json({
+                items,
+                pagination: {
+                    page,
+                    pageSize,
+                    total,
+                    totalPages,
+                },
+            });
         }
         // POST /users (create)
         if (m === 'POST' && !p1) {
@@ -1816,7 +1868,6 @@ export async function tryHandleAuthV2Proxy(opts) {
                 return err('Password is required', 400);
             const password_hash = await hashPassword(password);
             const metadata = body?.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-            const profile_fields = body?.profile_fields && typeof body.profile_fields === 'object' ? body.profile_fields : {};
             try {
                 const insertRes = await db.execute(sql `
           INSERT INTO hit_auth_v2_users (
@@ -1827,7 +1878,6 @@ export async function tryHandleAuthV2Proxy(opts) {
             locked,
             role,
             metadata,
-            profile_fields,
             created_at,
             updated_at
           ) VALUES (
@@ -1838,11 +1888,10 @@ export async function tryHandleAuthV2Proxy(opts) {
             false,
             ${role || 'user'},
             ${JSON.stringify(metadata)}::jsonb,
-            ${JSON.stringify(profile_fields)}::jsonb,
             now(),
             now()
           )
-          RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
+          RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, created_at, updated_at, last_login
         `);
                 const row = insertRes?.rows?.[0];
                 const admin = requireUser(req);
@@ -1881,7 +1930,7 @@ export async function tryHandleAuthV2Proxy(opts) {
         // GET /users/{email}
         if (m === 'GET') {
             const userGetRes = await db.execute(sql `
-        SELECT email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
+        SELECT email, email_verified, two_factor_enabled, locked, role, metadata, created_at, updated_at, last_login
         FROM hit_auth_v2_users
         WHERE email = ${email}
         LIMIT 1
@@ -1897,19 +1946,15 @@ export async function tryHandleAuthV2Proxy(opts) {
             const role = body?.role != null ? String(body.role).trim().toLowerCase() : undefined;
             const locked = typeof body?.locked === 'boolean' ? Boolean(body.locked) : undefined;
             const email_verified = typeof body?.email_verified === 'boolean' ? Boolean(body.email_verified) : undefined;
-            const profile_fields = body?.profile_fields && typeof body.profile_fields === 'object' ? body.profile_fields : undefined;
-            const profile_picture_url = body?.profile_picture_url != null ? String(body.profile_picture_url).trim() : undefined;
             const userUpdateRes = await db.execute(sql `
         UPDATE hit_auth_v2_users
         SET
           role = COALESCE(${role}, role),
           locked = COALESCE(${locked}, locked),
           email_verified = COALESCE(${email_verified}, email_verified),
-          profile_fields = COALESCE(${profile_fields ? JSON.stringify(profile_fields) : null}::jsonb, profile_fields),
-          profile_picture_url = COALESCE(${profile_picture_url}, profile_picture_url),
           updated_at = now()
         WHERE email = ${email}
-        RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, profile_fields, profile_picture_url, created_at, updated_at, last_login
+        RETURNING email, email_verified, two_factor_enabled, locked, role, metadata, created_at, updated_at, last_login
       `);
             const row = userUpdateRes?.rows?.[0];
             if (!row)
@@ -1920,8 +1965,6 @@ export async function tryHandleAuthV2Proxy(opts) {
                     role !== undefined ? { field: 'role', from: null, to: role } : null,
                     locked !== undefined ? { field: 'locked', from: null, to: locked } : null,
                     email_verified !== undefined ? { field: 'email_verified', from: null, to: email_verified } : null,
-                    profile_fields !== undefined ? { field: 'profile_fields', from: null, to: profile_fields } : null,
-                    profile_picture_url !== undefined ? { field: 'profile_picture_url', from: null, to: profile_picture_url } : null,
                 ].filter(Boolean);
                 await tryWriteAuthAuditEvent({
                     req,
@@ -2173,7 +2216,6 @@ export async function tryHandleAuthV2Proxy(opts) {
           locked,
           role,
           metadata,
-          profile_fields,
           created_at,
           updated_at
         ) VALUES (
@@ -2184,7 +2226,6 @@ export async function tryHandleAuthV2Proxy(opts) {
           false,
           ${role},
           ${JSON.stringify({ invited_by: invite.inviter_email })}::jsonb,
-          '{}'::jsonb,
           now(),
           now()
         )
@@ -2632,13 +2673,12 @@ export async function tryHandleAuthV2Proxy(opts) {
             return gate;
         const db = getDb();
         const directoryRes = await db.execute(sql `
-      SELECT email, profile_fields
+      SELECT email
       FROM hit_auth_v2_users
       ORDER BY email ASC
     `);
         const items = (directoryRes?.rows || []).map((r) => ({
             email: String(r?.email || ''),
-            profile_fields: r?.profile_fields && typeof r.profile_fields === 'object' ? r.profile_fields : {},
         }));
         return json(items);
     }

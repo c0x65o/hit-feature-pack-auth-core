@@ -7,7 +7,7 @@ export declare const runtime = "nodejs";
  *
  * Supports:
  * - GET list: ?page&pageSize&search&sortBy&sortOrder
- * - POST create: { email, password, role, first_name, last_name }
+ * - POST create: { email, password, role }
  */
 export declare function GET(request: NextRequest): Promise<NextResponse<unknown>>;
 export declare function POST(request: NextRequest): Promise<NextResponse<any>>;

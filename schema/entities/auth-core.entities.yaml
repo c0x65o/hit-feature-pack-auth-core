@@ -70,10 +70,6 @@ entities:
           title: Account
           layout: { columns: 2 }
           fields: [email, role, password]
-        - id: profile
-          title: Profile
-          layout: { columns: 2 }
-          fields: [first_name, last_name]
     fields:
       id: { type: text, label: ID }
       email: { type: email, label: Email, required: true }
@@ -81,7 +77,9 @@ entities:
       role:
         type: select
         label: Role
-        optionSource: auth.availableRoles
+        options:
+          - { value: admin, label: Admin }
+          - { value: user, label: User }
       status: { type: text, label: Status, virtual: true }
       email_verified: { type: boolean, label: Email Verified }
       two_factor_enabled: { type: boolean, label: Two-Factor Enabled }
@@ -91,8 +89,6 @@ entities:
         type: password
         label: Password
         placeholder: "Set an initial password"
-      first_name: { type: text, label: First Name }
-      last_name: { type: text, label: Last Name }
 
   auth.group:
     meta:

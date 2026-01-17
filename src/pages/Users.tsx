@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Trash2, UserPlus, Lock } from 'lucide-react';
 import { useServerDataTableState, useUi } from '@hit/ui-kit';
 import { formatDate } from '@hit/sdk';
-import { useUsers, useUserMutations, useAuthAdminConfig, useProfileFields, type User } from '../hooks/useAuthAdmin';
+import { useUsers, useUserMutations, useAuthAdminConfig, type User } from '../hooks/useAuthAdmin';
 
 interface UsersProps {
   onNavigate?: (path: string) => void;
@@ -38,7 +38,6 @@ export function Users({ onNavigate }: UsersProps) {
 
   const { createUser, deleteUser, loading: mutating } = useUserMutations();
   const { config: adminConfig } = useAuthAdminConfig();
-  const { data: profileFieldMetadata } = useProfileFields();
 
   const navigate = (path: string) => {
     if (onNavigate) {
@@ -111,25 +110,6 @@ export function Users({ onNavigate }: UsersProps) {
                     </div>
                   ),
                 },
-                // Add profile fields columns (first 2 fields)
-                ...(profileFieldMetadata && profileFieldMetadata.length > 0
-                  ? profileFieldMetadata
-                      .filter((field: any) => field.field_key !== 'email') // Exclude email as it's already shown
-                      .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
-                      .slice(0, 2) // Show first 2 additional fields
-                      .map((field: any) => ({
-                        key: `profile_fields.${field.field_key}`,
-                        label: field.field_label,
-                        render: (_: unknown, row: Record<string, unknown>) => {
-                          const value = (row.profile_fields as Record<string, unknown>)?.[field.field_key];
-                          return (
-                            <span className="text-gray-900 dark:text-gray-100">
-                              {value !== undefined && value !== null ? String(value) : '—'}
-                            </span>
-                          );
-                        },
-                      }))
-                  : []),
             {
               key: 'email_verified',
               label: 'Verified',
@@ -226,7 +206,6 @@ export function Users({ onNavigate }: UsersProps) {
               created_at: user.created_at,
               last_login: user.last_login,
               locked: user.locked,
-              profile_fields: user.profile_fields || {}, // Include profile_fields for table rendering
           }))}
           onRowClick={(row: Record<string, unknown>) => navigate(`/admin/users/${encodeURIComponent(row.email as string)}`)}
           emptyMessage="No users found"

@@ -13,12 +13,12 @@ function getAuthUrl() {
  * List users for pickers (manager, assignments, etc.)
  *
  * Wraps the auth module directory API and adds:
- * - search filtering (name/email)
+ * - search filtering (email)
  * - result limiting
  * - id lookup (for resolveValue in autocomplete)
  *
  * Query params:
- * - search: filter by name/email (optional)
+ * - search: filter by email (optional)
  * - pageSize: max items to return (default 25, max 100)
  * - id: email to resolve (optional)
  */
@@ -68,13 +68,10 @@ export async function GET(request) {
         }
         const toItem = (u) => {
             const email = String(u?.email || "").trim();
-            const pf = (u?.profile_fields || {});
-            const displayName = [pf.first_name, pf.last_name].filter(Boolean).join(" ").trim();
             return {
                 id: email,
                 email,
-                name: displayName || email,
-                profile_fields: u?.profile_fields,
+                name: email,
             };
         };
         // Resolve by id/email (for editing existing records)
@@ -87,14 +84,7 @@ export async function GET(request) {
         if (search) {
             filtered = users.filter((u) => {
                 const email = String(u?.email || "").toLowerCase();
-                const pf = (u?.profile_fields || {});
-                const firstName = String(pf.first_name || "").toLowerCase();
-                const lastName = String(pf.last_name || "").toLowerCase();
-                const fullName = `${firstName} ${lastName}`.trim();
-                return (email.includes(search) ||
-                    firstName.includes(search) ||
-                    lastName.includes(search) ||
-                    fullName.includes(search));
+                return email.includes(search);
             });
         }
         return NextResponse.json({ items: filtered.slice(0, pageSize).map(toItem) });

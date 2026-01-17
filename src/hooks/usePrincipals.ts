@@ -98,8 +98,8 @@ export function createFetchPrincipals(options: {
           authUsers.forEach((user: any) => {
             const employee = user.employee || null;
             const preferred = String(employee?.preferredName || employee?.preferred_name || '').trim();
-            const first = String(employee?.firstName || employee?.first_name || user.profile_fields?.first_name || '').trim();
-            const last = String(employee?.lastName || employee?.last_name || user.profile_fields?.last_name || '').trim();
+            const first = String(employee?.firstName || employee?.first_name || '').trim();
+            const last = String(employee?.lastName || employee?.last_name || '').trim();
             const employeeDisplayName = preferred || [first, last].filter(Boolean).join(' ').trim();
 
             const email = String(user.email || '').trim();
@@ -112,7 +112,7 @@ export function createFetchPrincipals(options: {
                 type: 'user',
                 id: email,
                 displayName,
-                metadata: { email, profile_fields: user.profile_fields, employee },
+                metadata: { email, employee },
               });
             }
           });
@@ -363,15 +363,13 @@ export function usePrincipals(options: UsePrincipalsOptions = {}): UsePrincipals
         }
         if (usersData?.items) {
           usersData.items.forEach((user) => {
-            const firstName = (user.profile_fields as { first_name?: string | null; last_name?: string | null } | null)?.first_name || null;
-            const lastName = (user.profile_fields as { first_name?: string | null; last_name?: string | null } | null)?.last_name || null;
-            const displayName = [firstName, lastName].filter(Boolean).join(' ') || user.email;
+            const displayName = String(user.email || '').trim() || user.email;
             
             allPrincipals.push({
               type: 'user',
               id: user.email,
               displayName,
-              metadata: { email: user.email, profile_fields: user.profile_fields },
+              metadata: { email: user.email },
             });
           });
         }

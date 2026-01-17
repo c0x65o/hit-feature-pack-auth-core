@@ -35,17 +35,13 @@ async function authFetch(request, path, init) {
 }
 function toUserRow(u) {
     const email = String(u?.email || '').trim();
-    const pf = (u?.profile_fields || {});
-    const displayName = [pf.first_name, pf.last_name].filter(Boolean).join(' ').trim();
     const role = String(u?.role || (Array.isArray(u?.roles) ? u.roles?.[0] : '') || 'user');
     return {
         ...u,
         id: email,
         email,
-        name: displayName || email,
+        name: email,
         role,
-        first_name: pf.first_name ?? '',
-        last_name: pf.last_name ?? '',
         status: u?.locked ? 'Locked' : 'Active',
     };
 }
@@ -55,7 +51,7 @@ function toUserRow(u) {
  *
  * Supports:
  * - GET list: ?page&pageSize&search&sortBy&sortOrder
- * - POST create: { email, password, role, first_name, last_name }
+ * - POST create: { email, password, role }
  */
 export async function GET(request) {
     const gate = await requireAuthCoreReadScope(request);
@@ -126,8 +122,6 @@ export async function POST(request) {
         const password = String(body?.password || '').trim();
         const role = String(body?.role || 'user').trim() || 'user';
         const emailVerified = typeof body?.email_verified === 'boolean' ? Boolean(body.email_verified) : undefined;
-        const firstName = body?.first_name != null ? String(body.first_name).trim() : '';
-        const lastName = body?.last_name != null ? String(body.last_name).trim() : '';
         if (!email)
             return NextResponse.json({ error: 'Email is required' }, { status: 400 });
         if (!password)
@@ -143,18 +137,6 @@ export async function POST(request) {
         if (!createRes.ok) {
             const err = await createRes.json().catch(() => ({}));
             return NextResponse.json({ error: err?.detail || err?.message || `Failed to create user (${createRes.status})` }, { status: createRes.status });
-        }
-        // Set profile fields (best-effort)
-        if (firstName || lastName) {
-            await authFetch(request, `/users/${encodeURIComponent(email)}`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    profile_fields: {
-                        ...(firstName ? { first_name: firstName } : {}),
-                        ...(lastName ? { last_name: lastName } : {}),
-                    },
-                }),
-            }).catch(() => null);
         }
         // Return the created user record (best-effort)
         const getRes = await authFetch(request, `/users/${encodeURIComponent(email)}`, { method: 'GET' });

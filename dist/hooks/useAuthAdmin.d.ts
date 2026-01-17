@@ -13,8 +13,6 @@ interface User {
     last_login?: string | null;
     oauth_providers?: string[] | null;
     locked?: boolean;
-    profile_picture_url?: string | null;
-    profile_fields?: Record<string, unknown> | null;
 }
 interface Session {
     id: string;
@@ -144,14 +142,7 @@ export declare function useUserMutations(): {
     resendVerification: (email: string) => Promise<void>;
     verifyEmail: (email: string) => Promise<void>;
     updateRoles: (email: string, role: string) => Promise<void>;
-    updateUser: (email: string, updates: {
-        role?: string;
-        profile_fields?: Record<string, unknown>;
-        profile_picture_url?: string | null;
-    }) => Promise<void>;
-    uploadProfilePicture: (email: string, file: File) => Promise<string>;
-    uploadProfilePictureBase64: (email: string, base64DataUrl: string) => Promise<string>;
-    deleteProfilePicture: (email: string) => Promise<void>;
+    updateUser: (email: string, updates: Record<string, unknown>) => Promise<void>;
     lockUser: (email: string) => Promise<void>;
     unlockUser: (email: string) => Promise<void>;
     startImpersonation: (userEmail: string) => Promise<{
@@ -199,14 +190,6 @@ interface AuthAdminConfig {
     device_fingerprinting: boolean;
     new_device_alerts: boolean;
     lockout_notify_user: boolean;
-    profile_picture?: boolean;
-    additional_profile_fields?: Array<{
-        field_key: string;
-        field_label: string;
-        field_type: string;
-        required?: boolean;
-        display_order?: number;
-    }>;
 }
 /**
  * Hook to get auth admin config.
@@ -223,54 +206,6 @@ export declare function useAuthAdminConfig(): {
     config: AuthAdminConfig;
     loading: boolean;
     error: null;
-};
-export interface ProfileFieldMetadata {
-    id: string;
-    field_key: string;
-    field_label: string;
-    field_type: 'string' | 'int';
-    required: boolean;
-    default_value: string | null;
-    validation_rules: Record<string, unknown> | null;
-    display_order: number;
-    created_at: string;
-    updated_at: string;
-}
-export interface ProfileFieldMetadataCreate {
-    field_key: string;
-    field_label: string;
-    field_type: 'string' | 'int';
-    required?: boolean;
-    default_value?: string | null;
-    validation_rules?: Record<string, unknown> | null;
-    display_order?: number;
-}
-export interface ProfileFieldMetadataUpdate {
-    field_label?: string;
-    field_type?: 'string' | 'int';
-    required?: boolean;
-    default_value?: string | null;
-    validation_rules?: Record<string, unknown> | null;
-    display_order?: number;
-}
-/**
- * Hook to fetch profile fields metadata
- */
-export declare function useProfileFields(): {
-    data: ProfileFieldMetadata[] | null;
-    loading: boolean;
-    error: Error | null;
-    refresh: () => Promise<void>;
-};
-/**
- * Hook for profile fields mutations
- */
-export declare function useProfileFieldMutations(): {
-    createField: (field: ProfileFieldMetadataCreate) => Promise<any>;
-    updateField: (fieldKey: string, field: ProfileFieldMetadataUpdate) => Promise<any>;
-    deleteField: (fieldKey: string) => Promise<void>;
-    loading: boolean;
-    error: Error | null;
 };
 export interface RolePagePermission {
     id: string;

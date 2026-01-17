@@ -51,17 +51,13 @@ function decodeId(id: string): string {
 
 function toUserRow(u: any) {
   const email = String(u?.email || '').trim();
-  const pf = (u?.profile_fields || {}) as { first_name?: string; last_name?: string };
-  const displayName = [pf.first_name, pf.last_name].filter(Boolean).join(' ').trim();
   const role = String(u?.role || (Array.isArray(u?.roles) ? u.roles?.[0] : '') || 'user');
   return {
     ...u,
     id: email,
     email,
-    name: displayName || email,
+    name: email,
     role,
-    first_name: pf.first_name ?? '',
-    last_name: pf.last_name ?? '',
     status: u?.locked ? 'Locked' : 'Active',
   };
 }
@@ -102,19 +98,10 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: str
     const role = body?.role != null ? String(body.role).trim() : '';
     const locked = typeof body?.locked === 'boolean' ? body.locked : undefined;
     const emailVerified = typeof body?.email_verified === 'boolean' ? body.email_verified : undefined;
-    const firstName = body?.first_name != null ? String(body.first_name).trim() : '';
-    const lastName = body?.last_name != null ? String(body.last_name).trim() : '';
-
     const payload: any = {};
     if (role) payload.role = role;
     if (typeof locked === 'boolean') payload.locked = locked;
     if (typeof emailVerified === 'boolean') payload.email_verified = emailVerified;
-    if (firstName || lastName) {
-      payload.profile_fields = {
-        ...(firstName ? { first_name: firstName } : {}),
-        ...(lastName ? { last_name: lastName } : {}),
-      };
-    }
 
     const res = await authFetch(request, `/users/${encodeURIComponent(email)}`, {
       method: 'PUT',

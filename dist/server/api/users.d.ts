@@ -6,12 +6,12 @@ export declare const runtime = "nodejs";
  * List users for pickers (manager, assignments, etc.)
  *
  * Wraps the auth module directory API and adds:
- * - search filtering (name/email)
+ * - search filtering (email)
  * - result limiting
  * - id lookup (for resolveValue in autocomplete)
  *
  * Query params:
- * - search: filter by name/email (optional)
+ * - search: filter by email (optional)
  * - pageSize: max items to return (default 25, max 100)
  * - id: email to resolve (optional)
  */
