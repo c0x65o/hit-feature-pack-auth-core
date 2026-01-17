@@ -43,7 +43,6 @@ entities:
         name: true
         email: true
         role: true
-        status: true
         email_verified: true
         two_factor_enabled: true
         created_at: true
@@ -53,7 +52,6 @@ entities:
         - name
         - email
         - role
-        - status
         - email_verified
         - two_factor_enabled
         - created_at
@@ -217,7 +215,6 @@ entities:
         city: true
         state: true
         country: true
-        locationTypeName: true
         managerUserKey: false
         isPrimary: false
         isActive: true
@@ -229,8 +226,8 @@ entities:
         - city
         - state
         - country
-        - locationTypeName
-        - managerUserKey
+        - key: managerUserKey
+          linkable: true
         - isPrimary
         - isActive
         - createdAt
@@ -286,6 +283,8 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: id
           labelField: displayName
+          labelFromRow: managerName
+      managerName: { type: text, label: Manager, virtual: true }
       isPrimary: { type: boolean, label: Primary }
       isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
@@ -336,7 +335,8 @@ entities:
       columns:
         - name
         - code
-        - managerUserKey
+        - key: managerUserKey
+          linkable: true
         - isActive
         - createdAt
         - key: actions
@@ -374,6 +374,8 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: id
           labelField: displayName
+          labelFromRow: managerName
+      managerName: { type: text, label: Manager, virtual: true }
       isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
@@ -423,7 +425,8 @@ entities:
       columns:
         - name
         - code
-        - managerUserKey
+        - key: managerUserKey
+          linkable: true
         - isActive
         - createdAt
         - key: actions
@@ -461,6 +464,8 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: id
           labelField: displayName
+          labelFromRow: managerName
+      managerName: { type: text, label: Manager, virtual: true }
       isActive: { type: boolean, label: Active, default: true }
       createdAt: { type: datetime, label: Created At }
       updatedAt: { type: datetime, label: Updated At }
@@ -502,16 +507,11 @@ entities:
       defaultVisibleOnly: true
       initialColumnVisibility:
         userKey: true
-        divisionName: true
-        departmentName: true
-        locationName: true
         createdAt: false
         actions: true
       columns:
-        - userKey
-        - divisionName
-        - departmentName
-        - locationName
+        - key: userKey
+          linkable: true
         - createdAt
         - key: actions
           label: ""
@@ -537,6 +537,8 @@ entities:
           pickerEndpoint: /api/hrm/employees/picker
           valueField: userEmail
           labelField: displayName
+          labelFromRow: userName
+      userName: { type: text, label: User, virtual: true }
       divisionId:
         type: select
         label: Division
