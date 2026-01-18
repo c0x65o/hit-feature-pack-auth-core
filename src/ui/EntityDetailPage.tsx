@@ -299,7 +299,7 @@ export function EntityDetailPage({
         <Modal open={true} onClose={() => setShowDeleteConfirm(false)} title={deleteConfirmTitle}>
           <div style={{ padding: '16px' }}>
             <p style={{ marginBottom: '16px' }}>
-              {deleteConfirmBodyTpl.replace('{name}', String(record?.name || record?.id || ''))}
+              {interpolate(deleteConfirmBodyTpl)}
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>

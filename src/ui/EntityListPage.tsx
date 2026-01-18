@@ -252,7 +252,13 @@ export function EntityListPage({
       {deleteConfirm && deleteItem && (
         <Modal open={true} onClose={() => setDeleteConfirm(null)} title={deleteConfirmTitle}>
           <div style={{ padding: '16px' }}>
-            <p style={{ marginBottom: '16px' }}>{deleteConfirmBodyTpl.replace('{name}', deleteConfirm.name)}</p>
+            <p style={{ marginBottom: '16px' }}>
+              {deleteConfirmBodyTpl.replace(/\{(\w+)\}/g, (_m, key) => {
+                if (key === 'name') return deleteConfirm.name;
+                if (key === 'id') return deleteConfirm.id;
+                return '';
+              })}
+            </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <Button variant="secondary" onClick={() => setDeleteConfirm(null)} disabled={isDeleting}>
                 {cancelLabel}

@@ -148,6 +148,12 @@ export function EntityListPage({ entityKey, onNavigate, useListData, customRende
                         else {
                             navigate(detailHref(rid));
                         }
-                    }, onRefresh: refetch, refreshing: loading, total: pagination?.total, ...serverTable.dataTable, searchDebounceMs: 400, tableId: tableId, uiStateKey: uiStateKey, enableViews: true, showColumnVisibility: true, initialColumnVisibility: effectiveInitialColumnVisibility, initialSorting: listSpec.initialSorting }) }), deleteConfirm && deleteItem && (_jsx(Modal, { open: true, onClose: () => setDeleteConfirm(null), title: deleteConfirmTitle, children: _jsxs("div", { style: { padding: '16px' }, children: [_jsx("p", { style: { marginBottom: '16px' }, children: deleteConfirmBodyTpl.replace('{name}', deleteConfirm.name) }), _jsxs("div", { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' }, children: [_jsx(Button, { variant: "secondary", onClick: () => setDeleteConfirm(null), disabled: isDeleting, children: cancelLabel }), _jsx(Button, { variant: "danger", onClick: handleDelete, disabled: isDeleting, children: isDeleting ? 'Deleting...' : deleteLabel })] })] }) })), _jsx(AlertDialog, { ...alertDialog.props })] }));
+                    }, onRefresh: refetch, refreshing: loading, total: pagination?.total, ...serverTable.dataTable, searchDebounceMs: 400, tableId: tableId, uiStateKey: uiStateKey, enableViews: true, showColumnVisibility: true, initialColumnVisibility: effectiveInitialColumnVisibility, initialSorting: listSpec.initialSorting }) }), deleteConfirm && deleteItem && (_jsx(Modal, { open: true, onClose: () => setDeleteConfirm(null), title: deleteConfirmTitle, children: _jsxs("div", { style: { padding: '16px' }, children: [_jsx("p", { style: { marginBottom: '16px' }, children: deleteConfirmBodyTpl.replace(/\{(\w+)\}/g, (_m, key) => {
+                                if (key === 'name')
+                                    return deleteConfirm.name;
+                                if (key === 'id')
+                                    return deleteConfirm.id;
+                                return '';
+                            }) }), _jsxs("div", { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' }, children: [_jsx(Button, { variant: "secondary", onClick: () => setDeleteConfirm(null), disabled: isDeleting, children: cancelLabel }), _jsx(Button, { variant: "danger", onClick: handleDelete, disabled: isDeleting, children: isDeleting ? 'Deleting...' : deleteLabel })] })] }) })), _jsx(AlertDialog, { ...alertDialog.props })] }));
 }
 //# sourceMappingURL=EntityListPage.js.map
