@@ -784,6 +784,19 @@ export async function checkActionPermissionV2(req, actionKey) {
     if (groupIds.length > 0) {
         assignmentWhere = sql `${assignmentWhere} OR (a.principal_type = 'group' AND a.principal_id IN (${sql.join(groupIds.map((gid) => sql `${gid}`), sql `, `)}))`;
     }
+    const blocked = await db.execute(sql `
+    SELECT 1 AS ok
+    FROM hit_auth_v2_permission_set_assignments a
+    JOIN hit_auth_v2_permission_seed_keys s
+      ON s.permission_set_id = a.permission_set_id
+     AND s.kind = 'block_action'
+     AND s.key = ${actionKey}
+    WHERE ${assignmentWhere}
+    LIMIT 1
+  `);
+    if ((blocked?.rows || []).length > 0) {
+        return { ok: false, source: 'permission_set_block' };
+    }
     const ps = await db.execute(sql `
     SELECT 1 AS ok
     FROM hit_auth_v2_permission_set_assignments a
@@ -2937,6 +2950,7 @@ export async function tryHandleAuthV2Proxy(opts) {
         const psId = String(pathSegments[3] || '').trim();
         const sub = String(pathSegments[4] || '').trim();
         const tail = String(pathSegments[5] || '').trim();
+        const tail2 = String(pathSegments[6] || '').trim();
         // GET /admin/permissions/sets
         if (m === 'GET' && !psId) {
             const countRes = await db.execute(sql `SELECT COUNT(*)::int AS c FROM hit_auth_v2_permission_sets`);
@@ -2994,7 +3008,7 @@ export async function tryHandleAuthV2Proxy(opts) {
             const ps = setRes?.rows?.[0];
             if (!ps)
                 return err('Permission set not found', 404);
-            const [assignmentsRes, actionsRes, pagesRes, metricsRes] = await Promise.all([
+            const [assignmentsRes, actionsRes, blocksRes, pagesRes, metricsRes] = await Promise.all([
                 db.execute(sql `
           SELECT id, permission_set_id, principal_type, principal_id, created_at
           FROM hit_auth_v2_permission_set_assignments
@@ -3007,6 +3021,13 @@ export async function tryHandleAuthV2Proxy(opts) {
           LEFT JOIN hit_auth_v2_permission_actions a ON a.key = g.action_key
           WHERE g.permission_set_id = ${psId}::uuid
           ORDER BY g.created_at DESC
+        `),
+                db.execute(sql `
+          SELECT id, permission_set_id, key AS action_key, created_at
+          FROM hit_auth_v2_permission_seed_keys
+          WHERE permission_set_id = ${psId}::uuid
+            AND kind = 'block_action'
+          ORDER BY created_at DESC
         `),
                 db.execute(sql `
           SELECT id, permission_set_id, page_path, created_at
@@ -3025,6 +3046,7 @@ export async function tryHandleAuthV2Proxy(opts) {
                 permission_set: ps,
                 assignments: assignmentsRes?.rows || [],
                 action_grants: actionsRes?.rows || [],
+                action_blocks: blocksRes?.rows || [],
                 page_grants: pagesRes?.rows || [],
                 metric_grants: metricsRes?.rows || [],
             });
@@ -3128,6 +3150,13 @@ export async function tryHandleAuthV2Proxy(opts) {
             const action_key = String(body?.action_key || body?.actionKey || '').trim();
             if (!action_key)
                 return err('action_key is required', 400);
+            // Remove any block entry for this key (explicit override off).
+            await db.execute(sql `
+        DELETE FROM hit_auth_v2_permission_seed_keys
+        WHERE permission_set_id = ${psId}::uuid
+          AND kind = 'block_action'
+          AND key = ${action_key}
+      `);
             // Ensure action exists (auto-register minimal record if missing)
             const a0 = await db.execute(sql `SELECT 1 FROM hit_auth_v2_permission_actions WHERE key = ${action_key} LIMIT 1`);
             if ((a0?.rows || []).length === 0) {
@@ -3151,6 +3180,49 @@ export async function tryHandleAuthV2Proxy(opts) {
                     return err('Action grant already exists', 400);
                 return err('Failed to create action grant', 500);
             }
+        }
+        // POST /admin/permissions/sets/{psId}/actions/blocks
+        if (sub === 'actions' && tail === 'blocks' && m === 'POST') {
+            const body = (await req.json().catch(() => ({})));
+            const action_key = String(body?.action_key || body?.actionKey || '').trim();
+            if (!action_key)
+                return err('action_key is required', 400);
+            const existing = await db.execute(sql `
+        SELECT id, permission_set_id, key AS action_key, created_at
+        FROM hit_auth_v2_permission_seed_keys
+        WHERE permission_set_id = ${psId}::uuid
+          AND kind = 'block_action'
+          AND key = ${action_key}
+        LIMIT 1
+      `);
+            const row = existing?.rows?.[0];
+            if (row)
+                return json(row, { status: 201 });
+            // Remove any explicit grant for this key so the block takes effect.
+            await db.execute(sql `
+        DELETE FROM hit_auth_v2_permission_set_action_grants
+        WHERE permission_set_id = ${psId}::uuid
+          AND action_key = ${action_key}
+      `);
+            try {
+                const ins = await db.execute(sql `
+          INSERT INTO hit_auth_v2_permission_seed_keys (permission_set_id, kind, key, created_at)
+          VALUES (${psId}::uuid, 'block_action', ${action_key}, now())
+          RETURNING id, permission_set_id, key AS action_key, created_at
+        `);
+                return json(ins?.rows?.[0] || null, { status: 201 });
+            }
+            catch (e) {
+                const msg = String(e?.message || e || '').toLowerCase();
+                if (msg.includes('duplicate') || msg.includes('unique'))
+                    return err('Action block already exists', 400);
+                return err('Failed to create action block', 500);
+            }
+        }
+        // DELETE /admin/permissions/sets/{psId}/actions/blocks/{block_id}
+        if (sub === 'actions' && tail === 'blocks' && tail2 && m === 'DELETE') {
+            await db.execute(sql `DELETE FROM hit_auth_v2_permission_seed_keys WHERE id = ${tail2}::uuid AND permission_set_id = ${psId}::uuid AND kind = 'block_action'`);
+            return json({}, { status: 204 });
         }
         // DELETE /admin/permissions/sets/{psId}/actions/{grant_id}
         if (sub === 'actions' && tail && m === 'DELETE') {

@@ -447,6 +447,11 @@ export interface PermissionSetActionGrant {
     action_key: string;
     created_at: string;
 }
+export interface PermissionSetActionBlock {
+    id: string;
+    action_key: string;
+    created_at: string;
+}
 export interface PermissionSetMetricGrant {
     id: string;
     metric_key: string;
@@ -519,6 +524,7 @@ export declare function usePermissionSet(id: string | null): {
         assignments: PermissionSetAssignment[];
         page_grants: PermissionSetPageGrant[];
         action_grants: PermissionSetActionGrant[];
+        action_blocks: PermissionSetActionBlock[];
         metric_grants: PermissionSetMetricGrant[];
     } | null;
     loading: boolean;
@@ -543,6 +549,8 @@ export declare function usePermissionSetMutations(): {
     removePageGrant: (psId: string, grantId: string) => Promise<void>;
     addActionGrant: (psId: string, actionKey: string) => Promise<void>;
     removeActionGrant: (psId: string, grantId: string) => Promise<void>;
+    addActionBlock: (psId: string, actionKey: string) => Promise<void>;
+    removeActionBlock: (psId: string, blockId: string) => Promise<void>;
     addMetricGrant: (psId: string, metricKey: string) => Promise<void>;
     removeMetricGrant: (psId: string, grantId: string) => Promise<void>;
     loading: boolean;

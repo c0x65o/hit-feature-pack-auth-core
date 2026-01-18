@@ -1929,6 +1929,12 @@ export interface PermissionSetActionGrant {
   created_at: string;
 }
 
+export interface PermissionSetActionBlock {
+  id: string;
+  action_key: string;
+  created_at: string;
+}
+
 export interface PermissionSetMetricGrant {
   id: string;
   metric_key: string;
@@ -2051,6 +2057,7 @@ export function usePermissionSet(id: string | null) {
     assignments: PermissionSetAssignment[];
     page_grants: PermissionSetPageGrant[];
     action_grants: PermissionSetActionGrant[];
+    action_blocks: PermissionSetActionBlock[];
     metric_grants: PermissionSetMetricGrant[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2222,6 +2229,37 @@ export function usePermissionSetMutations() {
     }
   }, []);
 
+  const addActionBlock = useCallback(async (psId: string, actionKey: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchWithAuth(`/admin/permissions/sets/${psId}/actions/blocks`, {
+        method: 'POST',
+        body: JSON.stringify({ action_key: actionKey }),
+      });
+    } catch (e) {
+      setError(e as Error);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const removeActionBlock = useCallback(async (psId: string, blockId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchWithAuth(`/admin/permissions/sets/${psId}/actions/blocks/${blockId}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      setError(e as Error);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const addMetricGrant = useCallback(async (psId: string, metricKey: string) => {
     setLoading(true);
     setError(null);
@@ -2261,6 +2299,8 @@ export function usePermissionSetMutations() {
     removePageGrant,
     addActionGrant,
     removeActionGrant,
+    addActionBlock,
+    removeActionBlock,
     addMetricGrant,
     removeMetricGrant,
     loading,

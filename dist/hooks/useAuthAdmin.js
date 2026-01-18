@@ -1793,6 +1793,39 @@ export function usePermissionSetMutations() {
             setLoading(false);
         }
     }, []);
+    const addActionBlock = useCallback(async (psId, actionKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/actions/blocks`, {
+                method: 'POST',
+                body: JSON.stringify({ action_key: actionKey }),
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
+    const removeActionBlock = useCallback(async (psId, blockId) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await fetchWithAuth(`/admin/permissions/sets/${psId}/actions/blocks/${blockId}`, {
+                method: 'DELETE',
+            });
+        }
+        catch (e) {
+            setError(e);
+            throw e;
+        }
+        finally {
+            setLoading(false);
+        }
+    }, []);
     const addMetricGrant = useCallback(async (psId, metricKey) => {
         setLoading(true);
         setError(null);
@@ -1834,6 +1867,8 @@ export function usePermissionSetMutations() {
         removePageGrant,
         addActionGrant,
         removeActionGrant,
+        addActionBlock,
+        removeActionBlock,
         addMetricGrant,
         removeMetricGrant,
         loading,

@@ -33,6 +33,7 @@ import {
   useMetricsCatalog,
   type PermissionSetAssignment,
   type PermissionSetActionGrant,
+  type PermissionSetActionBlock,
   type PermissionSetMetricGrant,
 } from '../hooks/useAuthAdmin';
 
@@ -241,7 +242,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
 
   // Pending action changes (batch editing like Metrics)
   // Map of key -> desired explicit grant (true=grant, false=revoke)
-  const [pendingActionChanges, setPendingActionChanges] = useState<Map<string, boolean>>(new Map());
+  const [pendingActionChanges, setPendingActionChanges] = useState<Map<string, 'on' | 'off' | 'inherit'>>(new Map());
   const [savingPagesActions, setSavingPagesActions] = useState(false);
 
   // Pending metric changes (batch editing)
@@ -252,6 +253,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
   const permissionSet = detail?.permission_set ?? null;
   const assignments: PermissionSetAssignment[] = (detail?.assignments ?? []) as PermissionSetAssignment[];
   const actionGrants: PermissionSetActionGrant[] = (detail?.action_grants ?? []) as PermissionSetActionGrant[];
+  const actionBlocks: PermissionSetActionBlock[] = (detail?.action_blocks ?? []) as PermissionSetActionBlock[];
   const metricGrants: PermissionSetMetricGrant[] = (detail?.metric_grants ?? []) as PermissionSetMetricGrant[];
 
   const navigate = (path: string) => {
@@ -343,29 +345,61 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     return m;
   }, [actionGrants]);
 
+  const actionBlockSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const b of actionBlocks) s.add(String((b as any).action_key));
+    return s;
+  }, [actionBlocks]);
+
+  const actionBlockIdByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of actionBlocks) m.set(String((b as any).action_key), String((b as any).id));
+    return m;
+  }, [actionBlocks]);
+
   const metricGrantIdByKey = useMemo(() => {
     const m = new Map<string, string>();
     for (const g of metricGrants) m.set(String((g as any).metric_key), String((g as any).id));
     return m;
   }, [metricGrants]);
 
-  const pendingActionChangeCount = useMemo(() => {
-    let n = 0;
-    for (const [key, desired] of pendingActionChanges.entries()) {
-      const cur = actionGrantSet.has(key);
-      if (cur !== desired) n++;
-    }
-    return n;
-  }, [pendingActionChanges, actionGrantSet]);
+  const getActionExplicitState = useCallback((actionKey: string): 'on' | 'off' | 'inherit' => {
+    const key = String(actionKey || '').trim();
+    if (actionBlockSet.has(key)) return 'off';
+    if (actionGrantSet.has(key)) return 'on';
+    return 'inherit';
+  }, [actionBlockSet, actionGrantSet]);
 
-  const pendingPagesActionsChangeCount = pendingActionChangeCount;
-
-  const isActionExplicitEffective = useCallback((actionKey: string): boolean => {
+  const getActionOverrideState = useCallback((actionKey: string): 'on' | 'off' | 'inherit' => {
     const key = String(actionKey || '').trim();
     const pending = pendingActionChanges.get(key);
     if (pending !== undefined) return pending;
-    return actionGrantSet.has(key);
-  }, [pendingActionChanges, actionGrantSet]);
+    return getActionExplicitState(key);
+  }, [getActionExplicitState, pendingActionChanges]);
+
+  const getActionEffectiveState = useCallback(
+    (actionKey: string, defaultOn: boolean): boolean => {
+      const state = getActionOverrideState(actionKey);
+      if (state === 'inherit') return defaultOn;
+      return state === 'on';
+    },
+    [getActionOverrideState]
+  );
+
+  const pendingActionChangeCount = useMemo(() => {
+    let n = 0;
+    for (const [key, desired] of pendingActionChanges.entries()) {
+      if (getActionExplicitState(key) !== desired) n++;
+    }
+    return n;
+  }, [pendingActionChanges, getActionExplicitState]);
+
+  const pendingPagesActionsChangeCount = pendingActionChangeCount;
+
+  const isActionExplicitEffective = useCallback(
+    (actionKey: string): boolean => getActionOverrideState(actionKey) === 'on',
+    [getActionOverrideState]
+  );
 
   const packRootScopeSummaryByPack = useMemo(() => {
     type ScopeVerb = 'read' | 'write' | 'delete';
@@ -423,8 +457,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     const key = String(actionKey || '').trim();
     const pending = pendingActionChanges.get(key);
     if (pending === undefined) return false;
-    return actionGrantSet.has(key) !== pending;
-  }, [pendingActionChanges, actionGrantSet]);
+    return getActionExplicitState(key) !== pending;
+  }, [pendingActionChanges, getActionExplicitState]);
 
   // Group actions by feature pack (pages are derived-gated and not edited here)
   const packData = useMemo(() => {
@@ -438,8 +472,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       const pack = a.pack_name || a.key.split('.')[0] || 'unknown';
       if (!packs.has(pack)) packs.set(pack, { title: a.pack_title, actions: [] });
       else if (!packs.get(pack)!.title && a.pack_title) packs.get(pack)!.title = a.pack_title;
-      const explicit = isActionExplicitEffective(a.key);
-      const effective = Boolean(explicit);
+      const defaultOn = templateRoleEffective === 'admin' ? true : Boolean(a.default_enabled);
+      const override = getActionOverrideState(a.key);
+      const explicit = override !== 'inherit';
+      const effective = getActionEffectiveState(a.key, defaultOn);
       packs.get(pack)!.actions.push({ ...a, explicit, effective });
     }
 
@@ -459,7 +495,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
         const titleB = b.title || titleCase(b.name);
         return titleA.localeCompare(titleB);
       });
-  }, [actionCatalog, isActionExplicitEffective]);
+  }, [actionCatalog, getActionEffectiveState, getActionOverrideState, templateRoleEffective]);
 
   // Metrics organized by owner type (App vs Feature Pack)
   const metricRowsByPack = useMemo(() => {
@@ -794,11 +830,11 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     const createTotal = toggleActions.length;
     const createEffective = toggleActions.filter((a) => {
       const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-      return Boolean(isActionExplicitEffective(a.key) || defaultOn);
+      return getActionEffectiveState(a.key, defaultOn);
     }).length;
     const createOverrides = toggleActions.filter((a) => {
       const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-      const effectiveNow = Boolean(isActionExplicitEffective(a.key) || defaultOn);
+      const effectiveNow = getActionEffectiveState(a.key, defaultOn);
       return effectiveNow !== defaultOn;
     }).length;
 
@@ -813,10 +849,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       if (req) derivedToggleKeys.push(req);
     }
     const derivedTotal = derivedToggleKeys.length;
-    const derivedEffective = derivedToggleKeys.filter((k) => Boolean(isActionExplicitEffective(k) || (isAdminTemplate ? true : false))).length;
+    const derivedEffective = derivedToggleKeys.filter((k) =>
+      getActionEffectiveState(k, isAdminTemplate ? true : false)
+    ).length;
     const derivedOverrides = derivedToggleKeys.filter((k) => {
       const defaultOn = isAdminTemplate ? true : false;
-      const effectiveNow = Boolean(isActionExplicitEffective(k) || defaultOn);
+      const effectiveNow = getActionEffectiveState(k, defaultOn);
       return effectiveNow !== defaultOn;
     }).length;
 
@@ -825,7 +863,7 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
       effective: scopeEffective + createEffective + derivedEffective,
       overrides: scopeOverrides + createOverrides + derivedOverrides,
     };
-  }, [defaultScopeMode, isActionExplicitEffective, templateRoleEffective, routes]);
+  }, [defaultScopeMode, getActionEffectiveState, templateRoleEffective, routes]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HANDLERS
@@ -901,27 +939,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     setExpandedPacks(new Set());
   };
 
-  const toggleActionGrantLocal = (actionKey: string) => {
+  const setActionOverrideLocal = (actionKey: string, desired: 'on' | 'off' | 'inherit') => {
     const key = String(actionKey || '').trim();
     if (!key) return;
     setPendingActionChanges((prev) => {
       const next = new Map(prev);
-      const current = actionGrantSet.has(key);
-      const pending = next.get(key);
-      const effective = pending !== undefined ? pending : current;
-      const desired = !effective;
-      if (desired === current) next.delete(key);
-      else next.set(key, desired);
-      return next;
-    });
-  };
-
-  const setActionGrantLocal = (actionKey: string, desired: boolean) => {
-    const key = String(actionKey || '').trim();
-    if (!key) return;
-    setPendingActionChanges((prev) => {
-      const next = new Map(prev);
-      const current = actionGrantSet.has(key);
+      const current = getActionExplicitState(key);
       if (desired === current) next.delete(key);
       else next.set(key, desired);
       return next;
@@ -932,8 +955,8 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     setPendingActionChanges((prev) => {
       const next = new Map(prev);
       for (const k of group.precedenceKeys) {
-        const current = actionGrantSet.has(k);
-        const desired = k === selectedKey;
+        const current = getActionExplicitState(k);
+        const desired = k === selectedKey ? 'on' : 'inherit';
         if (desired === current) next.delete(k);
         else next.set(k, desired);
       }
@@ -951,14 +974,31 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     try {
       // Actions
       for (const [key, desired] of pendingActionChanges.entries()) {
-        const current = actionGrantSet.has(key);
+        const current = getActionExplicitState(key);
         if (current === desired) continue;
-        if (desired) {
-          await mutations.addActionGrant(id, key);
-        } else {
-          const gid = actionGrantIdByKey.get(key);
-          if (gid) await mutations.removeActionGrant(id, gid);
+
+        if (desired === 'on') {
+          const blockId = actionBlockIdByKey.get(key);
+          if (blockId) await mutations.removeActionBlock(id, blockId);
+          if (!actionGrantSet.has(key)) {
+            await mutations.addActionGrant(id, key);
+          }
+          continue;
         }
+
+        if (desired === 'off') {
+          const grantId = actionGrantIdByKey.get(key);
+          if (grantId) await mutations.removeActionGrant(id, grantId);
+          if (!actionBlockSet.has(key)) {
+            await mutations.addActionBlock(id, key);
+          }
+          continue;
+        }
+
+        const grantId = actionGrantIdByKey.get(key);
+        if (grantId) await mutations.removeActionGrant(id, grantId);
+        const blockId = actionBlockIdByKey.get(key);
+        if (blockId) await mutations.removeActionBlock(id, blockId);
       }
 
       setPendingActionChanges(new Map());
@@ -1085,21 +1125,20 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
     );
     setPendingActionChanges((prev) => {
       const next = new Map(prev);
-      // Revoke any currently granted scope-mode key matching the prefix
+      // Revert any currently granted scope-mode key matching the prefix to "inherit"
       for (const k of actionGrantSet) {
         if (!re.test(String(k))) continue;
-        next.set(String(k), false);
+        next.set(String(k), 'inherit');
       }
-      // If user had pending changes on those keys, clear them too (let the revoke win)
+      // If user had pending changes on those keys, clear them too (let inherit win)
       for (const [k] of Array.from(next.entries())) {
-        if (re.test(String(k)) && !actionGrantSet.has(String(k))) {
-          // key wasn't granted; pending revoke is unnecessary
+        if (re.test(String(k)) && getActionExplicitState(String(k)) === 'inherit') {
           next.delete(String(k));
         }
       }
       return next;
     });
-  }, [actionGrantSet]);
+  }, [actionGrantSet, getActionExplicitState]);
 
   const discardAllChanges = () => {
     discardPagesActionsChanges();
@@ -2059,11 +2098,10 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                             const k = String(p.require_action || '').trim();
                                             const isAdminTemplate = permissionSet?.template_role === 'admin';
                                             const defaultOn = isAdminTemplate ? true : false;
-                                            const effectiveNow = Boolean(k && (isActionExplicitEffective(k) || defaultOn));
-                                            const pending = pendingActionChanges.get(k);
-                                            const persistedExplicit = actionGrantSet.has(k);
-                                            const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
-                                            const isInherited = !isOverrideNow && pending === undefined;
+                                            const effectiveNow = getActionEffectiveState(k, defaultOn);
+                                            const overrideState = getActionOverrideState(k);
+                                            const isOverrideNow = effectiveNow !== defaultOn;
+                                            const isInherited = overrideState === 'inherit';
                                             return (
                                               <div className="flex items-center gap-2 shrink-0">
                                                 <span className="text-xs text-gray-400">Access:</span>
@@ -2071,7 +2109,13 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                   className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
                                                   value={effectiveNow ? 'on' : 'off'}
                                                   disabled={anySaving}
-                                                  onChange={(e) => setActionGrantLocal(k, String(e.target.value) === 'on')}
+                                                  onChange={(e) => {
+                                                    const v = String(e.target.value || '');
+                                                    const desiredOn = v === 'on';
+                                                    const desiredState =
+                                                      desiredOn === defaultOn ? 'inherit' : desiredOn ? 'on' : 'off';
+                                                    setActionOverrideLocal(k, desiredState);
+                                                  }}
                                                 >
                                                   <option value="on">On</option>
                                                   <option value="off">Off</option>
@@ -2081,12 +2125,12 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                                 ) : isOverrideNow ? (
                                                   <Badge variant="info" className="text-xs">override</Badge>
                                                 ) : null}
-                                                {(pending !== undefined || persistedExplicit) ? (
+                                                {overrideState !== 'inherit' ? (
                                                   <Button
                                                     size="sm"
                                                     variant="ghost"
                                                     disabled={anySaving}
-                                                    onClick={() => setActionGrantLocal(k, false)}
+                                                    onClick={() => setActionOverrideLocal(k, 'inherit')}
                                                     title="Clear (remove explicit grant; fall back to template default)"
                                                   >
                                                     Clear
@@ -2117,67 +2161,54 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                         <div className="flex items-center gap-2 min-w-0 flex-1">
                                           <span className="font-medium text-sm truncate">{a.label}</span>
                                           <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
-                                          {a.default_enabled ? (
-                                            <Badge variant="success" className="text-xs">default</Badge>
-                                          ) : null}
                                         </div>
                                         <div className="flex items-center gap-4">
-                                          {(/\.(create|update|delete)$/i.test(String(a.key || '').trim()) && !String(a.key || '').includes('.scope.')) ? (
-                                            (() => {
-                                              const key = String(a.key || '').trim();
-                                              const verb = key.split('.').slice(-1)[0] || 'action';
-                                              const pending = pendingActionChanges.get(key);
-                                              const persistedExplicit = actionGrantSet.has(key);
-                                              const explicitNow = pending !== undefined ? pending : persistedExplicit;
-                                              const isAdminTemplate = templateRoleEffective === 'admin';
-                                              const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                              const effectiveNow = Boolean(explicitNow || defaultOn);
-                                              const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
-                                              const showClear = pending !== undefined || persistedExplicit;
-                                              return (
-                                                <div className="flex items-center gap-2">
-                                                  <span className="text-xs text-gray-400">{titleCase(verb)}:</span>
-                                                  <select
-                                                    className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
-                                                    value={effectiveNow ? 'on' : 'off'}
+                                          {(() => {
+                                            const key = String(a.key || '').trim();
+                                            const verb = key.split('.').slice(-1)[0] || 'action';
+                                            const isCrud = /\.(create|update|delete)$/i.test(key) && !key.includes('.scope.');
+                                            const label = isCrud ? titleCase(verb) : 'Enabled';
+                                            const hasPending = pendingActionChanges.has(key);
+                                            const isAdminTemplate = templateRoleEffective === 'admin';
+                                            const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                            const overrideState = getActionOverrideState(key);
+                                            const effectiveNow = getActionEffectiveState(key, defaultOn);
+                                            const isOverrideNow = effectiveNow !== defaultOn;
+                                            const showClear = overrideState !== 'inherit';
+                                            return (
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-400">{label}:</span>
+                                                <select
+                                                  className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
+                                                  value={effectiveNow ? 'on' : 'off'}
+                                                  disabled={anySaving}
+                                                  onChange={(e) => {
+                                                    const v = String(e.target.value || '');
+                                                    setActionOverrideLocal(key, v === 'on' ? 'on' : 'off');
+                                                  }}
+                                                >
+                                                  <option value="on">On</option>
+                                                  <option value="off">Off</option>
+                                                </select>
+                                                {!isOverrideNow && !hasPending ? (
+                                                  <Badge variant="warning" className="text-xs">inherited</Badge>
+                                                ) : isOverrideNow ? (
+                                                  <Badge variant="info" className="text-xs">override</Badge>
+                                                ) : null}
+                                                {showClear ? (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
                                                     disabled={anySaving}
-                                                    onChange={(e) => {
-                                                      const v = String(e.target.value || '');
-                                                      setActionGrantLocal(key, v === 'on');
-                                                    }}
+                                                    onClick={() => setActionOverrideLocal(key, 'inherit')}
+                                                    title="Clear (remove explicit grant; fall back to template/default)"
                                                   >
-                                                    <option value="on">On</option>
-                                                    <option value="off">Off</option>
-                                                  </select>
-                                                  {!isOverrideNow && pending === undefined ? (
-                                                    <Badge variant="warning" className="text-xs">inherited</Badge>
-                                                  ) : isOverrideNow ? (
-                                                    <Badge variant="info" className="text-xs">override</Badge>
-                                                  ) : null}
-                                                  {showClear ? (
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      disabled={anySaving}
-                                                      onClick={() => setActionGrantLocal(key, false)}
-                                                      title="Clear (remove explicit grant; fall back to template/default)"
-                                                    >
-                                                      Clear
-                                                    </Button>
-                                                  ) : null}
-                                                </div>
-                                              );
-                                            })()
-                                          ) : (
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs text-gray-400">Enabled:</span>
-                                              <Checkbox
-                                                checked={Boolean(a.explicit || a.default_enabled)}
-                                                onChange={() => toggleActionGrantLocal(a.key)}
-                                                disabled={anySaving}
-                                              />
-                                            </div>
-                                          )}
+                                                    Clear
+                                                  </Button>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })()}
                                           {hasPendingActionChange(a.key) ? (
                                             <Badge variant="warning" className="text-xs">unsaved</Badge>
                                           ) : null}
@@ -2223,71 +2254,57 @@ export function SecurityGroupDetail({ id, onNavigate }: SecurityGroupDetailProps
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                   <span className="font-medium text-sm truncate">{a.label}</span>
                                   <span className="text-xs text-gray-500 font-mono truncate">{a.key}</span>
-                                  {a.default_enabled ? (
-                                    <Badge variant="success" className="text-xs">default</Badge>
-                                  ) : a.explicit ? (
-                                    <Badge variant="info" className="text-xs">granted</Badge>
-                                  ) : (
-                                    <Badge variant="warning" className="text-xs">restricted</Badge>
-                                  )}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                  {(/\.(create|update|delete)$/i.test(String(a.key || '').trim()) && !String(a.key || '').includes('.scope.')) ? (
-                                    (() => {
-                                      const key = String(a.key || '').trim();
-                                      const verb = key.split('.').slice(-1)[0] || 'action';
-                                      const pending = pendingActionChanges.get(key);
-                                      const persistedExplicit = actionGrantSet.has(key);
-                                      const explicitNow = pending !== undefined ? pending : persistedExplicit;
-                                      const isAdminTemplate = templateRoleEffective === 'admin';
-                                      const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
-                                      const effectiveNow = Boolean(explicitNow || defaultOn);
-                                      const isOverrideNow = Boolean(effectiveNow) !== Boolean(defaultOn);
-                                      const showClear = pending !== undefined || persistedExplicit;
-                                      return (
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs text-gray-400">{titleCase(verb)}:</span>
-                                          <select
-                                            className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
-                                            value={effectiveNow ? 'on' : 'off'}
+                                  {(() => {
+                                    const key = String(a.key || '').trim();
+                                    const verb = key.split('.').slice(-1)[0] || 'action';
+                                    const isCrud = /\.(create|update|delete)$/i.test(key) && !key.includes('.scope.');
+                                    const label = isCrud ? titleCase(verb) : 'Enabled';
+                                    const hasPending = pendingActionChanges.has(key);
+                                    const isAdminTemplate = templateRoleEffective === 'admin';
+                                    const defaultOn = isAdminTemplate ? true : Boolean(a.default_enabled);
+                                    const overrideState = getActionOverrideState(key);
+                                    const effectiveNow = getActionEffectiveState(key, defaultOn);
+                                    const isOverrideNow = effectiveNow !== defaultOn;
+                                    const showClear = overrideState !== 'inherit';
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-400">{label}:</span>
+                                        <select
+                                          className="text-sm border border-gray-200 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 min-w-[110px]"
+                                          value={effectiveNow ? 'on' : 'off'}
+                                          disabled={savingPagesActions || mutations.loading}
+                                          onChange={(e) => {
+                                            const v = String(e.target.value || '');
+                                            const desiredOn = v === 'on';
+                                            const desiredState =
+                                              desiredOn === defaultOn ? 'inherit' : desiredOn ? 'on' : 'off';
+                                            setActionOverrideLocal(key, desiredState);
+                                          }}
+                                        >
+                                          <option value="on">On</option>
+                                          <option value="off">Off</option>
+                                        </select>
+                                        {!isOverrideNow && !hasPending ? (
+                                          <Badge variant="warning" className="text-xs">inherited</Badge>
+                                        ) : isOverrideNow ? (
+                                          <Badge variant="info" className="text-xs">override</Badge>
+                                        ) : null}
+                                        {showClear ? (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
                                             disabled={savingPagesActions || mutations.loading}
-                                            onChange={(e) => {
-                                              const v = String(e.target.value || '');
-                                              setActionGrantLocal(key, v === 'on');
-                                            }}
+                                            onClick={() => setActionOverrideLocal(key, 'inherit')}
+                                            title="Clear (remove explicit grant; fall back to template/default)"
                                           >
-                                            <option value="on">On</option>
-                                            <option value="off">Off</option>
-                                          </select>
-                                          {!isOverrideNow && pending === undefined ? (
-                                            <Badge variant="warning" className="text-xs">inherited</Badge>
-                                          ) : isOverrideNow ? (
-                                            <Badge variant="info" className="text-xs">override</Badge>
-                                          ) : null}
-                                          {showClear ? (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              disabled={savingPagesActions || mutations.loading}
-                                              onClick={() => setActionGrantLocal(key, false)}
-                                              title="Clear (remove explicit grant; fall back to template/default)"
-                                            >
-                                              Clear
-                                            </Button>
-                                          ) : null}
-                                        </div>
-                                      );
-                                    })()
-                                  ) : (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-400">Enabled:</span>
-                                      <Checkbox
-                                        checked={Boolean(a.explicit || a.default_enabled)}
-                                        onChange={() => toggleActionGrantLocal(a.key)}
-                                        disabled={savingPagesActions || mutations.loading}
-                                      />
-                                    </div>
-                                  )}
+                                            Clear
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                   {hasPendingActionChange(a.key) ? (
                                     <Badge variant="warning" className="text-xs">unsaved</Badge>
                                   ) : null}
