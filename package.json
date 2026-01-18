@@ -1,6 +1,6 @@
 {
   "name": "@hit/feature-pack-auth-core",
-  "version": "1.0.215",
+  "version": "1.0.216",
   "description": "A HIT feature pack",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,6 +19,13 @@
       "import": "./dist/pages/*.js",
       "require": "./dist/pages/*.js",
       "default": "./dist/pages/*.js"
+    },
+    "./contrib": {
+      "development": "./src/contrib/index.tsx",
+      "types": "./dist/contrib/index.d.ts",
+      "import": "./dist/contrib/index.js",
+      "require": "./dist/contrib/index.js",
+      "default": "./dist/contrib/index.js"
     },
     "./server/api/*": {
       "development": "./src/server/api/*.ts",

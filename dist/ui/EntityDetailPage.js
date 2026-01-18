@@ -127,6 +127,8 @@ export function EntityDetailPage({ entityKey, id, onNavigate, useDetailData, res
             const kind = String(a.kind || '').trim();
             if (!kind)
                 continue;
+            if (a.listOnly === true)
+                continue;
             if (!passesWhen(a.when))
                 continue;
             if (kind === 'call') {

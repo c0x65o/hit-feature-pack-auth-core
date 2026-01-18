@@ -165,6 +165,7 @@ export function EntityDetailPage({
       if (!a || typeof a !== 'object') continue;
       const kind = String((a as any).kind || '').trim();
       if (!kind) continue;
+      if ((a as any).listOnly === true) continue;
       if (!passesWhen((a as any).when)) continue;
 
       if (kind === 'call') {

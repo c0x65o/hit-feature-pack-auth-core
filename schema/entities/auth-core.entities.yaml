@@ -73,6 +73,18 @@ entities:
           sortable: false
           hideable: false
           align: right
+      rowActions:
+        - kind: action
+          actionKey: auth.verifyEmail
+          label: Verify Email
+          icon: check-circle
+          when:
+            field: email_verified
+            equals: false
+          confirm:
+            title: Verify Email
+            body: Are you sure you want to manually verify the email for "{email}"?
+            variant: warning
     detail:
       summaryTitle: User
       summaryFields: [name, email, role, status, email_verified, two_factor_enabled, created_at, last_login]
